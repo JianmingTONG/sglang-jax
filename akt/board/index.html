@@ -158,6 +158,10 @@ function decBadge(d){
 function renderFlexGraph(fg){
   const host = document.getElementById('flexgraphs');
   if(!fg || !fg.nodes || !fg.layers || !fg.categories){ host.innerHTML='<div class="empty">flexgraph unavailable — run the loop build.</div>'; return; }
+  // skip re-render if the graph is unchanged, so the 5s poll doesn't clobber a click selection
+  const sig = JSON.stringify(fg);
+  if(host.dataset.sig===sig && host.querySelector('svg')) return;
+  host.dataset.sig=sig;
   const cats=fg.categories, layers=fg.layers;
   const colW=200, nodeW=182, nodeH=26, vgap=7, leftPad=104, topPad=64, layerGap=30;
   const acc=cssVar('--accent')||'#6ea8fe', bad=cssVar('--bad')||'#f85149',
@@ -187,23 +191,27 @@ function renderFlexGraph(fg){
   layers.forEach(l=>{ const t=bandTop[l.id], b=t+bandH[l.id];
     s+='<line x1="'+(leftPad-14)+'" y1="'+(t-8)+'" x2="'+(fullW-8)+'" y2="'+(t-8)+'" stroke="'+line+'" stroke-width="1" opacity="0.6"/>';
     s+='<text x="8" y="'+((t+b)/2)+'" font-size="11" font-weight="700" fill="'+ink+'"><tspan>'+esc(l.title.replace(/ /g,' '))+'</tspan></text>'; });
-  // edges
+  // edges (each carries data-a/data-b + its base opacity/width, for click highlighting)
   (fg.lowering_edges||[]).forEach(e=>{ const a=e[0],b=e[1]; if(!pos[a]||!pos[b])return; const t=trim(a,b);
-    if(gapSet.has(a+'>'+b)){
-      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+bad+'" stroke-width="1.7" marker-end="url(#fx-gap)" opacity="0.9"><title>GAP: '+esc(nById[a].label)+' → '+esc(nById[b].label)+' (lowered, not exposed)</title></line>';
-    } else {
-      const on=(nById[a].active&&nById[a].active.length&&nById[b].active&&nById[b].active.length);
-      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+good+'" stroke-width="'+(on?1.3:1)+'" opacity="'+(on?0.42:0.12)+'"/>';
-    }
+    const gap=gapSet.has(a+'>'+b);
+    const on=(nById[a].active&&nById[a].active.length&&nById[b].active&&nById[b].active.length);
+    const op=gap?0.9:(on?0.42:0.12), w=gap?1.7:(on?1.3:1), stroke=gap?bad:good;
+    const mk=gap?' marker-end="url(#fx-gap)"':'';
+    const ttl=gap?'<title>GAP: '+esc(nById[a].label)+' → '+esc(nById[b].label)+' (lowered, not exposed)</title>':'';
+    s+='<line class="fx-edge" data-a="'+esc(a)+'" data-b="'+esc(b)+'" data-baseop="'+op+'" data-basew="'+w+
+       '" x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+stroke+'" stroke-width="'+w+'"'+mk+
+       ' opacity="'+op+'">'+ttl+'</line>';
   });
   // nodes
   fg.nodes.forEach(n=>{ const p=pos[n.id], active=(n.active&&n.active.length>0), col=nameCol(n.nameability);
     const lab=n.label.length>23? n.label.slice(0,22)+'…' : n.label;
-    const tip=esc(n.label)+' ['+n.nameability+']'+(active? ' — used by: '+n.active.join(', ') : ' — not used by the suite');
-    s+='<g opacity="'+(active?1:0.4)+'"><rect x="'+(p.x-nodeW/2)+'" y="'+(p.y-nodeH/2)+'" width="'+nodeW+'" height="'+nodeH+
+    const tip=esc(n.label)+' ['+n.nameability+']'+(active? ' — used by: '+n.active.join(', ') : ' — not used by the suite')+' · click to trace connections';
+    const baseop=active?1:0.4;
+    s+='<g class="fx-node" data-node="'+esc(n.id)+'" data-baseop="'+baseop+'" opacity="'+baseop+'" style="cursor:pointer">'+
+       '<rect x="'+(p.x-nodeW/2)+'" y="'+(p.y-nodeH/2)+'" width="'+nodeW+'" height="'+nodeH+
        '" rx="6" fill="'+(active?panelHi:panel)+'" stroke="'+col+'" stroke-width="'+(n.nameability==='hidden'?1.7:1.2)+
        (n.nameability==='hidden'?'" stroke-dasharray="3 2':'')+'"><title>'+tip+'</title></rect>'+
-       '<text x="'+p.x+'" y="'+(p.y+3.5)+'" text-anchor="middle" font-size="10" fill="'+ink+'">'+esc(lab)+'</text></g>';
+       '<text x="'+p.x+'" y="'+(p.y+3.5)+'" text-anchor="middle" font-size="10" fill="'+ink+'" style="pointer-events:none">'+esc(lab)+'</text></g>';
   });
   s+='</svg>';
   const sw=(c,d)=>'<svg width="30" height="11" style="vertical-align:middle"><line x1="2" y1="5.5" x2="'+(d?22:28)+'" y2="5.5" stroke="'+c+'" stroke-width="2.4"'+(d?'':'')+'/>'+(d?'<polygon points="22,1.5 30,5.5 22,9.5" fill="'+c+'"/>':'')+'</svg>';
@@ -213,9 +221,32 @@ function renderFlexGraph(fg){
     '<span>'+sw(bad,true)+' <b style="color:'+bad+'">flexibility gap: reachable ▼, NOT reschedulable</b></span>'+
     '<span>'+chip(acc)+' nameable capability</span>'+
     '<span>'+chip(bad,true)+' hidden capability</span>'+
-    '<span style="opacity:.45">'+chip(ink)+' faded = unused by the suite</span></div>';
+    '<span style="opacity:.45">'+chip(ink)+' faded = unused by the suite</span>'+
+    '<span style="margin-left:auto;opacity:.85"><b>tip:</b> click a box to trace its connections (click it again / background to reset)</span></div>';
   host.innerHTML = lg + '<div style="overflow-x:auto">'+s+'</div>';
   document.getElementById('flexnote').textContent = fg.note||'';
+  // interactivity: click a node box -> highlight its incident edges + directly-connected nodes
+  const svg = host.querySelector('svg');
+  if(svg){
+    const nbr={};
+    (fg.lowering_edges||[]).forEach(e=>{ const a=e[0],b=e[1];
+      (nbr[a]=nbr[a]||new Set()).add(b); (nbr[b]=nbr[b]||new Set()).add(a); });
+    const gEls=[].slice.call(svg.querySelectorAll('.fx-node'));
+    const eEls=[].slice.call(svg.querySelectorAll('.fx-edge'));
+    const reset=()=>{ svg.removeAttribute('data-sel');
+      gEls.forEach(g=>g.setAttribute('opacity', g.dataset.baseop));
+      eEls.forEach(l=>{ l.setAttribute('opacity', l.dataset.baseop); l.setAttribute('stroke-width', l.dataset.basew); }); };
+    const hi=id=>{ svg.setAttribute('data-sel', id);
+      const keep=new Set([id]); (nbr[id]||new Set()).forEach(x=>keep.add(x));
+      gEls.forEach(g=>g.setAttribute('opacity', keep.has(g.dataset.node)?'1':'0.07'));
+      eEls.forEach(l=>{ const on=(l.dataset.a===id||l.dataset.b===id);
+        l.setAttribute('opacity', on?'0.95':'0.04');
+        l.setAttribute('stroke-width', on?(parseFloat(l.dataset.basew)+1.1).toFixed(1):l.dataset.basew); }); };
+    svg.addEventListener('click', ev=>{ const g=ev.target.closest('.fx-node');
+      if(!g){ reset(); return; }
+      const id=g.dataset.node;
+      (svg.getAttribute('data-sel')===id) ? reset() : hi(id); });
+  }
 }
 
 async function load(){
