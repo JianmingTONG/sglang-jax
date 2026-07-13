@@ -1,0 +1,1972 @@
+{
+ "kind": "lowering-3layer",
+ "generated_by": "flexgraph_extract.py (automated)",
+ "categories": [
+  {
+   "id": "memory",
+   "title": "Memory & placement"
+  },
+  {
+   "id": "datamove",
+   "title": "Data movement / DMA"
+  },
+  {
+   "id": "compute",
+   "title": "Compute"
+  },
+  {
+   "id": "layout",
+   "title": "Layout & vectorization"
+  },
+  {
+   "id": "sync",
+   "title": "Synchronization & topology"
+  }
+ ],
+ "layers": [
+  {
+   "id": "pallas",
+   "title": "JAX / Pallas primitives"
+  },
+  {
+   "id": "mosaic",
+   "title": "Mosaic TPU IR ops"
+  },
+  {
+   "id": "hw",
+   "title": "TPU hardware"
+  },
+  {
+   "id": "hidden",
+   "title": "Hidden below Mosaic"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "pallas:elementwise arithmetic",
+   "label": "elementwise arithmetic",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "grouped",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:math.* transcendental",
+   "label": "math.* transcendental",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "hw:VPU",
+   "label": "VPU",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:arith.* arithmetic",
+   "label": "arith.* arithmetic",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:logic / compare / select",
+   "label": "logic / compare / select",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "grouped",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:arith.* logic/compare",
+   "label": "arith.* logic/compare",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:reductions",
+   "label": "reductions",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "grouped",
+   "active": [
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:axis_index",
+   "label": "axis_index",
+   "layer": "pallas",
+   "category": "sync",
+   "nameability": "grouped",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.device_id",
+   "label": "tpu.device_id",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "hw:scalar unit",
+   "label": "scalar unit",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "hw:inter-core comm",
+   "label": "inter-core comm",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:bitcast",
+   "label": "bitcast",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.bitcast",
+   "label": "tpu.bitcast",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:dtype convert",
+   "label": "dtype convert",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "grouped",
+   "active": [
+    "moe_v2"
+   ],
+   "partial": true
+  },
+  {
+   "id": "pallas:broadcast_in_dim",
+   "label": "broadcast_in_dim",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:vector.* layout",
+   "label": "vector.* layout",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "hw:XLU",
+   "label": "XLU",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:broadcast_to",
+   "label": "broadcast_to",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:concatenate",
+   "label": "concatenate",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "kda",
+    "moe_v1",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.concatenate",
+   "label": "tpu.concatenate",
+   "layer": "mosaic",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:cond",
+   "label": "cond",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "grouped",
+   "active": [
+    "fused_mlp",
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:scf.* control flow",
+   "label": "scf.* control flow",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:arith.* convert",
+   "label": "arith.* convert",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:transcendental math",
+   "label": "transcendental math",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "grouped",
+   "active": [
+    "gla",
+    "kda",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "pallas:dma_start",
+   "label": "dma_start",
+   "layer": "pallas",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:tpu.enqueue_dma",
+   "label": "tpu.enqueue_dma",
+   "layer": "mosaic",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "hw:DMA engines",
+   "label": "DMA engines",
+   "layer": "hw",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:dma_wait",
+   "label": "dma_wait",
+   "layer": "pallas",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.wait_dma2",
+   "label": "tpu.wait_dma2",
+   "layer": "mosaic",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:dot_general",
+   "label": "dot_general",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "grouped",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:arith.constant",
+   "label": "arith.constant",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.matmul",
+   "label": "tpu.matmul",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "hw:MXU",
+   "label": "MXU",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:vector.multi_reduction",
+   "label": "vector.multi_reduction",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:gather",
+   "label": "gather",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "grouped",
+   "active": [
+    "gla",
+    "kda",
+    "moe_v1",
+    "moe_v2"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:tpu.dynamic_gather",
+   "label": "tpu.dynamic_gather",
+   "layer": "mosaic",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "kda",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:get",
+   "label": "get",
+   "layer": "pallas",
+   "category": "memory",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "kda",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "hw:semaphore fabric",
+   "label": "semaphore fabric",
+   "layer": "hw",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:iota",
+   "label": "iota",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.iota",
+   "label": "tpu.iota",
+   "layer": "mosaic",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:load",
+   "label": "load",
+   "layer": "pallas",
+   "category": "datamove",
+   "nameability": "grouped",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:memref.load",
+   "label": "memref.load",
+   "layer": "mosaic",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "hw:SMEM / scalar unit",
+   "label": "SMEM / scalar unit",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "hw:VMEM",
+   "label": "VMEM",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.memory_space<any>",
+   "label": "tpu.memory_space<any>",
+   "layer": "mosaic",
+   "category": "memory",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.memory_space<smem>",
+   "label": "tpu.memory_space<smem>",
+   "layer": "mosaic",
+   "category": "memory",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.memory_space<vmem>",
+   "label": "tpu.memory_space<vmem>",
+   "layer": "mosaic",
+   "category": "memory",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.strided_load",
+   "label": "tpu.strided_load",
+   "layer": "mosaic",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "hw:VMEM\u2192VREG load",
+   "label": "VMEM\u2192VREG load",
+   "layer": "hw",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:vector.load",
+   "label": "vector.load",
+   "layer": "mosaic",
+   "category": "datamove",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:multiple_of",
+   "label": "multiple_of",
+   "layer": "pallas",
+   "category": "memory",
+   "nameability": "direct",
+   "active": [
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.assume_multiple",
+   "label": "tpu.assume_multiple",
+   "layer": "mosaic",
+   "category": "memory",
+   "nameability": "direct",
+   "active": [
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:num_programs",
+   "label": "num_programs",
+   "layer": "pallas",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "gmm"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.iteration_bound",
+   "label": "tpu.iteration_bound",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "gmm"
+   ]
+  },
+  {
+   "id": "pallas:pad",
+   "label": "pad",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "grouped",
+   "active": [
+    "fused_mlp",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "pallas:program_id",
+   "label": "program_id",
+   "layer": "pallas",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache"
+   ]
+  },
+  {
+   "id": "pallas:reciprocal",
+   "label": "reciprocal",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.reciprocal",
+   "label": "tpu.reciprocal",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:repeat",
+   "label": "repeat",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.repeat",
+   "label": "tpu.repeat",
+   "layer": "mosaic",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:reshape",
+   "label": "reshape",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "grouped",
+   "active": [
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "partial": true
+  },
+  {
+   "id": "pallas:roll",
+   "label": "roll",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "gmm"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.dynamic_rotate",
+   "label": "tpu.dynamic_rotate",
+   "layer": "mosaic",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gmm"
+   ]
+  },
+  {
+   "id": "pallas:run_scoped",
+   "label": "run_scoped",
+   "layer": "pallas",
+   "category": "memory",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:tpu.yield_",
+   "label": "tpu.yield_",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:scan",
+   "label": "scan",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla"
+   ],
+   "partial": true
+  },
+  {
+   "id": "pallas:semaphore_signal",
+   "label": "semaphore_signal",
+   "layer": "pallas",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.sem_signal",
+   "label": "tpu.sem_signal",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:semaphore_wait",
+   "label": "semaphore_wait",
+   "layer": "pallas",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ],
+   "partial": true
+  },
+  {
+   "id": "mosaic:tpu.sem_wait",
+   "label": "tpu.sem_wait",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "direct",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:slice",
+   "label": "slice",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:split",
+   "label": "split",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "kda",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:squeeze",
+   "label": "squeeze",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gmm",
+    "kda",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "pallas:transpose",
+   "label": "transpose",
+   "layer": "pallas",
+   "category": "layout",
+   "nameability": "grouped",
+   "active": [
+    "gla",
+    "kda",
+    "kv_cache",
+    "rpa"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.transpose",
+   "label": "tpu.transpose",
+   "layer": "mosaic",
+   "category": "layout",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "kda",
+    "kv_cache",
+    "rpa"
+   ]
+  },
+  {
+   "id": "pallas:while",
+   "label": "while",
+   "layer": "pallas",
+   "category": "compute",
+   "nameability": "direct",
+   "active": [
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "hidden:physical VREG alloc",
+   "label": "physical VREG alloc",
+   "layer": "hidden",
+   "category": "layout",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hw:VREG",
+   "label": "VREG",
+   "layer": "hw",
+   "category": "layout",
+   "nameability": "direct",
+   "active": []
+  },
+  {
+   "id": "hidden:register spill",
+   "label": "register spill",
+   "layer": "hidden",
+   "category": "layout",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:VMEM bank mapping",
+   "label": "VMEM bank mapping",
+   "layer": "hidden",
+   "category": "memory",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:DMA channel selection",
+   "label": "DMA channel selection",
+   "layer": "hidden",
+   "category": "datamove",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:HW queue assignment",
+   "label": "HW queue assignment",
+   "layer": "hidden",
+   "category": "datamove",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:MXU push/pop staging",
+   "label": "MXU push/pop staging",
+   "layer": "hidden",
+   "category": "compute",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:instruction scheduling",
+   "label": "instruction scheduling",
+   "layer": "hidden",
+   "category": "compute",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:instruction encoding",
+   "label": "instruction encoding",
+   "layer": "hidden",
+   "category": "compute",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:cycle-level unit overlap",
+   "label": "cycle-level unit overlap",
+   "layer": "hidden",
+   "category": "compute",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:pipeline timing",
+   "label": "pipeline timing",
+   "layer": "hidden",
+   "category": "compute",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:ICI route selection",
+   "label": "ICI route selection",
+   "layer": "hidden",
+   "category": "sync",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hw:inter-chip comm",
+   "label": "inter-chip comm",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "direct",
+   "active": []
+  },
+  {
+   "id": "hidden:contention arbitration",
+   "label": "contention arbitration",
+   "layer": "hidden",
+   "category": "sync",
+   "nameability": "hidden",
+   "active": []
+  }
+ ],
+ "lowering_edges": [
+  [
+   "pallas:elementwise arithmetic",
+   "mosaic:math.* transcendental"
+  ],
+  [
+   "mosaic:math.* transcendental",
+   "hw:VPU"
+  ],
+  [
+   "pallas:elementwise arithmetic",
+   "mosaic:arith.* arithmetic"
+  ],
+  [
+   "mosaic:arith.* arithmetic",
+   "hw:VPU"
+  ],
+  [
+   "pallas:logic / compare / select",
+   "mosaic:arith.* logic/compare"
+  ],
+  [
+   "mosaic:arith.* logic/compare",
+   "hw:VPU"
+  ],
+  [
+   "pallas:axis_index",
+   "mosaic:arith.* arithmetic"
+  ],
+  [
+   "pallas:axis_index",
+   "mosaic:tpu.device_id"
+  ],
+  [
+   "mosaic:tpu.device_id",
+   "hw:scalar unit"
+  ],
+  [
+   "mosaic:tpu.device_id",
+   "hw:inter-core comm"
+  ],
+  [
+   "pallas:bitcast",
+   "mosaic:tpu.bitcast"
+  ],
+  [
+   "mosaic:tpu.bitcast",
+   "hw:VPU"
+  ],
+  [
+   "pallas:dtype convert",
+   "mosaic:tpu.bitcast"
+  ],
+  [
+   "pallas:broadcast_in_dim",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "hw:XLU"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "hw:VPU"
+  ],
+  [
+   "pallas:concatenate",
+   "mosaic:tpu.concatenate"
+  ],
+  [
+   "mosaic:tpu.concatenate",
+   "hw:XLU"
+  ],
+  [
+   "pallas:cond",
+   "mosaic:arith.* logic/compare"
+  ],
+  [
+   "pallas:cond",
+   "mosaic:arith.* arithmetic"
+  ],
+  [
+   "pallas:cond",
+   "mosaic:scf.* control flow"
+  ],
+  [
+   "pallas:dtype convert",
+   "mosaic:arith.* convert"
+  ],
+  [
+   "mosaic:arith.* convert",
+   "hw:VPU"
+  ],
+  [
+   "pallas:transcendental math",
+   "mosaic:math.* transcendental"
+  ],
+  [
+   "pallas:dma_start",
+   "mosaic:tpu.enqueue_dma"
+  ],
+  [
+   "mosaic:tpu.enqueue_dma",
+   "hw:DMA engines"
+  ],
+  [
+   "pallas:dma_wait",
+   "mosaic:tpu.wait_dma2"
+  ],
+  [
+   "mosaic:tpu.wait_dma2",
+   "hw:DMA engines"
+  ],
+  [
+   "pallas:dot_general",
+   "mosaic:arith.constant"
+  ],
+  [
+   "mosaic:arith.constant",
+   "hw:VPU"
+  ],
+  [
+   "pallas:dot_general",
+   "mosaic:arith.* convert"
+  ],
+  [
+   "pallas:dot_general",
+   "mosaic:arith.* arithmetic"
+  ],
+  [
+   "pallas:dot_general",
+   "mosaic:tpu.matmul"
+  ],
+  [
+   "mosaic:tpu.matmul",
+   "hw:MXU"
+  ],
+  [
+   "pallas:dot_general",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:dot_general",
+   "mosaic:vector.multi_reduction"
+  ],
+  [
+   "mosaic:vector.multi_reduction",
+   "hw:VPU"
+  ],
+  [
+   "pallas:gather",
+   "mosaic:tpu.dynamic_gather"
+  ],
+  [
+   "mosaic:tpu.dynamic_gather",
+   "hw:XLU"
+  ],
+  [
+   "pallas:gather",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:iota",
+   "mosaic:tpu.iota"
+  ],
+  [
+   "mosaic:tpu.iota",
+   "hw:VPU"
+  ],
+  [
+   "pallas:load",
+   "mosaic:memref.load"
+  ],
+  [
+   "mosaic:memref.load",
+   "hw:SMEM / scalar unit"
+  ],
+  [
+   "mosaic:memref.load",
+   "hw:VMEM"
+  ],
+  [
+   "pallas:load",
+   "mosaic:tpu.memory_space<any>"
+  ],
+  [
+   "pallas:load",
+   "mosaic:tpu.memory_space<smem>"
+  ],
+  [
+   "mosaic:tpu.memory_space<smem>",
+   "hw:SMEM / scalar unit"
+  ],
+  [
+   "pallas:load",
+   "mosaic:tpu.memory_space<vmem>"
+  ],
+  [
+   "mosaic:tpu.memory_space<vmem>",
+   "hw:VMEM"
+  ],
+  [
+   "pallas:load",
+   "mosaic:tpu.strided_load"
+  ],
+  [
+   "mosaic:tpu.strided_load",
+   "hw:VMEM\u2192VREG load"
+  ],
+  [
+   "pallas:load",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:load",
+   "mosaic:vector.load"
+  ],
+  [
+   "mosaic:vector.load",
+   "hw:VMEM\u2192VREG load"
+  ],
+  [
+   "pallas:transcendental math",
+   "mosaic:arith.* arithmetic"
+  ],
+  [
+   "pallas:transcendental math",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:multiple_of",
+   "mosaic:tpu.assume_multiple"
+  ],
+  [
+   "pallas:logic / compare / select",
+   "mosaic:arith.constant"
+  ],
+  [
+   "pallas:num_programs",
+   "mosaic:tpu.iteration_bound"
+  ],
+  [
+   "mosaic:tpu.iteration_bound",
+   "hw:scalar unit"
+  ],
+  [
+   "mosaic:tpu.iteration_bound",
+   "hw:inter-core comm"
+  ],
+  [
+   "pallas:pad",
+   "mosaic:arith.constant"
+  ],
+  [
+   "pallas:pad",
+   "mosaic:tpu.concatenate"
+  ],
+  [
+   "pallas:pad",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:elementwise arithmetic",
+   "mosaic:arith.* convert"
+  ],
+  [
+   "pallas:reciprocal",
+   "mosaic:tpu.reciprocal"
+  ],
+  [
+   "mosaic:tpu.reciprocal",
+   "hw:VPU"
+  ],
+  [
+   "pallas:repeat",
+   "mosaic:tpu.repeat"
+  ],
+  [
+   "pallas:reshape",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:roll",
+   "mosaic:tpu.dynamic_rotate"
+  ],
+  [
+   "mosaic:tpu.dynamic_rotate",
+   "hw:XLU"
+  ],
+  [
+   "pallas:run_scoped",
+   "mosaic:tpu.yield_"
+  ],
+  [
+   "pallas:semaphore_signal",
+   "mosaic:tpu.sem_signal"
+  ],
+  [
+   "mosaic:tpu.sem_signal",
+   "hw:semaphore fabric"
+  ],
+  [
+   "pallas:semaphore_wait",
+   "mosaic:tpu.sem_wait"
+  ],
+  [
+   "mosaic:tpu.sem_wait",
+   "hw:semaphore fabric"
+  ],
+  [
+   "pallas:slice",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:split",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:squeeze",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:transpose",
+   "mosaic:tpu.transpose"
+  ],
+  [
+   "mosaic:tpu.transpose",
+   "hw:XLU"
+  ],
+  [
+   "pallas:transpose",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "pallas:while",
+   "mosaic:scf.* control flow"
+  ],
+  [
+   "hw:VREG",
+   "hidden:physical VREG alloc"
+  ],
+  [
+   "hw:VREG",
+   "hidden:register spill"
+  ],
+  [
+   "hw:VMEM",
+   "hidden:VMEM bank mapping"
+  ],
+  [
+   "hw:DMA engines",
+   "hidden:DMA channel selection"
+  ],
+  [
+   "hw:DMA engines",
+   "hidden:HW queue assignment"
+  ],
+  [
+   "hw:MXU",
+   "hidden:MXU push/pop staging"
+  ],
+  [
+   "hw:MXU",
+   "hidden:instruction scheduling"
+  ],
+  [
+   "hw:VPU",
+   "hidden:instruction encoding"
+  ],
+  [
+   "hw:MXU",
+   "hidden:cycle-level unit overlap"
+  ],
+  [
+   "hw:MXU",
+   "hidden:pipeline timing"
+  ],
+  [
+   "hw:inter-chip comm",
+   "hidden:ICI route selection"
+  ],
+  [
+   "hw:semaphore fabric",
+   "hidden:contention arbitration"
+  ]
+ ],
+ "exposure_edges": [
+  [
+   "mosaic:math.* transcendental",
+   "pallas:elementwise arithmetic"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:math.* transcendental"
+  ],
+  [
+   "mosaic:arith.* arithmetic",
+   "pallas:elementwise arithmetic"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:arith.* arithmetic"
+  ],
+  [
+   "mosaic:arith.* logic/compare",
+   "pallas:logic / compare / select"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:arith.* logic/compare"
+  ],
+  [
+   "mosaic:arith.* arithmetic",
+   "pallas:axis_index"
+  ],
+  [
+   "mosaic:tpu.device_id",
+   "pallas:axis_index"
+  ],
+  [
+   "hw:scalar unit",
+   "mosaic:tpu.device_id"
+  ],
+  [
+   "hw:inter-core comm",
+   "mosaic:tpu.device_id"
+  ],
+  [
+   "mosaic:tpu.bitcast",
+   "pallas:bitcast"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:tpu.bitcast"
+  ],
+  [
+   "mosaic:tpu.bitcast",
+   "pallas:dtype convert"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:broadcast_in_dim"
+  ],
+  [
+   "hw:XLU",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:vector.* layout"
+  ],
+  [
+   "mosaic:tpu.concatenate",
+   "pallas:concatenate"
+  ],
+  [
+   "hw:XLU",
+   "mosaic:tpu.concatenate"
+  ],
+  [
+   "mosaic:arith.* logic/compare",
+   "pallas:cond"
+  ],
+  [
+   "mosaic:arith.* arithmetic",
+   "pallas:cond"
+  ],
+  [
+   "mosaic:scf.* control flow",
+   "pallas:cond"
+  ],
+  [
+   "mosaic:arith.* convert",
+   "pallas:dtype convert"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:arith.* convert"
+  ],
+  [
+   "mosaic:math.* transcendental",
+   "pallas:transcendental math"
+  ],
+  [
+   "mosaic:tpu.enqueue_dma",
+   "pallas:dma_start"
+  ],
+  [
+   "hw:DMA engines",
+   "mosaic:tpu.enqueue_dma"
+  ],
+  [
+   "mosaic:tpu.wait_dma2",
+   "pallas:dma_wait"
+  ],
+  [
+   "hw:DMA engines",
+   "mosaic:tpu.wait_dma2"
+  ],
+  [
+   "mosaic:arith.constant",
+   "pallas:dot_general"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:arith.constant"
+  ],
+  [
+   "mosaic:arith.* convert",
+   "pallas:dot_general"
+  ],
+  [
+   "mosaic:arith.* arithmetic",
+   "pallas:dot_general"
+  ],
+  [
+   "mosaic:tpu.matmul",
+   "pallas:dot_general"
+  ],
+  [
+   "hw:MXU",
+   "mosaic:tpu.matmul"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:dot_general"
+  ],
+  [
+   "mosaic:vector.multi_reduction",
+   "pallas:dot_general"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:vector.multi_reduction"
+  ],
+  [
+   "mosaic:tpu.dynamic_gather",
+   "pallas:gather"
+  ],
+  [
+   "hw:XLU",
+   "mosaic:tpu.dynamic_gather"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:gather"
+  ],
+  [
+   "mosaic:tpu.iota",
+   "pallas:iota"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:tpu.iota"
+  ],
+  [
+   "mosaic:memref.load",
+   "pallas:load"
+  ],
+  [
+   "hw:SMEM / scalar unit",
+   "mosaic:memref.load"
+  ],
+  [
+   "hw:VMEM",
+   "mosaic:memref.load"
+  ],
+  [
+   "mosaic:tpu.memory_space<any>",
+   "pallas:load"
+  ],
+  [
+   "mosaic:tpu.memory_space<smem>",
+   "pallas:load"
+  ],
+  [
+   "hw:SMEM / scalar unit",
+   "mosaic:tpu.memory_space<smem>"
+  ],
+  [
+   "mosaic:tpu.memory_space<vmem>",
+   "pallas:load"
+  ],
+  [
+   "hw:VMEM",
+   "mosaic:tpu.memory_space<vmem>"
+  ],
+  [
+   "mosaic:tpu.strided_load",
+   "pallas:load"
+  ],
+  [
+   "hw:VMEM\u2192VREG load",
+   "mosaic:tpu.strided_load"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:load"
+  ],
+  [
+   "mosaic:vector.load",
+   "pallas:load"
+  ],
+  [
+   "hw:VMEM\u2192VREG load",
+   "mosaic:vector.load"
+  ],
+  [
+   "mosaic:arith.* arithmetic",
+   "pallas:transcendental math"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:transcendental math"
+  ],
+  [
+   "mosaic:tpu.assume_multiple",
+   "pallas:multiple_of"
+  ],
+  [
+   "mosaic:arith.constant",
+   "pallas:logic / compare / select"
+  ],
+  [
+   "mosaic:tpu.iteration_bound",
+   "pallas:num_programs"
+  ],
+  [
+   "hw:scalar unit",
+   "mosaic:tpu.iteration_bound"
+  ],
+  [
+   "hw:inter-core comm",
+   "mosaic:tpu.iteration_bound"
+  ],
+  [
+   "mosaic:arith.constant",
+   "pallas:pad"
+  ],
+  [
+   "mosaic:tpu.concatenate",
+   "pallas:pad"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:pad"
+  ],
+  [
+   "mosaic:arith.* convert",
+   "pallas:elementwise arithmetic"
+  ],
+  [
+   "mosaic:tpu.reciprocal",
+   "pallas:reciprocal"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:tpu.reciprocal"
+  ],
+  [
+   "mosaic:tpu.repeat",
+   "pallas:repeat"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:reshape"
+  ],
+  [
+   "mosaic:tpu.dynamic_rotate",
+   "pallas:roll"
+  ],
+  [
+   "hw:XLU",
+   "mosaic:tpu.dynamic_rotate"
+  ],
+  [
+   "mosaic:tpu.yield_",
+   "pallas:run_scoped"
+  ],
+  [
+   "mosaic:tpu.sem_signal",
+   "pallas:semaphore_signal"
+  ],
+  [
+   "hw:semaphore fabric",
+   "mosaic:tpu.sem_signal"
+  ],
+  [
+   "mosaic:tpu.sem_wait",
+   "pallas:semaphore_wait"
+  ],
+  [
+   "hw:semaphore fabric",
+   "mosaic:tpu.sem_wait"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:slice"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:split"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:squeeze"
+  ],
+  [
+   "mosaic:tpu.transpose",
+   "pallas:transpose"
+  ],
+  [
+   "hw:XLU",
+   "mosaic:tpu.transpose"
+  ],
+  [
+   "mosaic:vector.* layout",
+   "pallas:transpose"
+  ],
+  [
+   "mosaic:scf.* control flow",
+   "pallas:while"
+  ]
+ ],
+ "gap_edges": [
+  [
+   "hw:VREG",
+   "hidden:physical VREG alloc"
+  ],
+  [
+   "hw:VREG",
+   "hidden:register spill"
+  ],
+  [
+   "hw:VMEM",
+   "hidden:VMEM bank mapping"
+  ],
+  [
+   "hw:DMA engines",
+   "hidden:DMA channel selection"
+  ],
+  [
+   "hw:DMA engines",
+   "hidden:HW queue assignment"
+  ],
+  [
+   "hw:MXU",
+   "hidden:MXU push/pop staging"
+  ],
+  [
+   "hw:MXU",
+   "hidden:instruction scheduling"
+  ],
+  [
+   "hw:VPU",
+   "hidden:instruction encoding"
+  ],
+  [
+   "hw:MXU",
+   "hidden:cycle-level unit overlap"
+  ],
+  [
+   "hw:MXU",
+   "hidden:pipeline timing"
+  ],
+  [
+   "hw:inter-chip comm",
+   "hidden:ICI route selection"
+  ],
+  [
+   "hw:semaphore fabric",
+   "hidden:contention arbitration"
+  ]
+ ],
+ "n_gap": 12,
+ "n_hidden": 12,
+ "n_partial": 14,
+ "stats": {
+  "jax_primitives_total": 105,
+  "primitives_shown": 35,
+  "mosaic_ops": 31,
+  "hw_units": 12,
+  "tpu_dialect_ops": 175,
+  "active_primitives": 54,
+  "kernels_scanned": 8,
+  "focus_active": true
+ },
+ "note": "AUTO-EXTRACTED from the stack: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks primitives the sglang-jax kernels use; Mosaic\u2192hardware + the hidden-below-Mosaic floor are rule tables (not in code). Green = lowered \u25bc & exposed \u25b2; red directed = lowered into a HIDDEN capability (no IR handle) = flexibility gap."
+}

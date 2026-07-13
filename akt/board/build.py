@@ -87,6 +87,17 @@ def _kernels_from_eval():
 # in akt/core/analysis/flexgraph_spec.py (jax-free). A lowering edge into a HIDDEN node
 # has no exposure back to the top -> the flexibility gap.
 def _flexgraph(eval_summary):
+    # Prefer the AUTO-EXTRACTED graph: flexgraph_extract.py navigates the live stack
+    # (jax/Pallas/Mosaic lowering source + the serving kernels) and writes
+    # flexgraph_generated.json. Fall back to the hand-authored spec if not generated.
+    gen = ROOT / "core/analysis/flexgraph_generated.json"
+    try:
+        if gen.exists():
+            g = json.loads(gen.read_text())
+            if g.get("nodes"):
+                return g
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from akt.core.analysis.flexgraph_spec import build_graph
         return build_graph()
