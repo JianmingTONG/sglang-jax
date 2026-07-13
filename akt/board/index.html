@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AKT · sglang-jax kernel autotuning loop</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --ink:#e7eaf0; --mut:#9aa4b2;
+    --line:#2a2f3a; --accent:#6ea8fe; --good:#3fb950; --bad:#f85149; --warn:#d29922;
+    --defer:#8b949e;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f6f7f9;--panel:#fff;--panel2:#f0f2f5;--ink:#12151b;--mut:#5a6472;
+      --line:#e2e5ea;--accent:#2563eb;--good:#1a7f37;--bad:#cf222e;--warn:#9a6700;--defer:#6e7781;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent)}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+  h1{font-size:20px;margin:0 0 2px;letter-spacing:.2px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);
+    margin:30px 0 12px;font-weight:600}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .stat .v{font-size:22px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
+  .stat .d{color:var(--mut);font-size:11px;margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto}
+  code{background:var(--panel2);padding:1px 5px;border-radius:5px;font-size:12px}
+  .badge{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid transparent}
+  .b-keep{color:var(--good);border-color:var(--good)}
+  .b-reject{color:var(--bad);border-color:var(--bad)}
+  .b-defer{color:var(--defer);border-color:var(--defer)}
+  .b-gpu{color:var(--accent);border-color:var(--accent)}
+  .b-run{color:var(--warn);border-color:var(--warn)}
+  .b-unexposed{color:var(--accent);border-color:var(--accent)}
+  .b-pinned{color:var(--warn);border-color:var(--warn)}
+  .b-floor-only{color:var(--defer);border-color:var(--defer)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  .live{display:flex;align-items:center;gap:10px;margin:14px 0 4px;color:var(--mut);font-size:13px}
+  .frontier li{margin-bottom:9px}
+  .frontier .what{color:var(--mut)}
+  .muted{color:var(--mut)}
+  .empty{color:var(--mut);font-style:italic;padding:10px 2px}
+  .flex{display:flex;gap:12px;flex-wrap:wrap;align-items:baseline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AKT · capability-elevation loop <span class="muted">on sglang-jax TPU-Pallas kernels</span></h1>
+  <div class="sub" id="subtitle">Each round elevates one lowering-reachable flexibility gap into a tunable design knob, autotunes the enlarged space, and keeps it iff it beats the incumbent by &gt; target — under real-HW latency + reference-correctness.</div>
+
+  <div class="live" id="live"></div>
+
+  <h2>Incumbent</h2>
+  <div class="stats" id="stats"></div>
+
+  <h2>Per-kernel — searched best vs shipped default</h2>
+  <div class="panel scroll"><table id="ktab"><thead><tr>
+    <th>kernel</th><th>regime</th><th class="num">default</th><th class="num">best</th>
+    <th class="num">speedup</th><th class="num">|space|</th><th>best config</th><th>correct</th>
+  </tr></thead><tbody></tbody></table></div>
+
+  <h2>Capability-elevation trail</h2>
+  <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
+    <th class="num">R</th><th>capability</th><th>decision</th><th class="num">Δ%</th>
+    <th class="num">est%</th><th>gap / reason</th>
+  </tr></thead><tbody></tbody></table></div>
+
+  <h2>Flexibility-gap frontier <span class="muted">— the candidate capabilities</span></h2>
+  <div class="panel"><ul class="frontier" id="frontier"></ul></div>
+
+  <div class="sub" style="margin-top:24px" id="gen"></div>
+</div>
+
+<script>
+const ms = s => (s==null? "—" : (s*1e3).toFixed(2)+" ms");
+const pct = v => (v==null? "—" : (v>0?"+":"")+v.toFixed(2)+"%");
+const esc = s => (s==null?"":String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function regimeBadge(r){
+  if(!r||r.includes("defer")) return '<span class="badge b-defer">tpu-deferred</span>';
+  return '<span class="badge b-gpu">'+esc(r)+'</span>';
+}
+function decBadge(d){
+  if(d==="keep"||d==="baseline") return '<span class="badge b-keep">'+esc(d)+'</span>';
+  return '<span class="badge b-reject">'+esc(d||"reject")+'</span>';
+}
+
+async function load(){
+  let b={}, stt={};
+  try{ b = await (await fetch('board.json?_='+Date.now())).json(); }catch(e){}
+  try{ stt = await (await fetch('evolve_status.json?_='+Date.now())).json(); }catch(e){}
+
+  // live status
+  const live = document.getElementById('live');
+  const running = stt.state==="running";
+  const col = running? 'var(--warn)':'var(--good)';
+  const phase = running ? ('working — '+esc(stt.phase||stt.capability||'…')) : 'idle';
+  const last = stt.last ? (' · last: R'+esc(stt.last.round)+' '+esc(stt.last.capability||'')+' → '+esc(stt.last.decision||'')) : '';
+  live.innerHTML = '<span class="dot" style="background:'+col+'"></span>'+
+    '<b>'+(running?'RUNNING':'IDLE')+'</b> '+esc(phase)+last;
+
+  const inc = b.incumbent||{}, ev = b.eval||{};
+  document.getElementById('stats').innerHTML = [
+    ['shipped default', ms(inc.shipped_default_geomean_s), 'geomean, profiled here (incumbent baseline)'],
+    ['autotune (base knobs)', ms(inc.base_search_geomean_s), 'search over shipped knobs only'],
+    ['current incumbent', ms(inc.current_geomean_s), 'ratchets down as capabilities land'],
+    ['design choices', inc.choices!=null? inc.choices : '—', 'total configs across the suite'],
+    ['round', inc.round!=null? inc.round : 0, 'KEEP bar > '+(inc.target_pct??2)+'%'],
+    ['correctness', ev.all_correct===false?'FAIL':(ev.all_correct==null?'—':'all pass'),
+      (ev.n_runnable||0)+' runnable · '+(ev.n_deferred||0)+' tpu-deferred'],
+  ].map(([k,v,d])=>'<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+
+      '</div><div class="d">'+d+'</div></div>').join('');
+
+  // kernels
+  const kt = document.querySelector('#ktab tbody');
+  kt.innerHTML = (b.kernels||[]).map(k=>{
+    const su = k.speedup? k.speedup.toFixed(2)+'×' : '—';
+    const cfg = k.best_config? '<code>'+esc(JSON.stringify(k.best_config))+'</code>' : '<span class="muted">'+esc(k.note||'')+'</span>';
+    const cor = k.correct===true?'<span class="badge b-keep">ok</span>':
+                k.correct===false?'<span class="badge b-reject">mismatch</span>':
+                '<span class="badge b-defer">—</span>';
+    return '<tr><td><b>'+esc(k.case||k.kernel)+'</b></td><td>'+regimeBadge(k.regime)+'</td>'+
+      '<td class="num">'+ms(k.default_s)+'</td><td class="num">'+ms(k.best_s)+'</td>'+
+      '<td class="num">'+su+'</td><td class="num">'+(k.space_size??'—')+'</td>'+
+      '<td>'+cfg+'</td><td>'+cor+'</td></tr>';
+  }).join('') || '<tr><td colspan="8" class="empty">no eval yet — run the loop `init`.</td></tr>';
+
+  // trail
+  const tt = document.querySelector('#ttab tbody');
+  tt.innerHTML = (b.trail||[]).slice().reverse().map(t=>
+    '<tr><td class="num">'+esc(t.round)+'</td><td><b>'+esc(t.capability)+'</b></td>'+
+    '<td>'+decBadge(t.decision)+'</td><td class="num">'+pct(t.delta_pct)+'</td>'+
+    '<td class="num">'+(t.estimated_relief_pct!=null? t.estimated_relief_pct+'%':'—')+'</td>'+
+    '<td class="muted">'+esc((t.gap||t.reason||'').slice(0,180))+'</td></tr>'
+  ).join('') || '<tr><td colspan="6" class="empty">no capability rounds yet.</td></tr>';
+
+  // frontier
+  document.getElementById('frontier').innerHTML = (b.frontier||[]).map(f=>
+    '<li><span class="badge b-'+esc(f.status)+'">'+esc(f.status)+'</span> '+
+    '<code>'+esc(f.interface)+'</code> — <span class="what">'+esc(f.what)+'</span></li>'
+  ).join('') || '<li class="empty">frontier unavailable</li>';
+
+  document.getElementById('gen').textContent =
+    'objective: '+(b.objective||'')+'  ·  generated '+(b.generated||'')+
+    (inc.commit? '  ·  incumbent @'+inc.commit : '');
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
