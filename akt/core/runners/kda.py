@@ -47,10 +47,24 @@ def _run(inp, cfg):
         inp["q"], inp["k"], inp["v"], inp["g"], inp["beta"], inp["cu"])
 
 
-def _space():
+def _space(seqlen: int) -> DesignSpace:
+    # `chunk_size` is the BT time tile the four-stage pipeline blocks over. The
+    # kernel's OWN constraints (no shipped tuned table for KDA) define the real
+    # supported set:
+    #   * power of 2 — kda.py:195 asserts `chunk_size == 2**(bit_length-1)`;
+    #   * divides the sequence length — kda.py:1026 asserts `T % chunk_size == 0`
+    #     (after varlen alignment pads T up to a multiple of BT). Restricting to
+    #     divisors of the original T keeps the honest set (a non-divisor only
+    #     "works" by over-padding T, e.g. 256 on a 128-seq — a degenerate config);
+    #   * >= 16 — chunk_size 8 (and below) trips an AssertionError in the chunked
+    #     pipeline, so 16 is the smallest supported tile (empirically verified).
+    # The divisibility bound also caps chunk_size at T, so the space cannot explode.
     return DesignSpace(
-        knobs=[Knob("chunk_size", [16, 32, 64, 128], default=64)],
-        valid=lambda c: c["chunk_size"] >= 16 and (c["chunk_size"] & (c["chunk_size"] - 1)) == 0,
+        knobs=[Knob("chunk_size", [16, 32, 64, 128, 256], default=64)],
+        valid=lambda c, T=seqlen: (
+            c["chunk_size"] >= 16
+            and (c["chunk_size"] & (c["chunk_size"] - 1)) == 0
+            and T % c["chunk_size"] == 0),
     )
 
 
@@ -58,7 +72,7 @@ CASES = [
     KernelCase(
         kernel_id="kda", shape_id=f"seq{sl}_h{h}_d{d}",
         make_inputs=functools.partial(make_inputs, sl, h, d),
-        run=_run, reference=reference, space=_space(),
+        run=_run, reference=reference, space=_space(sl),
         atol=ATOL, rtol=RTOL,
         check_out=check_out,  # _run/reference already return o
         native_test=NATIVE_TEST,

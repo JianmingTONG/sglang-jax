@@ -29,6 +29,7 @@ import jax
 import jax.numpy as jnp
 
 from sgl_jax.srt.kernels.update_kv_cache.update_kv_cache import (
+    VMEM_SIZE,
     get_slot_mapping,
     kv_cache_update,
 )
@@ -69,12 +70,39 @@ def _run(inp, cfg):
             page_size=ps, num_slices_per_block=nspb, kv_partition_axis="tensor")
 
 
-def _space():
+def _space(head_num: int, head_dim: int):
+    """Base design space, widened to the SHIPPED autotuning set.
+
+    `num_slices_per_block` is the true tuned axis: the maintainers' bench
+    (benchmark/kernels/update_kv_cache/bench_update_kv_cache.py::full_benchmark)
+    sweeps the full power-of-2 ladder [2 .. 4096] and their tuned table
+    (update_kv_cache/tuned_block_sizes.py::best_num_slices_per_block_config)
+    contains best values up to 4096 — so those are the real supported candidates
+    (previously the runner only enumerated up to 64). `page_size` stays the
+    kernel's supported slice granularities {1, 64, 128}.
+
+    VMEM guard mirrors the kernel's own cap (get_num_slices_per_block): the
+    per-block scratch VMEM((nspb, page_size, head_num, head_dim), bf16) must fit
+    VMEM_SIZE. The bench enforces this by `min(get_num_slices_per_block(...), nspb)`;
+    here we prune any config whose scratch would exceed VMEM (which would OOM /
+    fail the pallas_call vmem_limit_bytes), so only truly-supported configs are
+    enumerated. bf16 => 2 bytes/element.
+    """
+    bytes_per_elt = 2  # bf16 (make_inputs draws new_kv/cache as bfloat16)
+
+    def _fits_vmem(cfg: dict) -> bool:
+        nspb, ps = int(cfg["num_slices_per_block"]), int(cfg["page_size"])
+        # kernel: max_num_slices_per_block = VMEM // (bytes * page_size * heads * head_dim)
+        max_nspb = VMEM_SIZE // (bytes_per_elt * ps * head_num * head_dim)
+        return 1 <= nspb <= max_nspb
+
     return DesignSpace(
         knobs=[
-            Knob("num_slices_per_block", [2, 4, 8, 16, 32, 64], default=8),
+            Knob("num_slices_per_block",
+                 [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096], default=8),
             Knob("page_size", [1, 64, 128], default=64),
         ],
+        valid=_fits_vmem,
     )
 
 
@@ -82,7 +110,7 @@ CASES = [
     KernelCase(
         kernel_id="kv_cache", shape_id=f"h{hn}_cache{cl}_new{nl}",
         make_inputs=functools.partial(make_inputs, hn, cl, nl, 128),
-        run=_run, reference=reference, space=_space(),
+        run=_run, reference=reference, space=_space(hn, 128),
         atol=ATOL, rtol=RTOL, native_test=NATIVE_TEST,
         regime_pref=("tpu-deferred",),
         note="tpu-deferred (kernel TPU-only, no interpret path); "

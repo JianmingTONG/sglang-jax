@@ -69,17 +69,60 @@ def _run(inp, cfg):
     )
 
 
-def _space():
+def _vmem_ok(bt: int, bf: int, h: int, budget: int = 60 * 1024 * 1024) -> bool:
+    """Conservative VMEM proxy mirroring the DOMINANT terms of bench_v2's
+    ``_estimate_vmem_bytes_v2`` for the bf16 / no-shared-expert regime this case
+    runs in (weight double-buffers dominate; per-``bts`` accumulators are small,
+    ``bts == bt`` here). Prunes any tile whose live VMEM would blow past the
+    kernel's ~64 MB budget, so widening the value lists cannot enumerate an
+    OOM config. Deliberately over-counts (2-byte bf16 weights, x2 buffering)."""
+    bts = bt
+    # w1,w3 double buffers (2, h, bf) + w2 double buffer (2, bf, h), bf16 (2 bytes).
+    w = 2 * (2 * h * bf * 2) + 2 * (bf * h * 2)
+    # gate/up accumulators (bts, bf) f32 x2 + x/y_acc/y_stage (bts, h) + 2 output banks.
+    acc = 2 * (bts * bf * 4) + bts * h * (2 + 4 + 2) + 2 * (bt * h * 2)
+    return (w + acc) < budget
+
+
+def _space(nt: int, h: int, i: int) -> DesignSpace:
+    """The v2 block-config design space: the maintainer-SUPPORTED tile candidates,
+    not a hand-picked subset.
+
+    Value lists are the union of the shipped tuned table
+    (``fused_moe/v2/tuned_block_configs.py::TUNED_BLOCK_CONFIGS``) and the
+    ``bench_v2.py::generate_tune_candidates`` ladders:
+      * ``bt``  — power-of-2 outer-token ladder {8..256} (tuned table + generator).
+      * ``bf``  — intermediate-tile ladder {128,256,512,1024,2048} (generator
+                  ``bf_list``; tuned table adds nothing beyond it).
+      * ``btc`` — 8-aligned compute sub-tile ladder {8..128} (generator emits the
+                  8-aligned divisors of ``bts``; power-of-2 ``bts`` -> power-of-2 btc).
+      * ``bse`` — SE intermediate-tile ladder {128,256,512,1024,2048} (tuned table
+                  {128,256,512,1024} + generator SE candidate set).
+
+    The ``valid`` guard prunes to the configs the kernel actually supports for THIS
+    shape (``nt`` tokens, hidden=``h``, intermediate=``i``), mirroring the kernel's
+    own asserts (kernel.py:235-246) + ``effective_for`` + the bench VMEM filter.
+    ``bts`` is left at ``bt`` (the runner passes ``bts=None`` -> ``effective_for``
+    sets ``bts=bt``), so every bts-based check below uses ``bt``."""
     return DesignSpace(
         knobs=[
-            Knob("bt", [8, 16, 32, 64], default=32),
-            Knob("bf", [256, 512], default=512),
-            Knob("btc", [8, 32], default=32),
-            Knob("bse", [128, 256], default=256),
+            Knob("bt", [8, 16, 32, 64, 128, 256], default=32),
+            Knob("bf", [128, 256, 512, 1024, 2048], default=512),
+            Knob("btc", [8, 16, 32, 64, 128], default=32),
+            Knob("bse", [128, 256, 512, 1024, 2048], default=256),
         ],
-        # compute token sub-tile must not exceed the outer token tile (mirrors the
-        # kernel's effective_for: btc = min(btc, bts=bt)).
-        valid=lambda c: c["btc"] <= c["bt"],
+        valid=lambda c: (
+            # bf: divides the intermediate dim and is 128-lane aligned (kernel asserts).
+            i % c["bf"] == 0 and c["bf"] % 128 == 0
+            # btc: 8-aligned (VREG sublane) divisor of bts(=bt), and btc <= bt.
+            and c["btc"] % 8 == 0 and c["btc"] <= c["bt"] and c["bt"] % c["btc"] == 0
+            # bt: divides the (single-host) token count; bts=bt so the same bound.
+            and c["bt"] <= nt and nt % c["bt"] == 0
+            # bse: SE intermediate tile <= bf and divides the intermediate dim.
+            and c["bse"] <= c["bf"] and i % c["bse"] == 0
+            # VMEM sanity so the widened lists never enumerate an OOM tile.
+            and _vmem_ok(c["bt"], c["bf"], h)
+        ),
     )
 
 
@@ -98,7 +141,7 @@ CASES = [
         make_inputs=functools.partial(make_inputs, _DTYPE, _TOPK, _NE, _H, _I, _NT),
         run=_run,
         reference=reference,
-        space=_space(),
+        space=_space(_NT, _H, _I),
         atol=ATOL,
         rtol=RTOL,
         native_test=NATIVE_TEST,

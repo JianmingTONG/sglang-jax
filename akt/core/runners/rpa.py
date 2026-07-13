@@ -23,7 +23,10 @@ from __future__ import annotations
 
 import functools
 
+import jax.numpy as jnp
+
 from sgl_jax.srt.kernels.ragged_paged_attention.ragged_paged_attention_v3 import (
+    get_vmem_estimate_bytes,
     ragged_paged_attention,
 )
 from sgl_jax.srt.kernels.ragged_paged_attention.util import align_to, next_power_of_2
@@ -38,10 +41,23 @@ from akt.benchmark.refs.rpa import (
 )
 from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 
-# Shipped decode bkv candidate set (aligned to page/kv_packing), from
-# get_block_spec_config_v3.py::_bkv_candidates (minus the 4096 upper probe).
-_BKV_CANDIDATES = [256, 512, 1024, 2048]
+# FULL shipped decode bkv candidate set, verbatim from
+# get_block_spec_config_v3.py::_bkv_candidates (the `raw` list before the
+# per-shape align/clamp): [256, 512, 1024, 2048, 4096]. The 4096 upper probe was
+# previously dropped here; it IS part of the maintainers' supported sweep (and
+# wins many hd128 decode cells in tuned_block_sizes_v3.py), so restore it. The
+# per-shape pruning (align to page, clamp to max_kv, VMEM fit) is applied by the
+# DesignSpace.valid guard in `_space`, exactly mirroring `_bkv_candidates` +
+# `_fits_vmem`.
+_BKV_CANDIDATES = [256, 512, 1024, 2048, 4096]
 _KV_PACKING_F32 = 1  # get_dtype_packing(float32) = 32 // 32
+
+# VMEM sanity cap for the decode `valid` guard — mirrors the tuner's _fits_vmem
+# pre-filter (get_block_spec_config_v3.py::_default_vmem_limit fallback of
+# 120 MiB, rounded to a full-capacity-class 128 MiB hard cap). For the small
+# decode shapes here it never binds; it only prevents oversized (OOM) tiles from
+# entering the space for larger shapes.
+_VMEM_LIMIT_BYTES = 128 * 1024 * 1024
 
 
 def _heuristic_decode_bkv(max_kv: int, head_dim: int, num_kv_heads: int, page_size: int) -> int:
@@ -87,11 +103,55 @@ def _run(inp: dict, cfg: dict):
     return out
 
 
-def _space(page_size: int, default_bkv: int) -> DesignSpace:
+def _space(
+    page_size: int,
+    max_kv: int,
+    num_q_heads: int,
+    num_kv_heads: int,
+    head_dim: int,
+    default_bkv: int,
+) -> DesignSpace:
+    """Decode design space over the FULL shipped bkv_sz candidate set.
+
+    `values` is the maintainers' full supported list (`_BKV_CANDIDATES` ==
+    get_block_spec_config_v3.py::_bkv_candidates' raw list). The `valid` guard
+    reproduces that generator's per-shape pruning so only truly-supported
+    configs are enumerated:
+
+      * divisibility — bkv_sz (== bkv_csz) must be a multiple of the page size.
+        The kernel aligns bkv to `max(page_size, kv_packing)`; kv_packing==1 for
+        f32, so page_size is the binding alignment (and the shipped candidates
+        are already powers of two >= page_size).
+      * size sanity — `_bkv_candidates` does `min(v, max_kv)` + dedup, so a bkv
+        larger than this shape's max context length is never a DISTINCT
+        supported config (it clamps to max_kv). Prune bkv > max_kv.
+      * VMEM sanity — mirror the tuner's `_fits_vmem` pre-filter using the
+        kernel's own `get_vmem_estimate_bytes`, so an oversized (OOM) tile never
+        enters the space.
+    """
+
+    def _valid(c: dict) -> bool:
+        bkv = int(c["bkv_sz"])
+        if bkv % page_size != 0:  # divisibility the kernel asserts (bkv, bkv_csz)
+            return False
+        if bkv > max_kv:  # size sanity — _bkv_candidates clamps min(v, max_kv)
+            return False
+        est = get_vmem_estimate_bytes(  # VMEM sanity — mirrors _fits_vmem
+            num_kv_heads,
+            num_q_heads // num_kv_heads,
+            head_dim,
+            1,  # decode bq_sz is pinned to 1
+            bkv,
+            jnp.float32,  # make_inputs builds f32 q/kv
+            jnp.float32,
+            use_custom_mask=False,
+            bkv_csz=bkv,  # sub-tile pinned to bkv (nested attention loop disabled)
+        )
+        return est <= _VMEM_LIMIT_BYTES
+
     return DesignSpace(
         knobs=[Knob("bkv_sz", list(_BKV_CANDIDATES), default=default_bkv)],
-        # kernel requires bkv_sz (and bkv_csz==bkv_sz) divisible by page_size.
-        valid=lambda c: c["bkv_sz"] % page_size == 0,
+        valid=_valid,
     )
 
 
@@ -115,7 +175,7 @@ def _make_case(spec) -> KernelCase:
         ),
         run=_run,
         reference=reference,
-        space=_space(page_size, default_bkv),
+        space=_space(page_size, max_kv, num_q_heads, num_kv_heads, head_dim, default_bkv),
         atol=ATOL,
         rtol=RTOL,
         check_out=check_out,

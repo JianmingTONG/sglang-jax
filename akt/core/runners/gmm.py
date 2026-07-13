@@ -20,9 +20,15 @@ The correctness contract (reference, tolerance, canonical inputs, native test) i
 FROZEN in `akt/benchmark/refs/gmm.py` — this runner only owns the DesignSpace and
 the config->kernel run mapping.
 
-Design space (base): `tile_m ∈ {64,128,256}`, `tile_k ∈ {256,512,1024}`,
-`tile_n ∈ {256,512,1024}` — gmm_v2's shipped tiling axes. `valid` keeps configs
-whose tiles divide the problem dims (clean tiling for both v1 and v2).
+Design space (base): the ACTUAL shipped tiling candidate set, mirroring
+`benchmark/kernels/megablox_gmm/tune_gmm_v1_block_sizes.py::_make_tiling_candidates`
+(and the value set of the shipped `tuned_block_sizes.py` TUNED_BLOCK_SIZES table):
+`tile_m ∈ {m, 128, 256}`, and `tile_k, tile_n ∈ {128} ∪ {256*mult : mult ∈
+[1,2,3,4,5,6,8,10,12,16,20,24]}` (i.e. 128,256,512,768,1024,…,6144). `valid` keeps
+the tuner's clean-tiling constraint — tiles must divide the problem dims — which
+also enforces tile≤dim (a positive divisor of d is ≤ d), exactly the tuner's
+`val<=dim and dim%val==0` guard, so the honest candidate lists collapse to a
+handful of valid configs per shape.
 """
 from __future__ import annotations
 
@@ -81,15 +87,28 @@ def _run_v2(inp, cfg):
         maybe_quantize_lhs=False)
 
 
+# Shipped gmm v1/v2 tiling candidate set (tune_gmm_v1_block_sizes.py::
+# _make_tiling_candidates + tuned_block_sizes.py). tk/tn are the SAME honest set
+# for every shape; divisibility (in `valid`) prunes it to the supported handful.
+_TKN_MULTS = (1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24)
+_TKN_VALUES = [128] + [256 * mult for mult in _TKN_MULTS]  # 128,256,512,...,6144
+
+
 def _space(m: int, k: int, n: int) -> DesignSpace:
+    # tile_m ∈ {m, 128, 256} (the tuner's tm_options); the valid guard drops any
+    # that don't divide m, so no need to pre-filter here.
+    tile_m_values = sorted({128, 256, m})
     return DesignSpace(
         knobs=[
-            Knob("tile_m", [64, 128, 256], default=128),
-            Knob("tile_k", [256, 512, 1024], default=512),
-            Knob("tile_n", [256, 512, 1024], default=512),
+            Knob("tile_m", tile_m_values, default=128),
+            Knob("tile_k", list(_TKN_VALUES), default=512),
+            Knob("tile_n", list(_TKN_VALUES), default=512),
         ],
         # Clean tiling: tiles divide the problem dims (v1 requires tm | m; keeps
-        # v2 tiles aligned too). Captures dims via default args.
+        # v2 tiles aligned too). Divisibility also bounds tile<=dim (a positive
+        # divisor of d is <=d), matching the tuner's `val<=dim and dim%val==0`
+        # guard — so oversized/OOM tiles are never enumerated. Captures dims via
+        # default args.
         valid=lambda c, m=m, k=k, n=n: (
             m % c["tile_m"] == 0 and k % c["tile_k"] == 0 and n % c["tile_n"] == 0),
     )

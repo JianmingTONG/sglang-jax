@@ -1,13 +1,13 @@
 {
- "start_ts": 1783971092.4193337,
- "deadline_ts": 1783992692.419334,
+ "start_ts": 1783973518.8663836,
+ "deadline_ts": 1783995118.8663838,
  "round": 0,
  "target_improvement": 0.02,
- "incumbent_geomean": 0.0011252519511674027,
- "incumbent_choices": 241,
- "shipped_default_geomean": 0.0020729338364710265,
- "base_search_geomean": 0.0011252519511674027,
- "incumbent_commit": "d2d23b7e9961921602cc92b254287761ca044363",
+ "incumbent_geomean": 0.001243242148069211,
+ "incumbent_choices": 3870,
+ "shipped_default_geomean": 0.002530627538298396,
+ "base_search_geomean": 0.001243242148069211,
+ "incumbent_commit": "86212a9d4336658ea7df223a16870f03ae0227bf",
  "objective_name": "geomean_s",
  "objective_unit": "s"
 }

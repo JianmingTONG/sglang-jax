@@ -162,10 +162,12 @@ def _flexgraph(eval_summary):
         "exposure_edges": exposure,
         "gap_edges": [{"from": a, "to": b, "why": why} for (a, b), why in _FLEX_GAPS.items()],
         "n_exposed": len(_FLEX_LOWERING) - len(_FLEX_GAPS), "n_gap": len(_FLEX_GAPS),
-        "note": ("Single graph. ▼ lowering (top→bottom): the stack can execute the edge. "
-                 "▲ exposure (bottom→top): the API names/selects it. An edge with ▼ but "
-                 "no ▲ (red, dashed) is a FLEXIBILITY GAP — executable in the lowering, "
-                 "unnamed at the top; these are the frontier the loop elevates."),
+        "note": ("Single graph. An edge present in BOTH lowering (top→bottom, the stack "
+                 "can execute it) and exposure (bottom→top, the API names it) is drawn "
+                 "GREEN with arrows omitted (bidirectional). An edge present in lowering "
+                 "but NOT exposure is drawn RED with a directed down-arrow — a FLEXIBILITY "
+                 "GAP: executable in the lowering, unnamed at the top; the frontier the "
+                 "loop elevates."),
     }
 
 

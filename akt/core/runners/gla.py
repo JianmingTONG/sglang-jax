@@ -42,10 +42,31 @@ def _run(inp, cfg):
         inp["q"], inp["k"], inp["v"], inp["g_gamma"], inp["cu"])
 
 
-def _space():
+# Real supported set for `chunk_size` (the BT chunk tile). The kernel imposes NO
+# tuned table — it is a free param whose only hard constraint is `T % chunk_size == 0`
+# (asserted at simple_gla.py:445,771; BK/BV pinned to 128). The maintainers' convention
+# (and every production caller — lightning_backend default 64) is powers of two, so the
+# candidate set is all pow2 tiles from the existing lower bound up to a VMEM-sane cap.
+_CHUNK_CANDIDATES = [16, 32, 64, 128, 256, 512, 1024]
+# VMEM-sane cap: the intra-chunk score tile is BT×BT float32; bound it to 4 MiB so the
+# space can't enumerate configs that OOM TPU VMEM (BT=2048 -> 16 MiB tile is excluded,
+# and is also slower + degenerates to a single full-seq dense chunk).
+_SCORE_TILE_BYTES_CAP = 4 * 1024 * 1024  # -> chunk_size <= 1024
+
+
+def _space(seqlen: int):
+    def _valid(c):
+        cs = c["chunk_size"]
+        return (
+            cs > 0
+            and (cs & (cs - 1)) == 0          # power of two (maintainer convention)
+            and seqlen % cs == 0               # kernel asserts T % chunk_size == 0
+            and cs * cs * 4 <= _SCORE_TILE_BYTES_CAP  # VMEM-sane BT×BT score tile
+        )
+
     return DesignSpace(
-        knobs=[Knob("chunk_size", [16, 32, 64, 128, 256], default=64)],
-        valid=lambda c: c["chunk_size"] <= 512,
+        knobs=[Knob("chunk_size", _CHUNK_CANDIDATES, default=64)],
+        valid=_valid,
     )
 
 
@@ -53,7 +74,7 @@ CASES = [
     KernelCase(
         kernel_id="gla", shape_id=f"seq{sl}_h{h}",
         make_inputs=functools.partial(make_inputs, sl, h),
-        run=_run, reference=reference, space=_space(),
+        run=_run, reference=reference, space=_space(sl),
         atol=ATOL, rtol=RTOL, native_test=NATIVE_TEST,
         note="chunked prefill GLA; ref=fused_recurrent (pure JAX), tol=repo 1e-3",
     )

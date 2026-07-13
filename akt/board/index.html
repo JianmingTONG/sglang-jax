@@ -70,13 +70,12 @@
   <div class="panel"><canvas id="geoChart" height="112"></canvas>
     <div class="sub" style="margin:8px 2px 0" id="chartnote"></div></div>
 
-  <h2>Per-kernel — incumbent (best knob) vs shipped default</h2>
+  <h2>Per-kernel — incumbent (best config in the existing design space)</h2>
   <div class="panel scroll"><table id="ktab"><thead><tr>
-    <th>kernel</th><th>regime</th><th class="num">shipped&nbsp;def</th><th class="num">incumbent</th>
-    <th class="num">interp&nbsp;Δ*</th><th class="num">|space|</th><th>best config</th>
-    <th>ref&nbsp;check</th><th>sglang&nbsp;pytest</th>
+    <th>kernel</th><th>regime</th><th class="num">incumbent&nbsp;(interp)*</th><th>best config</th>
+    <th class="num">|space|</th><th>ref&nbsp;check</th><th>sglang&nbsp;pytest</th>
   </tr></thead><tbody></tbody></table></div>
-  <div class="sub" style="margin-top:6px">* interpret-mode proxy latencies (no TPU on this box) — the Δ is an interpret artifact, <b>not</b> a TPU speedup. Real latencies + config ranking are re-measured on TPU.</div>
+  <div class="sub" style="margin-top:6px">* The incumbent is the best config in the kernel's <b>existing</b> design space — this is the baseline, not an optimization. No shipped-default comparison is shown: under Pallas interpret (no TPU here) latency scales with grid-step count, so any default→autotuned "speedup" is an <b>interpret artifact</b>, not a real win. Latencies are re-measured (and configs re-ranked) on TPU.</div>
 
   <h2>Capability-elevation trail</h2>
   <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
@@ -129,8 +128,6 @@ function renderChart(b){
     { label:'round attempt', data:attempts, showLine:false,
       pointRadius:5, pointHoverRadius:7,
       pointBackgroundColor:['#0000',...attemptColors], pointBorderColor:['#0000',...attemptColors] },
-    { label:'shipped default (context)', data:flat(shipped), borderColor:ink, borderDash:[5,4],
-      borderWidth:1, pointRadius:0, fill:false },
   ]};
   const opts = { responsive:true, maintainAspectRatio:true, aspectRatio:3.2,
     interaction:{mode:'nearest', intersect:false},
@@ -178,20 +175,19 @@ function renderFlexGraph(fg){
   function trim(a,b){ const pa=pos[a],pb=pos[b],dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,r=boxH/2+3;
     return {x1:pa.x+dx/d*r,y1:pa.y+dy/d*r,x2:pb.x-dx/d*r,y2:pb.y-dy/d*r}; }
   let s='<svg viewBox="0 0 '+fullW+' '+H+'" width="'+fullW+'" height="'+H+'" style="max-width:none;display:block">';
-  s+='<defs>'+
-     '<marker id="fx-down" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+good+'"/></marker>'+
-     '<marker id="fx-up" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 Z" fill="'+good+'"/></marker>'+
-     '<marker id="fx-gap" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+bad+'"/></marker>'+
-     '</defs>';
+  s+='<defs><marker id="fx-gap" markerWidth="11" markerHeight="11" refX="7.5" refY="3.2" orient="auto">'+
+     '<path d="M0,0 L7,3.2 L0,6.4 Z" fill="'+bad+'"/></marker></defs>';
   fg.levels.forEach((lv,li)=>{ const y=topY+li*rowGap;
     s+='<text x="10" y="'+(y-boxH/2-7)+'" font-size="10.5" fill="'+ink+'" font-weight="600" opacity="0.85">'+esc(lv.title)+'</text>'; });
   for(const e of (fg.lowering_edges||[])){ const a=e[0], b=e[1]; if(!pos[a]||!pos[b]) continue; const t=trim(a,b);
     if(gapKey.has(a+'>'+b)){
+      // GAP: lowered (top->bottom) but NOT exposed — red, DIRECTED (show the down arrow)
       s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+bad+
-         '" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#fx-gap)"><title>FLEXIBILITY GAP — '+esc(gapWhy[a+'>'+b]||'')+'</title></line>';
+         '" stroke-width="2.1" marker-end="url(#fx-gap)"><title>FLEXIBILITY GAP — '+esc(gapWhy[a+'>'+b]||'')+'</title></line>';
     } else {
+      // lowered AND exposed — bidirectional, drawn green with ARROWS OMITTED
       s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+good+
-         '" stroke-width="1.1" opacity="0.38" marker-start="url(#fx-up)" marker-end="url(#fx-down)"/>';
+         '" stroke-width="1.5" opacity="0.5"/>';
     }
   }
   fg.nodes.forEach(nd=>{ const p=pos[nd.id];
@@ -203,8 +199,8 @@ function renderFlexGraph(fg){
   });
   s+='</svg>';
   const lg='<div style="display:flex;gap:18px;flex-wrap:wrap;margin:0 0 10px;font-size:12px;color:'+ink+'">'+
-    '<span><svg width="26" height="10" style="vertical-align:middle"><line x1="2" y1="5" x2="24" y2="5" stroke="'+good+'" stroke-width="2"/></svg> lowered ▼ &amp; exposed ▲</span>'+
-    '<span><svg width="26" height="10" style="vertical-align:middle"><line x1="2" y1="5" x2="24" y2="5" stroke="'+bad+'" stroke-width="2" stroke-dasharray="4 2"/></svg> <b style="color:'+bad+'">gap: lowered ▼ but NOT exposed</b></span>'+
+    '<span><svg width="30" height="10" style="vertical-align:middle"><line x1="2" y1="5" x2="28" y2="5" stroke="'+good+'" stroke-width="2.4"/></svg> lowered ▼ &amp; exposed ▲ — bidirectional (arrows omitted)</span>'+
+    '<span><svg width="32" height="11" style="vertical-align:middle"><line x1="2" y1="5.5" x2="23" y2="5.5" stroke="'+bad+'" stroke-width="2.4"/><polygon points="23,1.5 31,5.5 23,9.5" fill="'+bad+'"/></svg> <b style="color:'+bad+'">gap: lowered ▼ but NOT exposed — directed</b></span>'+
     '<span><span style="display:inline-block;width:11px;height:11px;border:1.5px solid '+acc+';border-radius:3px;vertical-align:middle"></span> compute op</span>'+
     '<span><span style="display:inline-block;width:11px;height:11px;border:1.5px solid '+MEM+';border-radius:3px;vertical-align:middle"></span> memory-reorg op</span></div>';
   host.innerHTML = lg + '<div style="overflow-x:auto">'+s+'</div>';
@@ -234,8 +230,7 @@ async function load(){
 
   const inc = b.incumbent||{}, ev = b.eval||{};
   document.getElementById('stats').innerHTML = [
-    ['incumbent (best of existing knobs)', ms(inc.current_geomean_s), 'the bar a capability must beat — best autotuning of shipped knobs'],
-    ['shipped default', ms(inc.shipped_default_geomean_s), 'context only: the suboptimal shipped config (NOT the baseline)'],
+    ['incumbent geomean (interp)', ms(inc.current_geomean_s), 'baseline = best config in the existing design space; capabilities must beat it'],
     ['design choices', inc.choices!=null? inc.choices : '—', 'total configs across the suite'],
     ['round', inc.round!=null? inc.round : 0, 'KEEP bar > '+(inc.target_pct??2)+'% · '+(b.n_rounds||0)+' run'],
     ['correctness', ev.all_correct===false?'FAIL':(ev.all_correct==null?'—':'all pass'),
@@ -250,7 +245,6 @@ async function load(){
   // kernels
   const kt = document.querySelector('#ktab tbody');
   kt.innerHTML = (b.kernels||[]).map(k=>{
-    const su = k.speedup? k.speedup.toFixed(2)+'×' : '—';
     const cfg = k.best_config? '<code>'+esc(JSON.stringify(k.best_config))+'</code>' : '<span class="muted">'+esc(k.note||'')+'</span>';
     const cor = k.correct===true?'<span class="badge b-keep">allclose</span>':
                 k.correct===false?'<span class="badge b-reject">mismatch</span>':
@@ -261,10 +255,10 @@ async function load(){
                 nt?('<span class="badge b-defer">'+esc(nt)+'</span>'):
                 '<span class="badge b-defer" title="TPU-only or no repo test">n/a</span>';
     return '<tr><td><b>'+esc(k.case||k.kernel)+'</b></td><td>'+regimeBadge(k.regime)+'</td>'+
-      '<td class="num">'+ms(k.default_s)+'</td><td class="num">'+ms(k.best_s)+'</td>'+
-      '<td class="num">'+su+'</td><td class="num">'+(k.space_size??'—')+'</td>'+
-      '<td>'+cfg+'</td><td>'+cor+'</td><td>'+ntc+'</td></tr>';
-  }).join('') || '<tr><td colspan="9" class="empty">no eval yet — run the loop `init`.</td></tr>';
+      '<td class="num">'+ms(k.best_s)+'</td>'+
+      '<td>'+cfg+'</td><td class="num">'+(k.space_size??'—')+'</td>'+
+      '<td>'+cor+'</td><td>'+ntc+'</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="empty">no eval yet — run the loop `init`.</td></tr>';
 
   // trail
   const tt = document.querySelector('#ttab tbody');
