@@ -80,49 +80,92 @@ def _kernels_from_eval():
     return out, s
 
 
+# ---- Single 4-level flexibility graph (curated, jax-free) --------------------
+# LOWERING = top->bottom: a workload category lowers into operators -> JAX/Pallas API
+# capabilities -> hardware flexibilities (the stack CAN execute this). EXPOSURE =
+# bottom->top: the low-level flexibility is named / selectable back up the stack. An
+# edge present in LOWERING but ABSENT in EXPOSURE (top->bottom but not bottom->up) is a
+# FLEXIBILITY GAP: the lowering executes it, but no API/config names it. Gap edges are
+# the frontier the loop elevates (kept in sync with adapter.FRONTIER).
+_FLEX_LEVELS = [
+    {"id": "L1", "title": "Workload categories", "nodes": [
+        {"id": "cat.attn", "label": "Attention (ragged/paged)"},
+        {"id": "cat.moe", "label": "MoE / grouped GEMM"},
+        {"id": "cat.lin", "label": "Linear attention"},
+        {"id": "cat.mlp", "label": "Fused MLP (SwiGLU)"},
+        {"id": "cat.kv", "label": "KV-cache update"}]},
+    {"id": "L2", "title": "Operators  (compute | memory-reorg)", "nodes": [
+        {"id": "op.mm", "label": "Matrix multiply", "kind": "compute"},
+        {"id": "op.vec", "label": "Vectorized arithmetic", "kind": "compute"},
+        {"id": "op.scan", "label": "Reduction / scan", "kind": "compute"},
+        {"id": "op.layout", "label": "Layout reorganization", "kind": "memory"},
+        {"id": "op.gather", "label": "Gather / scatter", "kind": "memory"},
+        {"id": "op.mask", "label": "Mask / pad", "kind": "memory"}]},
+    {"id": "L3", "title": "JAX / Pallas API capabilities", "nodes": [
+        {"id": "api.dot", "label": "lax.dot_general"},
+        {"id": "api.scan", "label": "lax.scan / assoc"},
+        {"id": "api.block", "label": "pl.BlockSpec tiling"},
+        {"id": "api.pipe", "label": "pltpu.emit_pipeline"},
+        {"id": "api.grid", "label": "PrefetchScalarGridSpec"},
+        {"id": "api.mem", "label": "HBM / VMEM spaces"},
+        {"id": "api.shard", "label": "shard_map / mesh"}]},
+    {"id": "L4", "title": "Hardware-level flexibility", "nodes": [
+        {"id": "hw.mxu", "label": "MXU 128x128 tiling"},
+        {"id": "hw.vpu", "label": "VPU lanes (8x128)"},
+        {"id": "hw.vmem", "label": "VMEM alloc / buffer depth"},
+        {"id": "hw.dma", "label": "HBM<->VMEM DMA / prefetch"},
+        {"id": "hw.core", "label": "Multi-core / grid parallel"},
+        {"id": "hw.sublane", "label": "Sublane / lane sub-tiling"}]},
+]
+_FLEX_LOWERING = [
+    # L1 -> L2 (a category decomposes into operators)
+    ("cat.attn", "op.mm"), ("cat.attn", "op.vec"), ("cat.attn", "op.gather"), ("cat.attn", "op.mask"),
+    ("cat.moe", "op.mm"), ("cat.moe", "op.gather"), ("cat.moe", "op.layout"),
+    ("cat.lin", "op.mm"), ("cat.lin", "op.scan"), ("cat.lin", "op.vec"),
+    ("cat.mlp", "op.mm"), ("cat.mlp", "op.vec"), ("cat.mlp", "op.layout"),
+    ("cat.kv", "op.gather"), ("cat.kv", "op.layout"),
+    # L2 -> L3 (an operator maps to JAX/Pallas API capabilities)
+    ("op.mm", "api.dot"), ("op.mm", "api.block"), ("op.mm", "api.shard"),
+    ("op.vec", "api.block"),
+    ("op.scan", "api.scan"),
+    ("op.layout", "api.block"), ("op.layout", "api.pipe"),
+    ("op.gather", "api.grid"), ("op.gather", "api.mem"), ("op.gather", "api.shard"),
+    ("op.mask", "api.block"),
+    # L3 -> L4 (an API capability exercises hardware flexibility)
+    ("api.dot", "hw.mxu"),
+    ("api.block", "hw.mxu"), ("api.block", "hw.sublane"),
+    ("api.scan", "hw.vpu"),
+    ("api.pipe", "hw.vmem"), ("api.pipe", "hw.dma"),
+    ("api.grid", "hw.dma"), ("api.grid", "hw.core"),
+    ("api.mem", "hw.vmem"),
+    ("api.shard", "hw.core"),
+]
+# lowering-reachable but NOT exposed -> the flexibility gaps (cite the live frontier).
+_FLEX_GAPS = {
+    ("api.pipe", "hw.vmem"): "fused_mlp: emit_pipeline buffer_count hardcoded=3 — VMEM double-buffer depth executes but no knob names it",
+    ("api.grid", "hw.dma"): "moe_v2: cross_expert_prefetch / interleave toggles — DMA prefetch schedule executes but is unsearched",
+    ("api.block", "hw.sublane"): "rpa bq_csz/bkv_csz pinned + gla/kda BK/BV pinned — sublane sub-tiling executes but is not exposed",
+    ("api.grid", "hw.core"): "kv_cache: num_slices_per_block tuned table is dead code — grid tile executes but is not selected",
+    ("api.block", "hw.mxu"): "gmm_v2: no per-shape tuned tile table (v1 has one) — MXU tile selection executes but is unnamed",
+}
+
+
 def _flexgraph(eval_summary):
-    """Lowering graph vs exposure graph over a SHARED node set (the AI-domain analog
-    of the FHE two-graph flexgap instrument). Middle nodes = flexibilities. A knob the
-    Mosaic/Pallas lowering CAN execute (top->bottom edge present in the LOWERING graph)
-    but the config API does NOT name (bottom->top edge absent in the EXPOSURE graph) is
-    a FLEXIBILITY GAP — the exact target a capability elevates."""
-    try:
-        from akt.benchmark.adapter import FRONTIER
-    except Exception:  # noqa: BLE001
-        FRONTIER = []
-    exposed = {}                       # kernel -> {knob_name: elevated_by}
-    for r in eval_summary.get("results", []):
-        for kb in r.get("knobs", []):
-            exposed.setdefault(r.get("kernel"), {})[kb["name"]] = kb.get("elevated_by")
-    exposed_nodes = [{"id": f"exp:{ker}", "kernel": ker, "kind": "exposed", "label": ker,
-                      "knobs": sorted(kn),
-                      "elevated": sorted({v for v in kn.values() if v})}
-                     for ker, kn in sorted(exposed.items()) if ker]
-    gap_nodes = [{"id": f"gap:{i}", "kind": "gap", "status": f.get("status"),
-                  "kernel": f.get("interface", "").split(":")[0].strip(),
-                  "label": f.get("interface", ""), "what": f.get("what", "")}
-                 for i, f in enumerate(FRONTIER)]
-    API, LOW = "api", "lowering"
-    mids = exposed_nodes + gap_nodes
-    knob_ids = [n["id"] for n in mids]
-    exp_ids = [n["id"] for n in exposed_nodes]
-    nodes = ([{"id": API, "kind": "pole", "layer": "top",
-               "label": "Kernel config API — what the schema names"}]
-             + [{**n, "layer": "mid"} for n in mids]
-             + [{"id": LOW, "kind": "pole", "layer": "bottom",
-                 "label": "Pallas / Mosaic lowering — what the backend executes"}])
+    gapset = set(_FLEX_GAPS)
+    exposure = [[b, a] for (a, b) in _FLEX_LOWERING if (a, b) not in gapset]
+    nodes = [{**n, "level": lv["id"]} for lv in _FLEX_LEVELS for n in lv["nodes"]]
     return {
+        "levels": [{"id": lv["id"], "title": lv["title"],
+                    "node_ids": [n["id"] for n in lv["nodes"]]} for lv in _FLEX_LEVELS],
         "nodes": nodes,
-        # lowering graph: top->knob->bottom for EVERY knob (all are lowering-executable)
-        "lowering_edges": [[API, k] for k in knob_ids] + [[k, LOW] for k in knob_ids],
-        # exposure graph: bottom->knob->top for EXPOSED knobs only
-        "exposure_edges": [[LOW, k] for k in exp_ids] + [[k, API] for k in exp_ids],
-        "gaps": [n["id"] for n in gap_nodes],
-        "n_exposed": len(exposed_nodes), "n_gap": len(gap_nodes),
-        "note": ("Same nodes, two edge sets. A middle node with a LOWERING (top->bottom) "
-                 "edge but NO EXPOSURE (bottom->top) edge is a FLEXIBILITY GAP: the "
-                 "Mosaic lowering can execute it, but no config knob names it — the "
-                 "exact target a capability elevates."),
+        "lowering_edges": [list(e) for e in _FLEX_LOWERING],
+        "exposure_edges": exposure,
+        "gap_edges": [{"from": a, "to": b, "why": why} for (a, b), why in _FLEX_GAPS.items()],
+        "n_exposed": len(_FLEX_LOWERING) - len(_FLEX_GAPS), "n_gap": len(_FLEX_GAPS),
+        "note": ("Single graph. ▼ lowering (top→bottom): the stack can execute the edge. "
+                 "▲ exposure (bottom→top): the API names/selects it. An edge with ▼ but "
+                 "no ▲ (red, dashed) is a FLEXIBILITY GAP — executable in the lowering, "
+                 "unnamed at the top; these are the frontier the loop elevates."),
     }
 
 

@@ -84,9 +84,9 @@
     <th class="num">est%</th><th>gap / reason</th>
   </tr></thead><tbody></tbody></table></div>
 
-  <h2>Lowering vs exposure graph <span class="muted">— shared nodes, different edges → the gap</span></h2>
+  <h2>Flexibility graph <span class="muted">— lowering ▼ vs exposure ▲ · categories → operators → JAX/Pallas → hardware</span></h2>
   <div class="panel">
-    <div class="scroll" id="flexgraphs"></div>
+    <div id="flexgraphs"></div>
     <div class="sub" style="margin-top:10px" id="flexnote"></div>
   </div>
 
@@ -158,63 +158,56 @@ function decBadge(d){
   return '<span class="badge b-reject">'+esc(d||"reject")+'</span>';
 }
 
-function renderFlexGraphs(fg){
+function renderFlexGraph(fg){
   const host = document.getElementById('flexgraphs');
-  if(!fg || !fg.nodes){ host.innerHTML = '<div class="empty">flexgraph unavailable — run the loop build.</div>'; return; }
-  const mids = fg.nodes.filter(n=>n.layer==='mid');
-  const n = mids.length, boxW=122, boxH=46, padX=44, gap=16, H=300;
-  const fullW = Math.max(760, padX*2 + n*boxW + Math.max(0,n-1)*gap);
+  if(!fg || !fg.levels){ host.innerHTML = '<div class="empty">flexgraph unavailable — run the loop build.</div>'; return; }
+  const boxW=152, boxH=40, rowGap=142, topY=58, leftPad=160, rightPad=44;
+  const maxN = Math.max.apply(null, fg.levels.map(l=>l.node_ids.length));
+  const usableW = Math.max(700, maxN*(boxW+22));
+  const fullW = leftPad + usableW + rightPad;
+  const H = topY + (fg.levels.length-1)*rowGap + boxH/2 + 40;
   const pos = {};
-  mids.forEach((nd,i)=>{ pos[nd.id] = { x: padX + boxW/2 + i*(boxW+gap), y: H/2 }; });
-  pos['api'] = { x: fullW/2, y: 48 };
-  pos['lowering'] = { x: fullW/2, y: H-48 };
-  const rad = id => (id==='api'||id==='lowering') ? 20 : boxH/2+3;
-  const gaps = new Set(fg.gaps||[]);
+  fg.levels.forEach((lv,li)=>{ const n=lv.node_ids.length;
+    lv.node_ids.forEach((id,j)=>{ pos[id] = { x: leftPad + usableW*((j+0.5)/n), y: topY + li*rowGap }; }); });
+  const gapKey = new Set((fg.gap_edges||[]).map(g=>g.from+'>'+g.to));
+  const gapWhy = {}; (fg.gap_edges||[]).forEach(g=>gapWhy[g.from+'>'+g.to]=g.why);
   const acc=cssVar('--accent')||'#6ea8fe', bad=cssVar('--bad')||'#f85149',
         good=cssVar('--good')||'#3fb950', ink=cssVar('--mut')||'#9aa4b2',
-        line=cssVar('--line')||'#2a2f3a', panel=cssVar('--panel2')||'#1e222b';
-  const poleLabel = id => (fg.nodes.find(x=>x.id===id)||{}).label||id;
-
-  function trim(a,b){ const pa=pos[a],pb=pos[b]; const dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1;
-    const ra=rad(a),rb=rad(b);
-    return {x1:pa.x+dx/d*ra, y1:pa.y+dy/d*ra, x2:pb.x-dx/d*rb, y2:pb.y-dy/d*rb}; }
-
-  function svg(edges, mode){
-    const ec = mode==='lowering'? acc : good;
-    let s = '<svg viewBox="0 0 '+fullW+' '+H+'" width="'+fullW+'" height="'+H+'" style="max-width:none;display:block">';
-    s += '<defs><marker id="ar-'+mode+'" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto">'+
-         '<path d="M0,0 L6,3 L0,6 Z" fill="'+ec+'"/></marker></defs>';
-    for(const [a,b] of edges){ if(!pos[a]||!pos[b]) continue; const t=trim(a,b);
-      s += '<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+ec+
-           '" stroke-width="1.4" opacity="0.5" marker-end="url(#ar-'+mode+')"/>'; }
-    for(const id of ['api','lowering']){ const p=pos[id], w=Math.min(fullW-60,420);
-      s += '<rect x="'+(p.x-w/2)+'" y="'+(p.y-17)+'" width="'+w+'" height="34" rx="9" fill="'+panel+'" stroke="'+line+'"/>'+
-           '<text x="'+p.x+'" y="'+(p.y+4)+'" text-anchor="middle" font-size="12" fill="'+ink+'">'+esc(poleLabel(id))+'</text>'; }
-    for(const nd of mids){ const p=pos[nd.id], isGap=gaps.has(nd.id);
-      const discon = (mode==='exposure' && isGap);
-      const stroke = isGap? bad : acc;
-      const dash = discon? ' stroke-dasharray="4 3"' : '';
-      const op = discon? ' opacity="0.9"' : '';
-      const lab = nd.kind==='gap' ? ((nd.label.split(':').pop()||nd.label).trim()) : nd.label;
-      const sub = nd.kind==='gap' ? (nd.status||'gap')
-                 : ((nd.knobs||[]).length+' knob'+((nd.knobs||[]).length!==1?'s':''));
-      s += '<g'+op+'><rect x="'+(p.x-boxW/2)+'" y="'+(p.y-boxH/2)+'" width="'+boxW+'" height="'+boxH+
-           '" rx="8" fill="'+panel+'" stroke="'+stroke+'" stroke-width="'+(isGap?2:1.3)+'"'+dash+'>'+
-           '<title>'+esc(nd.label)+(nd.what? ' — '+esc(nd.what):'')+'</title></rect>'+
-           '<text x="'+p.x+'" y="'+(p.y-1)+'" text-anchor="middle" font-size="10.5" fill="'+ink+'">'+esc(lab.slice(0,17))+'</text>'+
-           '<text x="'+p.x+'" y="'+(p.y+13)+'" text-anchor="middle" font-size="9" fill="'+(isGap?bad:good)+'">'+esc(sub)+'</text></g>';
-      if(discon) s += '<text x="'+p.x+'" y="'+(p.y-boxH/2-5)+'" text-anchor="middle" font-size="8.5" fill="'+bad+'">✗ unnamed</text>';
+        line=cssVar('--line')||'#2a2f3a', panel=cssVar('--panel2')||'#1e222b',
+        MEM=cssVar('--warn')||'#d29922';
+  function trim(a,b){ const pa=pos[a],pb=pos[b],dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,r=boxH/2+3;
+    return {x1:pa.x+dx/d*r,y1:pa.y+dy/d*r,x2:pb.x-dx/d*r,y2:pb.y-dy/d*r}; }
+  let s='<svg viewBox="0 0 '+fullW+' '+H+'" width="'+fullW+'" height="'+H+'" style="max-width:none;display:block">';
+  s+='<defs>'+
+     '<marker id="fx-down" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+good+'"/></marker>'+
+     '<marker id="fx-up" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 Z" fill="'+good+'"/></marker>'+
+     '<marker id="fx-gap" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+bad+'"/></marker>'+
+     '</defs>';
+  fg.levels.forEach((lv,li)=>{ const y=topY+li*rowGap;
+    s+='<text x="10" y="'+(y-boxH/2-7)+'" font-size="10.5" fill="'+ink+'" font-weight="600" opacity="0.85">'+esc(lv.title)+'</text>'; });
+  for(const e of (fg.lowering_edges||[])){ const a=e[0], b=e[1]; if(!pos[a]||!pos[b]) continue; const t=trim(a,b);
+    if(gapKey.has(a+'>'+b)){
+      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+bad+
+         '" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#fx-gap)"><title>FLEXIBILITY GAP — '+esc(gapWhy[a+'>'+b]||'')+'</title></line>';
+    } else {
+      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+good+
+         '" stroke-width="1.1" opacity="0.38" marker-start="url(#fx-up)" marker-end="url(#fx-down)"/>';
     }
-    return s+'</svg>';
   }
-  host.innerHTML =
-    '<div style="margin:2px 0 6px"><b style="color:'+acc+'">▼ Lowering graph</b> '+
-      '<span class="muted">— top→bottom: the Mosaic lowering can execute every knob</span></div>'+
-      svg(fg.lowering_edges||[], 'lowering')+
-    '<div style="margin:16px 0 6px"><b style="color:'+good+'">▲ Exposure graph</b> '+
-      '<span class="muted">— bottom→top: the config API names only the exposed knobs. '+
-      'Red, disconnected = flexibility gap (executable but unnamed).</span></div>'+
-      svg(fg.exposure_edges||[], 'exposure');
+  fg.nodes.forEach(nd=>{ const p=pos[nd.id];
+    const stroke = nd.kind==='compute'? acc : nd.kind==='memory'? MEM : line;
+    const lab = nd.label.length>23? nd.label.slice(0,22)+'…' : nd.label;
+    s+='<g><rect x="'+(p.x-boxW/2)+'" y="'+(p.y-boxH/2)+'" width="'+boxW+'" height="'+boxH+
+       '" rx="8" fill="'+panel+'" stroke="'+stroke+'" stroke-width="1.3"><title>'+esc(nd.label)+'</title></rect>'+
+       '<text x="'+p.x+'" y="'+(p.y+4)+'" text-anchor="middle" font-size="10.5" fill="'+ink+'">'+esc(lab)+'</text></g>';
+  });
+  s+='</svg>';
+  const lg='<div style="display:flex;gap:18px;flex-wrap:wrap;margin:0 0 10px;font-size:12px;color:'+ink+'">'+
+    '<span><svg width="26" height="10" style="vertical-align:middle"><line x1="2" y1="5" x2="24" y2="5" stroke="'+good+'" stroke-width="2"/></svg> lowered ▼ &amp; exposed ▲</span>'+
+    '<span><svg width="26" height="10" style="vertical-align:middle"><line x1="2" y1="5" x2="24" y2="5" stroke="'+bad+'" stroke-width="2" stroke-dasharray="4 2"/></svg> <b style="color:'+bad+'">gap: lowered ▼ but NOT exposed</b></span>'+
+    '<span><span style="display:inline-block;width:11px;height:11px;border:1.5px solid '+acc+';border-radius:3px;vertical-align:middle"></span> compute op</span>'+
+    '<span><span style="display:inline-block;width:11px;height:11px;border:1.5px solid '+MEM+';border-radius:3px;vertical-align:middle"></span> memory-reorg op</span></div>';
+  host.innerHTML = lg + '<div style="overflow-x:auto">'+s+'</div>';
   document.getElementById('flexnote').textContent = fg.note||'';
 }
 
@@ -288,7 +281,7 @@ async function load(){
     '<code>'+esc(f.interface)+'</code> — <span class="what">'+esc(f.what)+'</span></li>'
   ).join('') || '<li class="empty">frontier unavailable</li>';
 
-  renderFlexGraphs(fg);
+  renderFlexGraph(fg);
 
   document.getElementById('gen').textContent =
     'objective: '+(b.objective||'')+'  ·  generated '+(b.generated||'')+
