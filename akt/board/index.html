@@ -228,24 +228,32 @@ function renderFlexGraph(fg){
   // interactivity: click a node box -> highlight its incident edges + directly-connected nodes
   const svg = host.querySelector('svg');
   if(svg){
-    const nbr={};
-    (fg.lowering_edges||[]).forEach(e=>{ const a=e[0],b=e[1];
-      (nbr[a]=nbr[a]||new Set()).add(b); (nbr[b]=nbr[b]||new Set()).add(a); });
-    const gEls=[].slice.call(svg.querySelectorAll('.fx-node'));
-    const eEls=[].slice.call(svg.querySelectorAll('.fx-edge'));
-    const reset=()=>{ svg.removeAttribute('data-sel');
-      gEls.forEach(g=>g.setAttribute('opacity', g.dataset.baseop));
-      eEls.forEach(l=>{ l.setAttribute('opacity', l.dataset.baseop); l.setAttribute('stroke-width', l.dataset.basew); }); };
-    const hi=id=>{ svg.setAttribute('data-sel', id);
-      const keep=new Set([id]); (nbr[id]||new Set()).forEach(x=>keep.add(x));
-      gEls.forEach(g=>g.setAttribute('opacity', keep.has(g.dataset.node)?'1':'0.07'));
-      eEls.forEach(l=>{ const on=(l.dataset.a===id||l.dataset.b===id);
-        l.setAttribute('opacity', on?'0.95':'0.04');
-        l.setAttribute('stroke-width', on?(parseFloat(l.dataset.basew)+1.1).toFixed(1):l.dataset.basew); }); };
-    svg.addEventListener('click', ev=>{ const g=ev.target.closest('.fx-node');
-      if(!g){ reset(); return; }
-      const id=g.dataset.node;
-      (svg.getAttribute('data-sel')===id) ? reset() : hi(id); });
+    // Robust interactivity: per-node click listeners + JS-captured state (index-matched
+    // to the rendered elements). No reliance on SVGElement.dataset or closest().
+    // NB: query from the HTML host, not the <svg> — a class-selector query scoped to an
+    // SVG element created via innerHTML returns nothing (SVG-namespace quirk), which would
+    // leave gEls empty and attach zero node listeners.
+    const gEls=[].slice.call(host.querySelectorAll('.fx-node'));   // render order == fg.nodes
+    const eEls=[].slice.call(host.querySelectorAll('.fx-edge'));   // render order == edgesR
+    const ids=fg.nodes.map(n=>n.id);
+    const baseOp=fg.nodes.map(n=>(n.active&&n.active.length)?1:0.4);
+    const edgesR=(fg.lowering_edges||[]).filter(e=>pos[e[0]]&&pos[e[1]]);   // same filter as render
+    const eMeta=edgesR.map(e=>{ const na=nById[e[0]], nb=nById[e[1]], gap=gapSet.has(e[0]+'>'+e[1]);
+      const on=(na&&na.active&&na.active.length&&nb&&nb.active&&nb.active.length);
+      return {a:e[0], b:e[1], op:gap?0.9:(on?0.42:0.12), w:gap?1.7:(on?1.3:1)}; });
+    const nbr={}; edgesR.forEach(e=>{ (nbr[e[0]]=nbr[e[0]]||{})[e[1]]=1; (nbr[e[1]]=nbr[e[1]]||{})[e[0]]=1; });
+    let sel=null;
+    const reset=()=>{ gEls.forEach((g,i)=>g.setAttribute('opacity', baseOp[i]));
+      eEls.forEach((l,i)=>{ if(!eMeta[i])return; l.setAttribute('opacity', eMeta[i].op); l.setAttribute('stroke-width', eMeta[i].w); });
+      sel=null; };
+    const hi=id=>{ const keep=Object.assign({}, nbr[id]||{}); keep[id]=1;
+      gEls.forEach((g,i)=>g.setAttribute('opacity', keep[ids[i]]?1:0.07));
+      eEls.forEach((l,i)=>{ if(!eMeta[i])return; const on=(eMeta[i].a===id||eMeta[i].b===id);
+        l.setAttribute('opacity', on?0.95:0.04); l.setAttribute('stroke-width', on?(eMeta[i].w+1.1):eMeta[i].w); });
+      sel=id; };
+    gEls.forEach((g,i)=>{ g.style.cursor='pointer';
+      g.addEventListener('click', ev=>{ ev.stopPropagation(); (sel===ids[i]) ? reset() : hi(ids[i]); }); });
+    svg.addEventListener('click', ()=>reset());   // background click clears the selection
   }
 }
 
