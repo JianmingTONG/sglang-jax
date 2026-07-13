@@ -64,6 +64,7 @@ def _kernels_from_eval():
     out = []
     for r in s.get("results", []):
         d, b = r.get("default_s"), r.get("forward_s")
+        nt = r.get("native_test") or {}
         out.append({
             "case": r.get("case"), "kernel": r.get("kernel"), "shape": r.get("shape"),
             "regime": r.get("regime", "tpu-deferred"),
@@ -72,9 +73,57 @@ def _kernels_from_eval():
             "space_size": r.get("space_size"),
             "best_config": r.get("best_config"),
             "correct": r.get("correct"),
+            "native_test": nt.get("status"),          # sglang-jax's own pytest verdict
+            "native_test_id": r.get("native_test_id"),
             "note": (r.get("search_note") or r.get("reason") or r.get("note") or "")[:160],
         })
     return out, s
+
+
+def _flexgraph(eval_summary):
+    """Lowering graph vs exposure graph over a SHARED node set (the AI-domain analog
+    of the FHE two-graph flexgap instrument). Middle nodes = flexibilities. A knob the
+    Mosaic/Pallas lowering CAN execute (top->bottom edge present in the LOWERING graph)
+    but the config API does NOT name (bottom->top edge absent in the EXPOSURE graph) is
+    a FLEXIBILITY GAP — the exact target a capability elevates."""
+    try:
+        from akt.benchmark.adapter import FRONTIER
+    except Exception:  # noqa: BLE001
+        FRONTIER = []
+    exposed = {}                       # kernel -> {knob_name: elevated_by}
+    for r in eval_summary.get("results", []):
+        for kb in r.get("knobs", []):
+            exposed.setdefault(r.get("kernel"), {})[kb["name"]] = kb.get("elevated_by")
+    exposed_nodes = [{"id": f"exp:{ker}", "kernel": ker, "kind": "exposed", "label": ker,
+                      "knobs": sorted(kn),
+                      "elevated": sorted({v for v in kn.values() if v})}
+                     for ker, kn in sorted(exposed.items()) if ker]
+    gap_nodes = [{"id": f"gap:{i}", "kind": "gap", "status": f.get("status"),
+                  "kernel": f.get("interface", "").split(":")[0].strip(),
+                  "label": f.get("interface", ""), "what": f.get("what", "")}
+                 for i, f in enumerate(FRONTIER)]
+    API, LOW = "api", "lowering"
+    mids = exposed_nodes + gap_nodes
+    knob_ids = [n["id"] for n in mids]
+    exp_ids = [n["id"] for n in exposed_nodes]
+    nodes = ([{"id": API, "kind": "pole", "layer": "top",
+               "label": "Kernel config API — what the schema names"}]
+             + [{**n, "layer": "mid"} for n in mids]
+             + [{"id": LOW, "kind": "pole", "layer": "bottom",
+                 "label": "Pallas / Mosaic lowering — what the backend executes"}])
+    return {
+        "nodes": nodes,
+        # lowering graph: top->knob->bottom for EVERY knob (all are lowering-executable)
+        "lowering_edges": [[API, k] for k in knob_ids] + [[k, LOW] for k in knob_ids],
+        # exposure graph: bottom->knob->top for EXPOSED knobs only
+        "exposure_edges": [[LOW, k] for k in exp_ids] + [[k, API] for k in exp_ids],
+        "gaps": [n["id"] for n in gap_nodes],
+        "n_exposed": len(exposed_nodes), "n_gap": len(gap_nodes),
+        "note": ("Same nodes, two edge sets. A middle node with a LOWERING (top->bottom) "
+                 "edge but NO EXPOSURE (bottom->top) edge is a FLEXIBILITY GAP: the "
+                 "Mosaic lowering can execute it, but no config knob names it — the "
+                 "exact target a capability elevates."),
+    }
 
 
 def build():
@@ -120,6 +169,9 @@ def build():
             "commit": (st.get("incumbent_commit") or "")[:8],
         },
         "eval": {"all_correct": eval_summary.get("all_correct"),
+                 "allclose_correct": eval_summary.get("allclose_correct"),
+                 "native_ok": eval_summary.get("native_ok"),
+                 "native_summary": eval_summary.get("native_summary"),
                  "n_runnable": eval_summary.get("n_runnable"),
                  "n_deferred": eval_summary.get("n_deferred"),
                  "search_geomean_s": eval_summary.get("geomean_s"),
@@ -130,10 +182,13 @@ def build():
         "n_rounds": len(trail),
     }
     (BOARD / "board.json").write_text(json.dumps(board, indent=1, allow_nan=False))
+    fg = _flexgraph(eval_summary)
+    (BOARD / "flexgraph.json").write_text(json.dumps(fg, indent=1, allow_nan=False))
     n_run = sum(1 for k in kernels if k.get("best_s"))
     print(f"akt-board: {len(kernels)} kernels ({n_run} runnable, {len(kernels)-n_run} deferred), "
           f"{len(trail)} round(s) ({len(kept)} kept, {len(rejected)} rejected), "
-          f"{len(FRONTIER)} frontier gaps. -> board.json")
+          f"{len(FRONTIER)} frontier gaps; flexgraph {fg['n_exposed']} exposed + "
+          f"{fg['n_gap']} gap nodes. -> board.json + flexgraph.json")
 
 
 if __name__ == "__main__":

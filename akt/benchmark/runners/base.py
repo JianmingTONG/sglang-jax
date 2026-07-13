@@ -86,6 +86,10 @@ class KernelCase:
     rtol: float = 2e-2
     check_out: Callable[[Any], Any] = field(default=lambda o: o)  # tensors to compare
     regime_pref: tuple[str, ...] = ("gpu", "cpu-interpret")       # try in this order
+    # sglang-jax's OWN correctness check: a pytest nodeid / -k expr for the repo's
+    # kernel test that runs in interpret here (or None if TPU-only / no repo test).
+    # eval.py runs it once per case as an independent maintainer-authored verification.
+    native_test: str | None = None
     note: str = ""
 
     @property

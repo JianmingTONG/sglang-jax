@@ -4,3 +4,4 @@ optimization_history/.*.json
 optimization_history/.*.log
 optimization_history/.oracle*
 board/board.json
+board/flexgraph.json

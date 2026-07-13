@@ -306,9 +306,10 @@ def restore_capability(m, incumbent_commit):
 
 
 def write_board():
-    # build.py is authoritative for akt/board/evolve.json (joins evolve_history.jsonl
-    # with the capability manifests + evolve_state.json); just refresh the board.
-    sh("python akt/board/build.py", timeout=300)
+    # build.py joins evolve_history + manifests + evolve_state + the freshest eval into
+    # board.json + flexgraph.json. It is jax-free (reads JSON + adapter.FRONTIER), so
+    # plain python3 suffices — no venv needed for the board refresh.
+    sh("python3 akt/board/build.py", timeout=300)
 
 
 # ---------------------------------------------------------------- commands
@@ -319,11 +320,13 @@ def cmd_init(args):
         print(f"[evolve] init ABORTED: incumbent gate failed (correct={correct}, geo={geo}).")
         return
     CAPS.mkdir(exist_ok=True)
-    # Incumbent = the CURRENT/shipped-default config profiled on this machine
-    # (the campaign's baseline definition). base_search_geomean records what the
-    # existing-knob autotuning alone achieves, so the board can separate autotuning
-    # from capability elevation. Each round must beat the incumbent by >target.
-    incumbent = geo_def if geo_def == geo_def else geo
+    # Incumbent = the BEST performance achievable with the EXISTING knobs (the
+    # base-space autotuning optimum), NOT the shipped default (a suboptimal config).
+    # A capability must therefore beat the best you can already do by tuning the
+    # current design space — so a KEEP reflects a genuinely NEW flexibility, not mere
+    # autotuning of knobs the kernel already exposes. The shipped default is kept only
+    # as context (shipped_default_geomean).
+    incumbent = geo if geo == geo else geo_def
     st = {"start_ts": time.time(), "deadline_ts": time.time() + args.hours * 3600,
           "round": 0, "target_improvement": args.target,
           "incumbent_geomean": incumbent, "incumbent_choices": n_choices,
@@ -332,8 +335,8 @@ def cmd_init(args):
           "objective_name": "geomean_s", "objective_unit": "s"}
     save(st)
     write_status("idle", round=0, reset=True)   # start a fresh campaign clock
-    print(f"[evolve] initialized: incumbent (shipped default) geomean={incumbent*1e3:.2f}ms "
-          f"| base-search autotune={geo*1e3:.2f}ms | choices={n_choices} "
+    print(f"[evolve] initialized: incumbent (best of EXISTING knobs) geomean={incumbent*1e3:.2f}ms "
+          f"| shipped default={geo_def*1e3:.2f}ms (context only) | choices={n_choices} "
           f"commit={str(st['incumbent_commit'])[:8]}, KEEP bar > {args.target*100:.0f}%.")
     print(query(st))
 

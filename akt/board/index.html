@@ -46,6 +46,8 @@
   .b-floor-only{color:var(--defer);border-color:var(--defer)}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
   .live{display:flex;align-items:center;gap:10px;margin:14px 0 4px;color:var(--mut);font-size:13px}
+  .banner{background:rgba(210,153,34,.10);border:1px solid var(--warn);color:var(--ink);
+    border-radius:10px;padding:10px 14px;margin:8px 0 4px;font-size:13px;line-height:1.5}
   .frontier li{margin-bottom:9px}
   .frontier .what{color:var(--mut)}
   .muted{color:var(--mut)}
@@ -59,15 +61,22 @@
   <div class="sub" id="subtitle">Each round elevates one lowering-reachable flexibility gap into a tunable design knob, autotunes the enlarged space, and keeps it iff it beats the incumbent by &gt; target — under real-HW latency + reference-correctness.</div>
 
   <div class="live" id="live"></div>
+  <div class="banner" id="banner"></div>
 
   <h2>Incumbent</h2>
   <div class="stats" id="stats"></div>
 
-  <h2>Per-kernel — searched best vs shipped default</h2>
+  <h2>Objective — geomean latency over iterations</h2>
+  <div class="panel"><canvas id="geoChart" height="112"></canvas>
+    <div class="sub" style="margin:8px 2px 0" id="chartnote"></div></div>
+
+  <h2>Per-kernel — incumbent (best knob) vs shipped default</h2>
   <div class="panel scroll"><table id="ktab"><thead><tr>
-    <th>kernel</th><th>regime</th><th class="num">default</th><th class="num">best</th>
-    <th class="num">speedup</th><th class="num">|space|</th><th>best config</th><th>correct</th>
+    <th>kernel</th><th>regime</th><th class="num">shipped&nbsp;def</th><th class="num">incumbent</th>
+    <th class="num">interp&nbsp;Δ*</th><th class="num">|space|</th><th>best config</th>
+    <th>ref&nbsp;check</th><th>sglang&nbsp;pytest</th>
   </tr></thead><tbody></tbody></table></div>
+  <div class="sub" style="margin-top:6px">* interpret-mode proxy latencies (no TPU on this box) — the Δ is an interpret artifact, <b>not</b> a TPU speedup. Real latencies + config ranking are re-measured on TPU.</div>
 
   <h2>Capability-elevation trail</h2>
   <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
@@ -75,14 +84,68 @@
     <th class="num">est%</th><th>gap / reason</th>
   </tr></thead><tbody></tbody></table></div>
 
+  <h2>Lowering vs exposure graph <span class="muted">— shared nodes, different edges → the gap</span></h2>
+  <div class="panel">
+    <div class="scroll" id="flexgraphs"></div>
+    <div class="sub" style="margin-top:10px" id="flexnote"></div>
+  </div>
+
   <h2>Flexibility-gap frontier <span class="muted">— the candidate capabilities</span></h2>
   <div class="panel"><ul class="frontier" id="frontier"></ul></div>
 
   <div class="sub" style="margin-top:24px" id="gen"></div>
 </div>
 
+<script src="chart.umd.min.js"></script>
 <script>
 const ms = s => (s==null? "—" : (s*1e3).toFixed(2)+" ms");
+const toMs = v => (v==null? null : v*1e3);
+
+let _geoChart = null;
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function renderChart(b){
+  if(typeof Chart==="undefined") return;
+  const inc = b.incumbent||{};
+  const trail = (b.trail||[]).slice().sort((a,c)=>(a.round||0)-(c.round||0));
+  const shipped = inc.shipped_default_geomean_s, baseAuto = inc.base_search_geomean_s;
+  const start = inc.current_geomean_s!=null? inc.current_geomean_s : baseAuto;
+  const labels = ['incumbent', ...trail.map(t=>'R'+t.round)];
+  // best-so-far incumbent (starts at best-of-existing-knobs, ratchets down on keeps)
+  let best = start;
+  const incSeries = [toMs(start)], attempts = [null], attemptColors = [];
+  const good = cssVar('--good')||'#3fb950', bad = cssVar('--bad')||'#f85149', acc = cssVar('--accent')||'#6ea8fe';
+  for(const t of trail){
+    const g = t.geomean_s, keep = (t.decision==='keep'||t.decision==='baseline');
+    attempts.push(toMs(g));
+    attemptColors.push(keep? good : bad);
+    if(keep && g!=null) best = g;
+    incSeries.push(toMs(best));
+  }
+  const flat = v => labels.map(()=>toMs(v));
+  const grid = cssVar('--line')||'#2a2f3a', ink = cssVar('--mut')||'#9aa4b2';
+  const data = { labels, datasets: [
+    { label:'incumbent (best so far)', data:incSeries, borderColor:acc, backgroundColor:acc,
+      stepped:true, pointRadius:2, borderWidth:2, tension:0, fill:false },
+    { label:'round attempt', data:attempts, showLine:false,
+      pointRadius:5, pointHoverRadius:7,
+      pointBackgroundColor:['#0000',...attemptColors], pointBorderColor:['#0000',...attemptColors] },
+    { label:'shipped default (context)', data:flat(shipped), borderColor:ink, borderDash:[5,4],
+      borderWidth:1, pointRadius:0, fill:false },
+  ]};
+  const opts = { responsive:true, maintainAspectRatio:true, aspectRatio:3.2,
+    interaction:{mode:'nearest', intersect:false},
+    plugins:{ legend:{labels:{color:ink, boxWidth:12, font:{size:11}}},
+      tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':c.parsed.y.toFixed(3)+' ms')}}},
+    scales:{ y:{title:{display:true,text:'geomean latency (ms)',color:ink},
+        grid:{color:grid}, ticks:{color:ink}, beginAtZero:false},
+      x:{grid:{color:grid}, ticks:{color:ink}} } };
+  if(_geoChart){ _geoChart.data=data; _geoChart.options=opts; _geoChart.update(); }
+  else { _geoChart = new Chart(document.getElementById('geoChart'), {type:'line', data, options:opts}); }
+  document.getElementById('chartnote').textContent =
+    (trail.length? trail.length+' round(s); ' : 'no capability rounds yet — ')+
+    'incumbent line ratchets down as capabilities are kept. Latencies are interpret proxies on this box (TPU-faithful when a TPU is attached).';
+}
+
 const pct = v => (v==null? "—" : (v>0?"+":"")+v.toFixed(2)+"%");
 const esc = s => (s==null?"":String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
@@ -95,10 +158,71 @@ function decBadge(d){
   return '<span class="badge b-reject">'+esc(d||"reject")+'</span>';
 }
 
+function renderFlexGraphs(fg){
+  const host = document.getElementById('flexgraphs');
+  if(!fg || !fg.nodes){ host.innerHTML = '<div class="empty">flexgraph unavailable — run the loop build.</div>'; return; }
+  const mids = fg.nodes.filter(n=>n.layer==='mid');
+  const n = mids.length, boxW=122, boxH=46, padX=44, gap=16, H=300;
+  const fullW = Math.max(760, padX*2 + n*boxW + Math.max(0,n-1)*gap);
+  const pos = {};
+  mids.forEach((nd,i)=>{ pos[nd.id] = { x: padX + boxW/2 + i*(boxW+gap), y: H/2 }; });
+  pos['api'] = { x: fullW/2, y: 48 };
+  pos['lowering'] = { x: fullW/2, y: H-48 };
+  const rad = id => (id==='api'||id==='lowering') ? 20 : boxH/2+3;
+  const gaps = new Set(fg.gaps||[]);
+  const acc=cssVar('--accent')||'#6ea8fe', bad=cssVar('--bad')||'#f85149',
+        good=cssVar('--good')||'#3fb950', ink=cssVar('--mut')||'#9aa4b2',
+        line=cssVar('--line')||'#2a2f3a', panel=cssVar('--panel2')||'#1e222b';
+  const poleLabel = id => (fg.nodes.find(x=>x.id===id)||{}).label||id;
+
+  function trim(a,b){ const pa=pos[a],pb=pos[b]; const dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1;
+    const ra=rad(a),rb=rad(b);
+    return {x1:pa.x+dx/d*ra, y1:pa.y+dy/d*ra, x2:pb.x-dx/d*rb, y2:pb.y-dy/d*rb}; }
+
+  function svg(edges, mode){
+    const ec = mode==='lowering'? acc : good;
+    let s = '<svg viewBox="0 0 '+fullW+' '+H+'" width="'+fullW+'" height="'+H+'" style="max-width:none;display:block">';
+    s += '<defs><marker id="ar-'+mode+'" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto">'+
+         '<path d="M0,0 L6,3 L0,6 Z" fill="'+ec+'"/></marker></defs>';
+    for(const [a,b] of edges){ if(!pos[a]||!pos[b]) continue; const t=trim(a,b);
+      s += '<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+ec+
+           '" stroke-width="1.4" opacity="0.5" marker-end="url(#ar-'+mode+')"/>'; }
+    for(const id of ['api','lowering']){ const p=pos[id], w=Math.min(fullW-60,420);
+      s += '<rect x="'+(p.x-w/2)+'" y="'+(p.y-17)+'" width="'+w+'" height="34" rx="9" fill="'+panel+'" stroke="'+line+'"/>'+
+           '<text x="'+p.x+'" y="'+(p.y+4)+'" text-anchor="middle" font-size="12" fill="'+ink+'">'+esc(poleLabel(id))+'</text>'; }
+    for(const nd of mids){ const p=pos[nd.id], isGap=gaps.has(nd.id);
+      const discon = (mode==='exposure' && isGap);
+      const stroke = isGap? bad : acc;
+      const dash = discon? ' stroke-dasharray="4 3"' : '';
+      const op = discon? ' opacity="0.9"' : '';
+      const lab = nd.kind==='gap' ? ((nd.label.split(':').pop()||nd.label).trim()) : nd.label;
+      const sub = nd.kind==='gap' ? (nd.status||'gap')
+                 : ((nd.knobs||[]).length+' knob'+((nd.knobs||[]).length!==1?'s':''));
+      s += '<g'+op+'><rect x="'+(p.x-boxW/2)+'" y="'+(p.y-boxH/2)+'" width="'+boxW+'" height="'+boxH+
+           '" rx="8" fill="'+panel+'" stroke="'+stroke+'" stroke-width="'+(isGap?2:1.3)+'"'+dash+'>'+
+           '<title>'+esc(nd.label)+(nd.what? ' — '+esc(nd.what):'')+'</title></rect>'+
+           '<text x="'+p.x+'" y="'+(p.y-1)+'" text-anchor="middle" font-size="10.5" fill="'+ink+'">'+esc(lab.slice(0,17))+'</text>'+
+           '<text x="'+p.x+'" y="'+(p.y+13)+'" text-anchor="middle" font-size="9" fill="'+(isGap?bad:good)+'">'+esc(sub)+'</text></g>';
+      if(discon) s += '<text x="'+p.x+'" y="'+(p.y-boxH/2-5)+'" text-anchor="middle" font-size="8.5" fill="'+bad+'">✗ unnamed</text>';
+    }
+    return s+'</svg>';
+  }
+  host.innerHTML =
+    '<div style="margin:2px 0 6px"><b style="color:'+acc+'">▼ Lowering graph</b> '+
+      '<span class="muted">— top→bottom: the Mosaic lowering can execute every knob</span></div>'+
+      svg(fg.lowering_edges||[], 'lowering')+
+    '<div style="margin:16px 0 6px"><b style="color:'+good+'">▲ Exposure graph</b> '+
+      '<span class="muted">— bottom→top: the config API names only the exposed knobs. '+
+      'Red, disconnected = flexibility gap (executable but unnamed).</span></div>'+
+      svg(fg.exposure_edges||[], 'exposure');
+  document.getElementById('flexnote').textContent = fg.note||'';
+}
+
 async function load(){
-  let b={}, stt={};
+  let b={}, stt={}, fg={};
   try{ b = await (await fetch('board.json?_='+Date.now())).json(); }catch(e){}
   try{ stt = await (await fetch('evolve_status.json?_='+Date.now())).json(); }catch(e){}
+  try{ fg = await (await fetch('flexgraph.json?_='+Date.now())).json(); }catch(e){}
 
   // live status
   const live = document.getElementById('live');
@@ -109,31 +233,45 @@ async function load(){
   live.innerHTML = '<span class="dot" style="background:'+col+'"></span>'+
     '<b>'+(running?'RUNNING':'IDLE')+'</b> '+esc(phase)+last;
 
+  const nr = b.n_rounds||0;
+  document.getElementById('banner').innerHTML =
+    '⚠ On this box (no TPU) all latencies are <b>Pallas-interpret proxies</b> — plumbing validation, not results. '+
+    '<b>'+nr+' capability round'+(nr===1?'':'s')+' run.</b> The definitive “is AKT effective in AI?” test needs a TPU. '+
+    'Correctness (allclose vs the sglang-jax reference + its native pytest) is backend-independent and holds here.';
+
   const inc = b.incumbent||{}, ev = b.eval||{};
   document.getElementById('stats').innerHTML = [
-    ['shipped default', ms(inc.shipped_default_geomean_s), 'geomean, profiled here (incumbent baseline)'],
-    ['autotune (base knobs)', ms(inc.base_search_geomean_s), 'search over shipped knobs only'],
-    ['current incumbent', ms(inc.current_geomean_s), 'ratchets down as capabilities land'],
+    ['incumbent (best of existing knobs)', ms(inc.current_geomean_s), 'the bar a capability must beat — best autotuning of shipped knobs'],
+    ['shipped default', ms(inc.shipped_default_geomean_s), 'context only: the suboptimal shipped config (NOT the baseline)'],
     ['design choices', inc.choices!=null? inc.choices : '—', 'total configs across the suite'],
-    ['round', inc.round!=null? inc.round : 0, 'KEEP bar > '+(inc.target_pct??2)+'%'],
+    ['round', inc.round!=null? inc.round : 0, 'KEEP bar > '+(inc.target_pct??2)+'% · '+(b.n_rounds||0)+' run'],
     ['correctness', ev.all_correct===false?'FAIL':(ev.all_correct==null?'—':'all pass'),
-      (ev.n_runnable||0)+' runnable · '+(ev.n_deferred||0)+' tpu-deferred'],
+      'allclose '+(ev.allclose_correct===false?'✗':'✓')+' · sglang pytest '+
+      ((ev.native_summary||{}).passed||0)+'/'+((ev.native_summary||{}).ran||0)+
+      ' · '+(ev.n_deferred||0)+' tpu-deferred'],
   ].map(([k,v,d])=>'<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+
       '</div><div class="d">'+d+'</div></div>').join('');
+
+  renderChart(b);
 
   // kernels
   const kt = document.querySelector('#ktab tbody');
   kt.innerHTML = (b.kernels||[]).map(k=>{
     const su = k.speedup? k.speedup.toFixed(2)+'×' : '—';
     const cfg = k.best_config? '<code>'+esc(JSON.stringify(k.best_config))+'</code>' : '<span class="muted">'+esc(k.note||'')+'</span>';
-    const cor = k.correct===true?'<span class="badge b-keep">ok</span>':
+    const cor = k.correct===true?'<span class="badge b-keep">allclose</span>':
                 k.correct===false?'<span class="badge b-reject">mismatch</span>':
                 '<span class="badge b-defer">—</span>';
+    const nt = k.native_test;
+    const ntc = nt==='passed'?'<span class="badge b-keep">pytest ✓</span>':
+                nt==='failed'?'<span class="badge b-reject">pytest ✗</span>':
+                nt?('<span class="badge b-defer">'+esc(nt)+'</span>'):
+                '<span class="badge b-defer" title="TPU-only or no repo test">n/a</span>';
     return '<tr><td><b>'+esc(k.case||k.kernel)+'</b></td><td>'+regimeBadge(k.regime)+'</td>'+
       '<td class="num">'+ms(k.default_s)+'</td><td class="num">'+ms(k.best_s)+'</td>'+
       '<td class="num">'+su+'</td><td class="num">'+(k.space_size??'—')+'</td>'+
-      '<td>'+cfg+'</td><td>'+cor+'</td></tr>';
-  }).join('') || '<tr><td colspan="8" class="empty">no eval yet — run the loop `init`.</td></tr>';
+      '<td>'+cfg+'</td><td>'+cor+'</td><td>'+ntc+'</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="empty">no eval yet — run the loop `init`.</td></tr>';
 
   // trail
   const tt = document.querySelector('#ttab tbody');
@@ -149,6 +287,8 @@ async function load(){
     '<li><span class="badge b-'+esc(f.status)+'">'+esc(f.status)+'</span> '+
     '<code>'+esc(f.interface)+'</code> — <span class="what">'+esc(f.what)+'</span></li>'
   ).join('') || '<li class="empty">frontier unavailable</li>';
+
+  renderFlexGraphs(fg);
 
   document.getElementById('gen').textContent =
     'objective: '+(b.objective||'')+'  ·  generated '+(b.generated||'')+

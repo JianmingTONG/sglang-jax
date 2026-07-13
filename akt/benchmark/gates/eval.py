@@ -37,6 +37,9 @@ for p in (str(REPO), str(REPO / "python")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+import re  # noqa: E402
+import subprocess  # noqa: E402
+
 import jax  # noqa: E402
 from akt.benchmark.suites import load_cases  # noqa: E402
 from akt.benchmark.runners.base import (  # noqa: E402
@@ -44,9 +47,45 @@ from akt.benchmark.runners.base import (  # noqa: E402
 )
 
 
-def eval_case(case, runs: int) -> dict:
+def run_native_test(nodeid: str, timeout: int = 300) -> dict:
+    """Run sglang-jax's OWN pytest correctness test (the maintainer-authored check)
+    in Pallas-interpret and report its verdict. `nodeid` is a pytest file/nodeid or
+    `-k` expression. Returns {status: passed|failed|error|no-tests, passed, failed,
+    detail}. This is an INDEPENDENT verification layered on top of the per-config
+    allclose-vs-reference gate — it exercises the actual Pallas kernel under the
+    repo's own assertions + tolerances."""
+    env = dict(os.environ, PALLAS_INTERPRET="1", JAX_PLATFORMS="cpu",
+               PYTHONPATH=str(REPO / "python"))
+    cmd = [sys.executable, "-m", "pytest", "-q", "--no-header",
+           "-p", "no:cacheprovider", *nodeid.split()]
+    try:
+        r = subprocess.run(cmd, cwd=str(REPO), env=env, capture_output=True,
+                           text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "detail": f"timeout {timeout}s"}
+    tail = (r.stdout + r.stderr).strip().splitlines()
+    summary = next((l for l in reversed(tail)
+                    if re.search(r"passed|failed|error|no tests ran", l)), "")
+    npass = int((re.search(r"(\d+) passed", summary) or [0, 0])[1])
+    nfail = int((re.search(r"(\d+) (?:failed|error)", summary) or [0, 0])[1])
+    status = ("passed" if npass and not nfail else
+              "failed" if nfail else
+              "no-tests" if "no tests ran" in summary else "error")
+    return {"status": status, "passed": npass, "failed": nfail,
+            "detail": summary.strip("= ")[:120]}
+
+
+def eval_case(case, runs: int, native: bool = True) -> dict:
     out = {"case": case.case_id, "kernel": case.kernel_id, "shape": case.shape_id,
-           "space_size": case.space.size(), "note": case.note}
+           "space_size": case.space.size(), "note": case.note,
+           # the currently-EXPOSED tuning knobs (for the lowering/exposure graph):
+           # elevated_by names the capability that added a knob (None = base/shipped).
+           "knobs": [{"name": k.name, "n": len(k.values), "elevated_by": k.elevated_by}
+                     for k in case.space.knobs]}
+    # sglang-jax's own pytest correctness check (independent of our per-config gate).
+    if native and getattr(case, "native_test", None):
+        out["native_test"] = run_native_test(case.native_test)
+        out["native_test_id"] = case.native_test
     default_cfg = case.space.default_config()
     # 1) does this case execute here? (probe the default config)
     ok, why = check_correct(case, default_cfg)
@@ -90,15 +129,17 @@ def main():
     ap.add_argument("--suite", default="fast", choices=["fast", "full"])
     ap.add_argument("--runs", type=int, default=20, help="timing iters per config")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--no-native", action="store_true",
+                    help="skip sglang-jax's own pytest correctness checks (faster)")
     args = ap.parse_args()
 
     cases = load_cases(args.suite)
     print(f"[akt-eval] backend={jax.default_backend()} interpret={os.environ.get('PALLAS_INTERPRET')} "
-          f"suite={args.suite} cases={len(cases)}", flush=True)
+          f"suite={args.suite} cases={len(cases)} native_tests={not args.no_native}", flush=True)
     results = []
     for c in cases:
         try:
-            r = eval_case(c, args.runs)
+            r = eval_case(c, args.runs, native=not args.no_native)
         except Exception as e:  # noqa: BLE001
             r = {"case": c.case_id, "correct": False, "error": repr(e)[:200]}
             traceback.print_exc()
@@ -111,8 +152,10 @@ def main():
         print(f"[akt-eval] {tag} {r['case']:<22} [{reg:>14}] "
               f"best={fs*1e3:.2f}ms " if fs else f"[akt-eval] {tag} {r['case']:<22} [{reg:>14}] best=—  ",
               end="")
-        print((f"default={ds*1e3:.2f}ms  {r.get('search_note','')[:70]}"
-               if ds else f" {r.get('search_note') or r.get('reason') or r.get('error','')}")[:110],
+        nt = r.get("native_test")
+        nt_s = (f"  native[{r.get('kernel')}]:{nt['status']}" if nt else "")
+        print(((f"default={ds*1e3:.2f}ms  {r.get('search_note','')[:60]}"
+               if ds else f" {r.get('search_note') or r.get('reason') or r.get('error','')}")[:100]) + nt_s,
               flush=True)
 
     runnable = [r for r in results if r.get("correct")]
@@ -120,14 +163,25 @@ def main():
     geo_def = _geomean([r["default_s"] for r in runnable])
     all_ok = all((r.get("correct") is not False) for r in results) and bool(runnable)
     n_choices = sum(r.get("space_size", 0) for r in results)
-    summary = {"suite": args.suite, "all_correct": all_ok,
+    # sglang-jax native-test verdicts (independent maintainer-authored checks)
+    nats = [r["native_test"] for r in results if r.get("native_test")]
+    native_summary = {"ran": len(nats),
+                      "passed": sum(1 for n in nats if n["status"] == "passed"),
+                      "failed": sum(1 for n in nats if n["status"] == "failed"),
+                      "other": sum(1 for n in nats if n["status"] not in ("passed", "failed"))}
+    # A native-test FAILURE is a hard correctness failure (the repo's own assertions).
+    native_ok = native_summary["failed"] == 0
+    summary = {"suite": args.suite, "all_correct": all_ok and native_ok,
+               "allclose_correct": all_ok, "native_ok": native_ok,
                "geomean_s": geo, "geomean_default_s": geo_def,
                "n_runnable": len(runnable), "n_deferred": sum(1 for r in results if r.get("correct") is None),
+               "native_summary": native_summary,
                "n_choices": n_choices, "results": results,
                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
-    print(f"[akt-eval] SUMMARY all_correct={all_ok} search_geomean={geo*1e3:.2f}ms "
-          f"default_geomean={geo_def*1e3:.2f}ms runnable={len(runnable)} "
-          f"deferred={summary['n_deferred']} choices={n_choices}", flush=True)
+    print(f"[akt-eval] SUMMARY all_correct={all_ok and native_ok} (allclose={all_ok} "
+          f"native={native_summary['passed']}/{native_summary['ran']} pass) "
+          f"search_geomean={geo*1e3:.2f}ms default_geomean={geo_def*1e3:.2f}ms "
+          f"runnable={len(runnable)} deferred={summary['n_deferred']} choices={n_choices}", flush=True)
     if args.out:
         Path(args.out).write_text(json.dumps(summary, indent=2, default=str))
     return summary
