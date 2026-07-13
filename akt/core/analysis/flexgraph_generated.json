@@ -47,7 +47,7 @@
    "label": "elementwise arithmetic",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -57,6 +57,7 @@
     "moe_v2",
     "rpa"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -64,7 +65,7 @@
    "label": "math.* transcendental",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -78,7 +79,7 @@
    "label": "VPU",
    "layer": "hw",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -95,7 +96,7 @@
    "label": "arith.* arithmetic",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -111,7 +112,7 @@
    "label": "logic / compare / select",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -122,6 +123,7 @@
     "moe_v2",
     "rpa"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -129,7 +131,7 @@
    "label": "arith.* logic/compare",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -146,11 +148,39 @@
    "label": "reductions",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
     "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ],
+   "fanout": true
+  },
+  {
+   "id": "mosaic:tpu.reduce_index",
+   "label": "tpu.reduce_index",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": [
+    "moe_v1"
+   ]
+  },
+  {
+   "id": "hw:XLU",
+   "label": "XLU",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
     "moe_v1",
     "moe_v2",
     "rpa"
@@ -161,18 +191,19 @@
    "label": "axis_index",
    "layer": "pallas",
    "category": "sync",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
-   ]
+   ],
+   "fanout": true
   },
   {
    "id": "mosaic:tpu.device_id",
    "label": "tpu.device_id",
    "layer": "mosaic",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
@@ -183,7 +214,7 @@
    "label": "scalar unit",
    "layer": "hw",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -191,13 +222,12 @@
    ]
   },
   {
-   "id": "hw:inter-core comm",
-   "label": "inter-core comm",
+   "id": "hw:inter-core / ICI comm",
+   "label": "inter-core / ICI comm",
    "layer": "hw",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
-    "gmm",
     "moe_v1",
     "moe_v2"
    ]
@@ -207,7 +237,7 @@
    "label": "bitcast",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v2",
     "rpa"
@@ -218,7 +248,7 @@
    "label": "tpu.bitcast",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v2",
     "rpa"
@@ -229,10 +259,11 @@
    "label": "dtype convert",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "moe_v2"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -240,7 +271,7 @@
    "label": "broadcast_in_dim",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -255,44 +286,13 @@
    "label": "vector.* layout",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
     "gmm",
     "kda",
     "kv_cache",
-    "moe_v1",
-    "moe_v2",
-    "rpa"
-   ]
-  },
-  {
-   "id": "hw:XLU",
-   "label": "XLU",
-   "layer": "hw",
-   "category": "compute",
-   "nameability": "direct",
-   "active": [
-    "fused_mlp",
-    "gla",
-    "gmm",
-    "kda",
-    "kv_cache",
-    "moe_v1",
-    "moe_v2",
-    "rpa"
-   ]
-  },
-  {
-   "id": "pallas:broadcast_to",
-   "label": "broadcast_to",
-   "layer": "pallas",
-   "category": "layout",
-   "nameability": "direct",
-   "active": [
-    "gla",
-    "gmm",
     "moe_v1",
     "moe_v2",
     "rpa"
@@ -303,7 +303,7 @@
    "label": "concatenate",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "kda",
@@ -316,7 +316,7 @@
    "label": "tpu.concatenate",
    "layer": "mosaic",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gmm",
@@ -332,20 +332,21 @@
    "label": "cond",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gmm",
     "moe_v1",
     "moe_v2"
-   ]
+   ],
+   "fanout": true
   },
   {
    "id": "mosaic:scf.* control flow",
    "label": "scf.* control flow",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -362,7 +363,7 @@
    "label": "arith.* convert",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -378,13 +379,14 @@
    "label": "transcendental math",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "gla",
     "kda",
     "moe_v2",
     "rpa"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -392,7 +394,7 @@
    "label": "dma_start",
    "layer": "pallas",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -409,7 +411,7 @@
    "label": "tpu.enqueue_dma",
    "layer": "mosaic",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -425,7 +427,7 @@
    "label": "DMA engines",
    "layer": "hw",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -441,7 +443,7 @@
    "label": "dma_wait",
    "layer": "pallas",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -457,7 +459,7 @@
    "label": "tpu.wait_dma2",
    "layer": "mosaic",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -473,7 +475,7 @@
    "label": "dot_general",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -483,6 +485,7 @@
     "moe_v2",
     "rpa"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -490,7 +493,7 @@
    "label": "arith.constant",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -507,7 +510,7 @@
    "label": "tpu.matmul",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -523,7 +526,7 @@
    "label": "MXU",
    "layer": "hw",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -539,7 +542,7 @@
    "label": "vector.multi_reduction",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -555,13 +558,14 @@
    "label": "gather",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "gla",
     "kda",
     "moe_v1",
     "moe_v2"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -569,7 +573,7 @@
    "label": "tpu.dynamic_gather",
    "layer": "mosaic",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "kda",
@@ -582,7 +586,7 @@
    "label": "get",
    "layer": "pallas",
    "category": "memory",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "kda",
@@ -595,7 +599,7 @@
    "label": "semaphore fabric",
    "layer": "hw",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
@@ -606,7 +610,7 @@
    "label": "iota",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -618,7 +622,7 @@
    "label": "tpu.iota",
    "layer": "mosaic",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -630,12 +634,13 @@
    "label": "load",
    "layer": "pallas",
    "category": "datamove",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
     "moe_v2"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -643,7 +648,7 @@
    "label": "memref.load",
    "layer": "mosaic",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -655,7 +660,7 @@
    "label": "SMEM / scalar unit",
    "layer": "hw",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -667,7 +672,7 @@
    "label": "VMEM",
    "layer": "hw",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -679,7 +684,7 @@
    "label": "tpu.memory_space<any>",
    "layer": "mosaic",
    "category": "memory",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -691,7 +696,7 @@
    "label": "tpu.memory_space<smem>",
    "layer": "mosaic",
    "category": "memory",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -703,7 +708,7 @@
    "label": "tpu.memory_space<vmem>",
    "layer": "mosaic",
    "category": "memory",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -715,7 +720,7 @@
    "label": "tpu.strided_load",
    "layer": "mosaic",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -727,7 +732,7 @@
    "label": "VMEM\u2192VREG load",
    "layer": "hw",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -739,7 +744,7 @@
    "label": "vector.load",
    "layer": "mosaic",
    "category": "datamove",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "moe_v1",
@@ -751,7 +756,7 @@
    "label": "multiple_of",
    "layer": "pallas",
    "category": "memory",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "kda",
     "moe_v1",
@@ -764,7 +769,7 @@
    "label": "tpu.assume_multiple",
    "layer": "mosaic",
    "category": "memory",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "kda",
     "moe_v1",
@@ -777,7 +782,7 @@
    "label": "num_programs",
    "layer": "pallas",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm"
    ]
@@ -787,7 +792,7 @@
    "label": "tpu.iteration_bound",
    "layer": "mosaic",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm"
    ]
@@ -797,7 +802,7 @@
    "label": "pad",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gmm",
@@ -807,6 +812,7 @@
     "moe_v2",
     "rpa"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -814,7 +820,7 @@
    "label": "program_id",
    "layer": "pallas",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "fused_mlp",
     "gla",
@@ -828,7 +834,7 @@
    "label": "reciprocal",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "rpa"
    ]
@@ -838,7 +844,7 @@
    "label": "tpu.reciprocal",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "rpa"
    ]
@@ -848,7 +854,7 @@
    "label": "repeat",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -863,7 +869,7 @@
    "label": "tpu.repeat",
    "layer": "mosaic",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -878,7 +884,7 @@
    "label": "reshape",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -888,6 +894,7 @@
     "moe_v2",
     "rpa"
    ],
+   "fanout": true,
    "partial": true
   },
   {
@@ -895,7 +902,7 @@
    "label": "roll",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm"
    ]
@@ -905,7 +912,7 @@
    "label": "tpu.dynamic_rotate",
    "layer": "mosaic",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm"
    ]
@@ -915,19 +922,42 @@
    "label": "run_scoped",
    "layer": "pallas",
    "category": "memory",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
    ],
+   "fanout": true,
    "partial": true
+  },
+  {
+   "id": "mosaic:memref.* alloc/view",
+   "label": "memref.* alloc/view",
+   "layer": "mosaic",
+   "category": "memory",
+   "nameability": "nameable",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
+  },
+  {
+   "id": "mosaic:tpu.sem_alloc",
+   "label": "tpu.sem_alloc",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "nameable",
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
   },
   {
    "id": "mosaic:tpu.yield_",
    "label": "tpu.yield_",
    "layer": "mosaic",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
@@ -938,7 +968,7 @@
    "label": "scan",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla"
    ],
@@ -949,7 +979,7 @@
    "label": "semaphore_signal",
    "layer": "pallas",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
@@ -960,7 +990,7 @@
    "label": "tpu.sem_signal",
    "layer": "mosaic",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
@@ -971,7 +1001,7 @@
    "label": "semaphore_wait",
    "layer": "pallas",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
@@ -983,7 +1013,7 @@
    "label": "tpu.sem_wait",
    "layer": "mosaic",
    "category": "sync",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "moe_v1",
     "moe_v2"
@@ -994,7 +1024,7 @@
    "label": "slice",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -1007,7 +1037,7 @@
    "label": "split",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "kda",
@@ -1019,7 +1049,7 @@
    "label": "squeeze",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gmm",
     "kda",
@@ -1031,20 +1061,21 @@
    "label": "transpose",
    "layer": "pallas",
    "category": "layout",
-   "nameability": "grouped",
+   "nameability": "nameable",
    "active": [
     "gla",
     "kda",
     "kv_cache",
     "rpa"
-   ]
+   ],
+   "fanout": true
   },
   {
    "id": "mosaic:tpu.transpose",
    "label": "tpu.transpose",
    "layer": "mosaic",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "kda",
@@ -1057,7 +1088,7 @@
    "label": "while",
    "layer": "pallas",
    "category": "compute",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": [
     "gla",
     "gmm",
@@ -1081,12 +1112,28 @@
    "label": "VREG",
    "layer": "hw",
    "category": "layout",
-   "nameability": "direct",
+   "nameability": "nameable",
    "active": []
   },
   {
    "id": "hidden:register spill",
    "label": "register spill",
+   "layer": "hidden",
+   "category": "layout",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:shuffle insertion schedule",
+   "label": "shuffle insertion schedule",
+   "layer": "hidden",
+   "category": "layout",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hidden:vector-layout assignment / relayout insertion",
+   "label": "vector-layout assignment / relayout insertion",
    "layer": "hidden",
    "category": "layout",
    "nameability": "hidden",
@@ -1133,6 +1180,14 @@
    "active": []
   },
   {
+   "id": "hw:VLIW issue scheduler",
+   "label": "VLIW issue scheduler",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
    "id": "hidden:instruction encoding",
    "label": "instruction encoding",
    "layer": "hidden",
@@ -1149,8 +1204,8 @@
    "active": []
   },
   {
-   "id": "hidden:pipeline timing",
-   "label": "pipeline timing",
+   "id": "hidden:automatic pipeline overlap",
+   "label": "automatic pipeline overlap",
    "layer": "hidden",
    "category": "compute",
    "nameability": "hidden",
@@ -1165,18 +1220,10 @@
    "active": []
   },
   {
-   "id": "hw:inter-chip comm",
-   "label": "inter-chip comm",
-   "layer": "hw",
-   "category": "compute",
-   "nameability": "direct",
-   "active": []
-  },
-  {
    "id": "hidden:contention arbitration",
    "label": "contention arbitration",
    "layer": "hidden",
-   "category": "sync",
+   "category": "memory",
    "nameability": "hidden",
    "active": []
   }
@@ -1207,6 +1254,18 @@
    "hw:VPU"
   ],
   [
+   "pallas:reductions",
+   "mosaic:tpu.reduce_index"
+  ],
+  [
+   "mosaic:tpu.reduce_index",
+   "hw:VPU"
+  ],
+  [
+   "mosaic:tpu.reduce_index",
+   "hw:XLU"
+  ],
+  [
    "pallas:axis_index",
    "mosaic:arith.* arithmetic"
   ],
@@ -1220,7 +1279,7 @@
   ],
   [
    "mosaic:tpu.device_id",
-   "hw:inter-core comm"
+   "hw:inter-core / ICI comm"
   ],
   [
    "pallas:bitcast",
@@ -1331,6 +1390,10 @@
    "hw:VPU"
   ],
   [
+   "mosaic:vector.multi_reduction",
+   "hw:XLU"
+  ],
+  [
    "pallas:gather",
    "mosaic:tpu.dynamic_gather"
   ],
@@ -1427,10 +1490,6 @@
    "hw:scalar unit"
   ],
   [
-   "mosaic:tpu.iteration_bound",
-   "hw:inter-core comm"
-  ],
-  [
    "pallas:pad",
    "mosaic:arith.constant"
   ],
@@ -1455,8 +1514,16 @@
    "hw:VPU"
   ],
   [
+   "pallas:reductions",
+   "mosaic:vector.multi_reduction"
+  ],
+  [
    "pallas:repeat",
    "mosaic:tpu.repeat"
+  ],
+  [
+   "mosaic:tpu.repeat",
+   "hw:XLU"
   ],
   [
    "pallas:reshape",
@@ -1469,6 +1536,22 @@
   [
    "mosaic:tpu.dynamic_rotate",
    "hw:XLU"
+  ],
+  [
+   "pallas:run_scoped",
+   "mosaic:memref.* alloc/view"
+  ],
+  [
+   "mosaic:memref.* alloc/view",
+   "hw:VMEM"
+  ],
+  [
+   "pallas:run_scoped",
+   "mosaic:tpu.sem_alloc"
+  ],
+  [
+   "mosaic:tpu.sem_alloc",
+   "hw:semaphore fabric"
   ],
   [
    "pallas:run_scoped",
@@ -1527,6 +1610,14 @@
    "hidden:register spill"
   ],
   [
+   "hw:XLU",
+   "hidden:shuffle insertion schedule"
+  ],
+  [
+   "hw:XLU",
+   "hidden:vector-layout assignment / relayout insertion"
+  ],
+  [
    "hw:VMEM",
    "hidden:VMEM bank mapping"
   ],
@@ -1543,28 +1634,56 @@
    "hidden:MXU push/pop staging"
   ],
   [
-   "hw:MXU",
+   "hw:VLIW issue scheduler",
    "hidden:instruction scheduling"
   ],
   [
-   "hw:VPU",
+   "hw:VLIW issue scheduler",
    "hidden:instruction encoding"
   ],
   [
-   "hw:MXU",
+   "hw:VLIW issue scheduler",
    "hidden:cycle-level unit overlap"
   ],
   [
-   "hw:MXU",
-   "hidden:pipeline timing"
+   "hw:VLIW issue scheduler",
+   "hidden:automatic pipeline overlap"
   ],
   [
-   "hw:inter-chip comm",
+   "hw:inter-core / ICI comm",
    "hidden:ICI route selection"
   ],
   [
-   "hw:semaphore fabric",
+   "hw:VMEM",
    "hidden:contention arbitration"
+  ],
+  [
+   "hw:MXU",
+   "hw:VLIW issue scheduler"
+  ],
+  [
+   "hw:VPU",
+   "hw:VLIW issue scheduler"
+  ],
+  [
+   "hw:XLU",
+   "hw:VLIW issue scheduler"
+  ],
+  [
+   "hw:DMA engines",
+   "hw:VLIW issue scheduler"
+  ],
+  [
+   "hw:VPU",
+   "hw:VREG"
+  ],
+  [
+   "hw:MXU",
+   "hw:VREG"
+  ],
+  [
+   "hw:XLU",
+   "hw:VREG"
   ]
  ],
  "exposure_edges": [
@@ -1593,6 +1712,18 @@
    "mosaic:arith.* logic/compare"
   ],
   [
+   "mosaic:tpu.reduce_index",
+   "pallas:reductions"
+  ],
+  [
+   "hw:VPU",
+   "mosaic:tpu.reduce_index"
+  ],
+  [
+   "hw:XLU",
+   "mosaic:tpu.reduce_index"
+  ],
+  [
    "mosaic:arith.* arithmetic",
    "pallas:axis_index"
   ],
@@ -1605,7 +1736,7 @@
    "mosaic:tpu.device_id"
   ],
   [
-   "hw:inter-core comm",
+   "hw:inter-core / ICI comm",
    "mosaic:tpu.device_id"
   ],
   [
@@ -1717,6 +1848,10 @@
    "mosaic:vector.multi_reduction"
   ],
   [
+   "hw:XLU",
+   "mosaic:vector.multi_reduction"
+  ],
+  [
    "mosaic:tpu.dynamic_gather",
    "pallas:gather"
   ],
@@ -1813,10 +1948,6 @@
    "mosaic:tpu.iteration_bound"
   ],
   [
-   "hw:inter-core comm",
-   "mosaic:tpu.iteration_bound"
-  ],
-  [
    "mosaic:arith.constant",
    "pallas:pad"
   ],
@@ -1841,8 +1972,16 @@
    "mosaic:tpu.reciprocal"
   ],
   [
+   "mosaic:vector.multi_reduction",
+   "pallas:reductions"
+  ],
+  [
    "mosaic:tpu.repeat",
    "pallas:repeat"
+  ],
+  [
+   "hw:XLU",
+   "mosaic:tpu.repeat"
   ],
   [
    "mosaic:vector.* layout",
@@ -1855,6 +1994,22 @@
   [
    "hw:XLU",
    "mosaic:tpu.dynamic_rotate"
+  ],
+  [
+   "mosaic:memref.* alloc/view",
+   "pallas:run_scoped"
+  ],
+  [
+   "hw:VMEM",
+   "mosaic:memref.* alloc/view"
+  ],
+  [
+   "mosaic:tpu.sem_alloc",
+   "pallas:run_scoped"
+  ],
+  [
+   "hw:semaphore fabric",
+   "mosaic:tpu.sem_alloc"
   ],
   [
    "mosaic:tpu.yield_",
@@ -1903,6 +2058,34 @@
   [
    "mosaic:scf.* control flow",
    "pallas:while"
+  ],
+  [
+   "hw:VLIW issue scheduler",
+   "hw:MXU"
+  ],
+  [
+   "hw:VLIW issue scheduler",
+   "hw:VPU"
+  ],
+  [
+   "hw:VLIW issue scheduler",
+   "hw:XLU"
+  ],
+  [
+   "hw:VLIW issue scheduler",
+   "hw:DMA engines"
+  ],
+  [
+   "hw:VREG",
+   "hw:VPU"
+  ],
+  [
+   "hw:VREG",
+   "hw:MXU"
+  ],
+  [
+   "hw:VREG",
+   "hw:XLU"
   ]
  ],
  "gap_edges": [
@@ -1913,6 +2096,14 @@
   [
    "hw:VREG",
    "hidden:register spill"
+  ],
+  [
+   "hw:XLU",
+   "hidden:shuffle insertion schedule"
+  ],
+  [
+   "hw:XLU",
+   "hidden:vector-layout assignment / relayout insertion"
   ],
   [
    "hw:VMEM",
@@ -1931,42 +2122,42 @@
    "hidden:MXU push/pop staging"
   ],
   [
-   "hw:MXU",
+   "hw:VLIW issue scheduler",
    "hidden:instruction scheduling"
   ],
   [
-   "hw:VPU",
+   "hw:VLIW issue scheduler",
    "hidden:instruction encoding"
   ],
   [
-   "hw:MXU",
+   "hw:VLIW issue scheduler",
    "hidden:cycle-level unit overlap"
   ],
   [
-   "hw:MXU",
-   "hidden:pipeline timing"
+   "hw:VLIW issue scheduler",
+   "hidden:automatic pipeline overlap"
   ],
   [
-   "hw:inter-chip comm",
+   "hw:inter-core / ICI comm",
    "hidden:ICI route selection"
   ],
   [
-   "hw:semaphore fabric",
+   "hw:VMEM",
    "hidden:contention arbitration"
   ]
  ],
- "n_gap": 12,
- "n_hidden": 12,
+ "n_gap": 14,
+ "n_hidden": 14,
  "n_partial": 14,
  "stats": {
-  "jax_primitives_total": 105,
-  "primitives_shown": 35,
-  "mosaic_ops": 31,
+  "jax_primitives_total": 104,
+  "primitives_shown": 34,
+  "mosaic_ops": 34,
   "hw_units": 12,
   "tpu_dialect_ops": 175,
-  "active_primitives": 54,
+  "active_primitives": 53,
   "kernels_scanned": 8,
   "focus_active": true
  },
- "note": "AUTO-EXTRACTED from the stack: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks primitives the sglang-jax kernels use; Mosaic\u2192hardware + the hidden-below-Mosaic floor are rule tables (not in code). Green = lowered \u25bc & exposed \u25b2; red directed = lowered into a HIDDEN capability (no IR handle) = flexibility gap."
+ "note": "AUTO-EXTRACTED from the stack: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks primitives the sglang-jax kernels use; Mosaic\u2192hardware + the hidden-below-Mosaic floor are rule tables (not in code). Nameability is BINARY: a capability is either NAMEABLE / reschedulable at the top (green, bidirectional) or HIDDEN \u2014 reachable in the lowering but not reschedulable from the top (red directed edge into it = the flexibility gap). A high-level op like lax.dot is nameable; the fused internals it can't reschedule are the hidden nodes it lowers into."
 }

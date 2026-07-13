@@ -83,7 +83,7 @@
     <th class="num">est%</th><th>gap / reason</th>
   </tr></thead><tbody></tbody></table></div>
 
-  <h2>TPU compiler lowering graph <span class="muted">— JAX/Pallas → Mosaic IR → hardware · lowering ▼ / exposure ▲ · red = hidden-capability gap</span></h2>
+  <h2>Flexibility graph <span class="muted">— JAX/Pallas → Mosaic IR → hardware · nameable ▼▲ vs reachable-but-not-reschedulable (red gap)</span></h2>
   <div class="panel">
     <div id="flexgraphs"></div>
     <div class="sub" style="margin-top:10px" id="flexnote"></div>
@@ -164,7 +164,7 @@ function renderFlexGraph(fg){
         good=cssVar('--good')||'#3fb950', warn=cssVar('--warn')||'#d29922',
         ink=cssVar('--mut')||'#9aa4b2', line=cssVar('--line')||'#2a2f3a',
         panel=cssVar('--panel2')||'#1e222b', panelHi=cssVar('--panel')||'#171a21';
-  const nameCol = nm => nm==='hidden'? bad : nm==='grouped'? warn : acc;
+  const nameCol = nm => nm==='hidden'? bad : acc;   // BINARY: nameable (blue) vs hidden (red)
   const cx={}; cats.forEach((c,i)=>cx[c.id]=leftPad + i*colW + colW/2);
   const cell={}; fg.nodes.forEach(n=>{ (cell[n.layer+'|'+n.category]=cell[n.layer+'|'+n.category]||[]).push(n); });
   const bandTop={}, bandH={}; let y=topPad;
@@ -209,11 +209,10 @@ function renderFlexGraph(fg){
   const sw=(c,d)=>'<svg width="30" height="11" style="vertical-align:middle"><line x1="2" y1="5.5" x2="'+(d?22:28)+'" y2="5.5" stroke="'+c+'" stroke-width="2.4"'+(d?'':'')+'/>'+(d?'<polygon points="22,1.5 30,5.5 22,9.5" fill="'+c+'"/>':'')+'</svg>';
   const chip=(c,dash)=>'<span style="display:inline-block;width:11px;height:11px;border:1.6px '+(dash?'dashed':'solid')+' '+c+';border-radius:3px;vertical-align:middle"></span>';
   const lg='<div style="display:flex;gap:16px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;color:'+ink+'">'+
-    '<span>'+sw(good,false)+' lowered ▼ &amp; exposed ▲ (bidirectional)</span>'+
-    '<span>'+sw(bad,true)+' <b style="color:'+bad+'">gap: lowered ▼, NOT exposed</b></span>'+
-    '<span>'+chip(acc)+' directly nameable</span>'+
-    '<span>'+chip(warn)+' grouped / semantic</span>'+
-    '<span>'+chip(bad,true)+' hidden below Mosaic</span>'+
+    '<span>'+sw(good,false)+' nameable ▼▲ — reschedulable at the top</span>'+
+    '<span>'+sw(bad,true)+' <b style="color:'+bad+'">flexibility gap: reachable ▼, NOT reschedulable</b></span>'+
+    '<span>'+chip(acc)+' nameable capability</span>'+
+    '<span>'+chip(bad,true)+' hidden capability</span>'+
     '<span style="opacity:.45">'+chip(ink)+' faded = unused by the suite</span></div>';
   host.innerHTML = lg + '<div style="overflow-x:auto">'+s+'</div>';
   document.getElementById('flexnote').textContent = fg.note||'';

@@ -141,7 +141,7 @@ _API_ALIAS = {
     "emit_pipeline": ["dma_start", "dma_wait"], "copy": ["dma_start", "dma_wait"],
     "dot": ["dot_general"], "matmul": ["dot_general"],
     "roll": ["roll", "dynamic_rotate"], "transpose": ["transpose"], "swapaxes": ["transpose"],
-    "reshape": ["reshape"], "broadcast_to": ["broadcast_to", "broadcast_in_dim"],
+    "reshape": ["reshape"], "broadcast_to": ["broadcast_in_dim"],  # broadcast_to is Triton-only (raises on TPU)
     "broadcast": ["broadcast_in_dim"], "repeat": ["repeat"], "concatenate": ["concatenate"],
     "take_along_axis": ["gather"], "take": ["gather"], "gather": ["gather"],
     "iota": ["iota"], "semaphore_wait": ["semaphore_wait"], "semaphore_signal": ["semaphore_signal"],
@@ -202,11 +202,12 @@ _HW_RULES = [
     (r"enqueue_dma|wait_dma|dma_start|dma_wait|enqueue_indirect|wait_indirect", ["DMA engines"]),
     (r"vector\.load|strided_load|shuffled_load|^tpu\.load|iload", ["VMEM→VREG load"]),
     (r"vector_store|strided_store|shuffled_store|^tpu\.store|istore", ["VREG→VMEM store"]),
-    (r"relayout|rotate|transpose|gather|concat|sublane|lane_|shuffle|shape_cast|broadcast", ["XLU"]),
-    (r"reduce|scan|all_reduce|reduce_index", ["VPU", "XLU"]),
+    (r"relayout|rotate|transpose|gather|concat|sublane|lane_|shuffle|shape_cast|broadcast|repeat", ["XLU"]),
+    (r"reduce|scan|all_reduce|reduce_index|reduction", ["VPU", "XLU"]),   # cross-lane part on XLU
     (r"arith\.|math\.|reciprocal|iota|select|cmpf|cmpi|pack|unpack|bitcast|prng|vector\.(?!load)", ["VPU"]),
     (r"sem_|barrier", ["semaphore fabric"]),
-    (r"device_id|core_id|subcore|iteration_bound|delay", ["scalar unit", "inter-core comm"]),
+    (r"device_id|core_id|subcore", ["scalar unit", "inter-core / ICI comm"]),
+    (r"iteration_bound|delay", ["scalar unit"]),   # loop bound / fixed stall — scalar, not comm
     (r"memory_space<hbm|!tpu.*hbm", ["HBM"]),
     (r"memory_space<vmem|!tpu.*vmem", ["VMEM"]),
     (r"memory_space<smem|memref\.load|memref\.store", ["SMEM / scalar unit"]),
@@ -290,20 +291,28 @@ def hw_units(op: str):
 # from the IR; they are the architectural floor). Each maps under a category column.
 _HIDDEN = [
     ("physical VREG alloc", "layout"), ("register spill", "layout"),
+    ("shuffle insertion schedule", "layout"),
+    ("vector-layout assignment / relayout insertion", "layout"),
     ("VMEM bank mapping", "memory"), ("DMA channel selection", "datamove"),
     ("HW queue assignment", "datamove"), ("MXU push/pop staging", "compute"),
     ("instruction scheduling", "compute"), ("instruction encoding", "compute"),
-    ("cycle-level unit overlap", "compute"), ("pipeline timing", "compute"),
-    ("ICI route selection", "sync"), ("contention arbitration", "sync"),
+    ("cycle-level unit overlap", "compute"), ("automatic pipeline overlap", "compute"),
+    ("ICI route selection", "sync"), ("contention arbitration", "memory"),
 ]
 # which hardware unit each hidden capability sits under (source of the gap edge).
 _HIDDEN_FROM = {
     "physical VREG alloc": "hw:VREG", "register spill": "hw:VREG",
+    "shuffle insertion schedule": "hw:XLU",
+    "vector-layout assignment / relayout insertion": "hw:XLU",
     "VMEM bank mapping": "hw:VMEM", "DMA channel selection": "hw:DMA engines",
     "HW queue assignment": "hw:DMA engines", "MXU push/pop staging": "hw:MXU",
-    "instruction scheduling": "hw:MXU", "instruction encoding": "hw:VPU",
-    "cycle-level unit overlap": "hw:MXU", "pipeline timing": "hw:MXU",
-    "ICI route selection": "hw:inter-chip comm", "contention arbitration": "hw:semaphore fabric",
+    # global VLIW-bundle decisions govern ALL units, not one — anchor to a scheduler pseudo-unit
+    "instruction scheduling": "hw:VLIW issue scheduler",
+    "instruction encoding": "hw:VLIW issue scheduler",
+    "cycle-level unit overlap": "hw:VLIW issue scheduler",
+    "automatic pipeline overlap": "hw:VLIW issue scheduler",
+    "ICI route selection": "hw:inter-core / ICI comm",
+    "contention arbitration": "hw:VMEM",   # bank/crossbar/DMA bandwidth arbitration, not the sem fabric
 }
 
 
@@ -312,18 +321,35 @@ def _nid(layer, name):
     return f"{layer}:{name}"
 
 
+# Emissions the AST scan misses because the rule DELEGATES to a helper function
+# (verified from the lowering source / the stack investigation). Kept minimal + cited.
+_ENRICH = {
+    "reduce_sum": ["vector.multi_reduction"], "reduce_max": ["vector.multi_reduction"],
+    "reduce_min": ["vector.multi_reduction"],
+    "argmax": ["tpu.reduce_index"], "argmin": ["tpu.reduce_index"],
+    # run_scoped delegates its scratch alloc to _alloc_value (memref.alloca + tpu.sem_alloc),
+    # which the rule-body AST scan doesn't see (lowering.py _alloc_value).
+    "run_scoped": ["memref.alloca", "tpu.sem_alloc"],
+}
+# reduce_prod / cumsum / cummax / cumlogsumexp have NO lowering rule in this Mosaic build
+# (verified: 0 occurrences) so they never enter `rules` — dropped from _ENRICH as dead.
+
 # Pure tracing/plumbing primitives with no TPU-flexibility meaning — dropped.
 _SKIP_PRIMS = {
     "jit", "pjit", "closed_call", "core_call", "custom_jvp_call", "custom_vjp_call",
     "custom_vjp_call_jaxpr", "custom_transpose", "remat", "remat2", "checkpoint",
     "run_state", "debug_callback", "debug_print", "assert", "custom_root", "custom_linear_solve",
     "check", "reduce_precision",
+    "broadcast_to",   # Triton-only primitive; its Mosaic rule raises RuntimeError (dead on TPU)
 }
 
 
 def build_graph(focus_active: bool = True):
     src = locate_sources()
     rules = {p: v for p, v in extract_lowering(src["lowering"]).items() if p not in _SKIP_PRIMS}
+    for p, extra in _ENRICH.items():       # delegated emissions the AST scan misses
+        if p in rules:
+            rules[p]["ops"] |= set(extra)
     prim_shorts = set(rules)
     active = scan_kernel_usage(src["kernels"], prim_shorts)
     tpu_ops_all = discover_tpu_ops()
@@ -347,16 +373,21 @@ def build_graph(focus_active: bool = True):
     for prim, info in sorted(rules.items()):
         pl = coarsen_prim(prim)
         ops = sorted(info["ops"])
-        # grouped if this primitive is a collapsed family or its rule fans out
-        nm = ("grouped" if (pl != prim or len({o.split(".")[0] for o in ops}) > 1 or len(ops) > 2)
-              else "direct")
-        p_id = node("pallas", pl, categorize(pl), nm, active.get(prim))
+        # BINARY nameability: a capability is either NAMEABLE/reschedulable at the top
+        # or HIDDEN (reachable in the lowering but not nameable). A "grouped" op like
+        # lax.dot is itself nameable; the internals it fuses that you cannot reschedule
+        # are separate HIDDEN nodes it lowers into (the red gap edges) — so there is no
+        # third tier. `fanout` is kept only as a tooltip hint, not a class.
+        fanout = (pl != prim or len({o.split(".")[0] for o in ops}) > 1 or len(ops) > 2)
+        p_id = node("pallas", pl, categorize(pl), "nameable", active.get(prim))
+        if fanout:
+            nodes[p_id]["fanout"] = True
         for op in ops:
             cop = coarsen(op)
-            m_id = node("mosaic", cop, categorize(cop), "direct", active.get(prim))
+            m_id = node("mosaic", cop, categorize(cop), "nameable", active.get(prim))
             low_edges.append([p_id, m_id])
             for u in hw_units(op):     # classify HW from the ORIGINAL (specific) op
-                h_id = node("hw", u, categorize(u), "direct", active.get(prim))
+                h_id = node("hw", u, categorize(u), "nameable", active.get(prim))
                 hw_seen.add(u)
                 low_edges.append([m_id, h_id])
         if info["partial"]:
@@ -369,9 +400,21 @@ def build_graph(focus_active: bool = True):
         frm = _HIDDEN_FROM.get(name, "")
         if frm.startswith("hw:"):
             unit = frm[3:]
-            h_id = node("hw", unit, categorize(unit), "direct")   # anchor even if unreached
+            h_id = node("hw", unit, categorize(unit), "nameable")   # anchor even if unreached
             low_edges.append([h_id, x_id])
             gap_edges.append([h_id, x_id])
+
+    # connect the pseudo-anchor units (they sit BELOW the execution units, which are all
+    # governed by them) so their gaps are reached from the active compute path.
+    _ANCHOR_FEED = {"VLIW issue scheduler": ("MXU", "VPU", "XLU", "DMA engines"),
+                    "VREG": ("VPU", "MXU", "XLU")}
+    for anchor, feeders in _ANCHOR_FEED.items():
+        a_id = _nid("hw", anchor)
+        if a_id in node_ids:
+            for u in feeders:
+                s = _nid("hw", u)
+                if s in node_ids:
+                    low_edges.append([s, a_id])
 
     # de-dup edges
     low_edges = [list(e) for e in dict.fromkeys(map(tuple, low_edges))]
@@ -413,8 +456,11 @@ def build_graph(focus_active: bool = True):
         "note": ("AUTO-EXTRACTED from the stack: JAX/Pallas primitives + primitive→Mosaic-op "
                  "edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks primitives "
                  "the sglang-jax kernels use; Mosaic→hardware + the hidden-below-Mosaic floor "
-                 "are rule tables (not in code). Green = lowered ▼ & exposed ▲; red directed = "
-                 "lowered into a HIDDEN capability (no IR handle) = flexibility gap."),
+                 "are rule tables (not in code). Nameability is BINARY: a capability is either "
+                 "NAMEABLE / reschedulable at the top (green, bidirectional) or HIDDEN — reachable "
+                 "in the lowering but not reschedulable from the top (red directed edge into it "
+                 "= the flexibility gap). A high-level op like lax.dot is nameable; the fused "
+                 "internals it can't reschedule are the hidden nodes it lowers into."),
     }
 
 
