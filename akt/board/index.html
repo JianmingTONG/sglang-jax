@@ -83,7 +83,7 @@
     <th class="num">est%</th><th>gap / reason</th>
   </tr></thead><tbody></tbody></table></div>
 
-  <h2>Flexibility graph <span class="muted">— lowering ▼ vs exposure ▲ · categories → operators → JAX/Pallas → hardware</span></h2>
+  <h2>TPU compiler lowering graph <span class="muted">— JAX/Pallas → Mosaic IR → hardware · lowering ▼ / exposure ▲ · red = hidden-capability gap</span></h2>
   <div class="panel">
     <div id="flexgraphs"></div>
     <div class="sub" style="margin-top:10px" id="flexnote"></div>
@@ -157,52 +157,64 @@ function decBadge(d){
 
 function renderFlexGraph(fg){
   const host = document.getElementById('flexgraphs');
-  if(!fg || !fg.levels){ host.innerHTML = '<div class="empty">flexgraph unavailable — run the loop build.</div>'; return; }
-  const boxW=152, boxH=40, rowGap=142, topY=58, leftPad=160, rightPad=44;
-  const maxN = Math.max.apply(null, fg.levels.map(l=>l.node_ids.length));
-  const usableW = Math.max(700, maxN*(boxW+22));
-  const fullW = leftPad + usableW + rightPad;
-  const H = topY + (fg.levels.length-1)*rowGap + boxH/2 + 40;
-  const pos = {};
-  fg.levels.forEach((lv,li)=>{ const n=lv.node_ids.length;
-    lv.node_ids.forEach((id,j)=>{ pos[id] = { x: leftPad + usableW*((j+0.5)/n), y: topY + li*rowGap }; }); });
-  const gapKey = new Set((fg.gap_edges||[]).map(g=>g.from+'>'+g.to));
-  const gapWhy = {}; (fg.gap_edges||[]).forEach(g=>gapWhy[g.from+'>'+g.to]=g.why);
+  if(!fg || !fg.nodes || !fg.layers || !fg.categories){ host.innerHTML='<div class="empty">flexgraph unavailable — run the loop build.</div>'; return; }
+  const cats=fg.categories, layers=fg.layers;
+  const colW=200, nodeW=182, nodeH=26, vgap=7, leftPad=104, topPad=64, layerGap=30;
   const acc=cssVar('--accent')||'#6ea8fe', bad=cssVar('--bad')||'#f85149',
-        good=cssVar('--good')||'#3fb950', ink=cssVar('--mut')||'#9aa4b2',
-        line=cssVar('--line')||'#2a2f3a', panel=cssVar('--panel2')||'#1e222b',
-        MEM=cssVar('--warn')||'#d29922';
-  function trim(a,b){ const pa=pos[a],pb=pos[b],dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,r=boxH/2+3;
+        good=cssVar('--good')||'#3fb950', warn=cssVar('--warn')||'#d29922',
+        ink=cssVar('--mut')||'#9aa4b2', line=cssVar('--line')||'#2a2f3a',
+        panel=cssVar('--panel2')||'#1e222b', panelHi=cssVar('--panel')||'#171a21';
+  const nameCol = nm => nm==='hidden'? bad : nm==='grouped'? warn : acc;
+  const cx={}; cats.forEach((c,i)=>cx[c.id]=leftPad + i*colW + colW/2);
+  const cell={}; fg.nodes.forEach(n=>{ (cell[n.layer+'|'+n.category]=cell[n.layer+'|'+n.category]||[]).push(n); });
+  const bandTop={}, bandH={}; let y=topPad;
+  layers.forEach(l=>{ let mx=1; cats.forEach(c=>{ mx=Math.max(mx,(cell[l.id+'|'+c.id]||[]).length); });
+    bandTop[l.id]=y; bandH[l.id]=mx*(nodeH+vgap)+12; y+=bandH[l.id]+layerGap; });
+  const H=y+8, fullW=leftPad + cats.length*colW + 24;
+  const pos={};
+  layers.forEach(l=>cats.forEach(c=>{ (cell[l.id+'|'+c.id]||[]).forEach((n,k)=>{
+    pos[n.id]={x:cx[c.id], y:bandTop[l.id]+14+k*(nodeH+vgap)+nodeH/2}; }); }));
+  const nById={}; fg.nodes.forEach(n=>nById[n.id]=n);
+  const gapSet=new Set((fg.gap_edges||[]).map(e=>e[0]+'>'+e[1]));
+  function trim(a,b){ const pa=pos[a],pb=pos[b],dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,r=nodeH/2+3;
     return {x1:pa.x+dx/d*r,y1:pa.y+dy/d*r,x2:pb.x-dx/d*r,y2:pb.y-dy/d*r}; }
   let s='<svg viewBox="0 0 '+fullW+' '+H+'" width="'+fullW+'" height="'+H+'" style="max-width:none;display:block">';
   s+='<defs><marker id="fx-gap" markerWidth="11" markerHeight="11" refX="7.5" refY="3.2" orient="auto">'+
      '<path d="M0,0 L7,3.2 L0,6.4 Z" fill="'+bad+'"/></marker></defs>';
-  fg.levels.forEach((lv,li)=>{ const y=topY+li*rowGap;
-    s+='<text x="10" y="'+(y-boxH/2-7)+'" font-size="10.5" fill="'+ink+'" font-weight="600" opacity="0.85">'+esc(lv.title)+'</text>'; });
-  for(const e of (fg.lowering_edges||[])){ const a=e[0], b=e[1]; if(!pos[a]||!pos[b]) continue; const t=trim(a,b);
-    if(gapKey.has(a+'>'+b)){
-      // GAP: lowered (top->bottom) but NOT exposed — red, DIRECTED (show the down arrow)
-      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+bad+
-         '" stroke-width="2.1" marker-end="url(#fx-gap)"><title>FLEXIBILITY GAP — '+esc(gapWhy[a+'>'+b]||'')+'</title></line>';
+  // category column headers
+  cats.forEach(c=>{ s+='<text x="'+cx[c.id]+'" y="'+(topPad-34)+'" text-anchor="middle" font-size="11.5" font-weight="700" fill="'+ink+'">'+esc(c.title)+'</text>'; });
+  // layer bands: label + faint separator
+  layers.forEach(l=>{ const t=bandTop[l.id], b=t+bandH[l.id];
+    s+='<line x1="'+(leftPad-14)+'" y1="'+(t-8)+'" x2="'+(fullW-8)+'" y2="'+(t-8)+'" stroke="'+line+'" stroke-width="1" opacity="0.6"/>';
+    s+='<text x="8" y="'+((t+b)/2)+'" font-size="11" font-weight="700" fill="'+ink+'"><tspan>'+esc(l.title.replace(/ /g,' '))+'</tspan></text>'; });
+  // edges
+  (fg.lowering_edges||[]).forEach(e=>{ const a=e[0],b=e[1]; if(!pos[a]||!pos[b])return; const t=trim(a,b);
+    if(gapSet.has(a+'>'+b)){
+      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+bad+'" stroke-width="1.7" marker-end="url(#fx-gap)" opacity="0.9"><title>GAP: '+esc(nById[a].label)+' → '+esc(nById[b].label)+' (lowered, not exposed)</title></line>';
     } else {
-      // lowered AND exposed — bidirectional, drawn green with ARROWS OMITTED
-      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+good+
-         '" stroke-width="1.5" opacity="0.5"/>';
+      const on=(nById[a].active&&nById[a].active.length&&nById[b].active&&nById[b].active.length);
+      s+='<line x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+good+'" stroke-width="'+(on?1.3:1)+'" opacity="'+(on?0.42:0.12)+'"/>';
     }
-  }
-  fg.nodes.forEach(nd=>{ const p=pos[nd.id];
-    const stroke = nd.kind==='compute'? acc : nd.kind==='memory'? MEM : line;
-    const lab = nd.label.length>23? nd.label.slice(0,22)+'…' : nd.label;
-    s+='<g><rect x="'+(p.x-boxW/2)+'" y="'+(p.y-boxH/2)+'" width="'+boxW+'" height="'+boxH+
-       '" rx="8" fill="'+panel+'" stroke="'+stroke+'" stroke-width="1.3"><title>'+esc(nd.label)+'</title></rect>'+
-       '<text x="'+p.x+'" y="'+(p.y+4)+'" text-anchor="middle" font-size="10.5" fill="'+ink+'">'+esc(lab)+'</text></g>';
+  });
+  // nodes
+  fg.nodes.forEach(n=>{ const p=pos[n.id], active=(n.active&&n.active.length>0), col=nameCol(n.nameability);
+    const lab=n.label.length>23? n.label.slice(0,22)+'…' : n.label;
+    const tip=esc(n.label)+' ['+n.nameability+']'+(active? ' — used by: '+n.active.join(', ') : ' — not used by the suite');
+    s+='<g opacity="'+(active?1:0.4)+'"><rect x="'+(p.x-nodeW/2)+'" y="'+(p.y-nodeH/2)+'" width="'+nodeW+'" height="'+nodeH+
+       '" rx="6" fill="'+(active?panelHi:panel)+'" stroke="'+col+'" stroke-width="'+(n.nameability==='hidden'?1.7:1.2)+
+       (n.nameability==='hidden'?'" stroke-dasharray="3 2':'')+'"><title>'+tip+'</title></rect>'+
+       '<text x="'+p.x+'" y="'+(p.y+3.5)+'" text-anchor="middle" font-size="10" fill="'+ink+'">'+esc(lab)+'</text></g>';
   });
   s+='</svg>';
-  const lg='<div style="display:flex;gap:18px;flex-wrap:wrap;margin:0 0 10px;font-size:12px;color:'+ink+'">'+
-    '<span><svg width="30" height="10" style="vertical-align:middle"><line x1="2" y1="5" x2="28" y2="5" stroke="'+good+'" stroke-width="2.4"/></svg> lowered ▼ &amp; exposed ▲ — bidirectional (arrows omitted)</span>'+
-    '<span><svg width="32" height="11" style="vertical-align:middle"><line x1="2" y1="5.5" x2="23" y2="5.5" stroke="'+bad+'" stroke-width="2.4"/><polygon points="23,1.5 31,5.5 23,9.5" fill="'+bad+'"/></svg> <b style="color:'+bad+'">gap: lowered ▼ but NOT exposed — directed</b></span>'+
-    '<span><span style="display:inline-block;width:11px;height:11px;border:1.5px solid '+acc+';border-radius:3px;vertical-align:middle"></span> compute op</span>'+
-    '<span><span style="display:inline-block;width:11px;height:11px;border:1.5px solid '+MEM+';border-radius:3px;vertical-align:middle"></span> memory-reorg op</span></div>';
+  const sw=(c,d)=>'<svg width="30" height="11" style="vertical-align:middle"><line x1="2" y1="5.5" x2="'+(d?22:28)+'" y2="5.5" stroke="'+c+'" stroke-width="2.4"'+(d?'':'')+'/>'+(d?'<polygon points="22,1.5 30,5.5 22,9.5" fill="'+c+'"/>':'')+'</svg>';
+  const chip=(c,dash)=>'<span style="display:inline-block;width:11px;height:11px;border:1.6px '+(dash?'dashed':'solid')+' '+c+';border-radius:3px;vertical-align:middle"></span>';
+  const lg='<div style="display:flex;gap:16px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;color:'+ink+'">'+
+    '<span>'+sw(good,false)+' lowered ▼ &amp; exposed ▲ (bidirectional)</span>'+
+    '<span>'+sw(bad,true)+' <b style="color:'+bad+'">gap: lowered ▼, NOT exposed</b></span>'+
+    '<span>'+chip(acc)+' directly nameable</span>'+
+    '<span>'+chip(warn)+' grouped / semantic</span>'+
+    '<span>'+chip(bad,true)+' hidden below Mosaic</span>'+
+    '<span style="opacity:.45">'+chip(ink)+' faded = unused by the suite</span></div>';
   host.innerHTML = lg + '<div style="overflow-x:auto">'+s+'</div>';
   document.getElementById('flexnote').textContent = fg.note||'';
 }
