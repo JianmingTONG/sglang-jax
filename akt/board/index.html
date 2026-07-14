@@ -261,10 +261,19 @@ function renderFlexGraph(fg){
         body='<span style="color:'+bad+'">No Pallas / Mosaic API or hardware ISA handle — this box is a compiler/hardware-internal decision with no top-level name. Its absence is the flexibility gap.</span>';
       } else {
         const rows=[];
-        if(h.api&&h.api.length)  rows.push(kv(h.api.length>1?'Pallas / JAX API ('+h.api.length+')':'Pallas / JAX API', h.api.join(', ')));
-        if(h.prim&&h.prim.length)rows.push(kv(h.prim.length>1?'JAX primitives ('+h.prim.length+')':'JAX primitive', h.prim.join(', ')));
-        if(h.op&&h.op.length)    rows.push(kv(h.op.length>1?'Mosaic IR ops ('+h.op.length+')':'Mosaic IR op', h.op.join(', ')));
-        if(h.hw)                 rows.push(kv('TPU hardware unit', n.label+' — '+h.hw));
+        // Pallas: HEADLINE the real invocation form(s); the internal *_p primitive
+        // object is demoted to a grey footnote (it is NOT how you call it).
+        if(h.usage&&h.usage.length){
+          rows.push('<div class="muted" style="margin:0 0 2px">invoke with:</div>'+
+            h.usage.map(u=>'<div style="margin:1px 0 1px 10px"><code style="font-size:11.5px">'+esc(u)+'</code></div>').join(''));
+        }
+        if(h.op&&h.op.length) rows.push(kv(h.op.length>1?'Mosaic IR ops ('+h.op.length+')':'Mosaic IR op', h.op.join(', ')));
+        if(h.hw)              rows.push(kv('TPU hardware unit', n.label+' — '+h.hw));
+        if(h.prim&&h.prim.length){
+          rows.push('<div class="muted" style="margin:5px 0 0;font-size:11px">lowers via primitive'+
+            (h.prim.length>1?'s ('+h.prim.length+')':'')+' (internal): <code style="font-size:11px;opacity:.85">'+
+            esc(h.prim.join(', '))+'</code></div>');
+        }
         body=rows.join('')||'<span class="muted">(no handle recorded)</span>';
       }
       const used=(n.active&&n.active.length)? '<div class="muted" style="margin-top:6px">exercised by: '+esc(n.active.join(', '))+'</div>'

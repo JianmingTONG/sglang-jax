@@ -60,6 +60,15 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "a + b",
+     "a * b",
+     "a - b",
+     "a / b",
+     "jnp.maximum(a, b)",
+     "abs(a)",
+     "a ** n"
+    ],
     "prim": [
      "lax.abs_p",
      "lax.add_p",
@@ -78,9 +87,6 @@
      "lax.sign_p",
      "lax.square_p",
      "lax.sub_p"
-    ],
-    "api": [
-     "maximum"
     ]
    }
   },
@@ -216,6 +222,14 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "jnp.where(cond, a, b)",
+     "a == b",
+     "a < b",
+     "a & b",
+     "a | b",
+     "~a"
+    ],
     "prim": [
      "lax.and_p",
      "lax.is_finite_p",
@@ -223,9 +237,6 @@
      "lax.or_p",
      "lax.select_n_p",
      "lax.xor_p"
-    ],
-    "api": [
-     "where"
     ]
    }
   },
@@ -274,6 +285,12 @@
    ],
    "fanout": true,
    "handle": {
+    "usage": [
+     "jnp.sum(x, axis)",
+     "jnp.max(x, axis)",
+     "jnp.min(x, axis)",
+     "jnp.argmax(x, axis)"
+    ],
     "prim": [
      "lax.argmax_p",
      "lax.argmin_p",
@@ -282,11 +299,6 @@
      "lax.reduce_min_p",
      "lax.reduce_or_p",
      "lax.reduce_sum_p"
-    ],
-    "api": [
-     "max",
-     "min",
-     "sum"
     ]
    }
   },
@@ -337,10 +349,12 @@
    ],
    "fanout": true,
    "handle": {
+    "usage": [
+     "lax.axis_index(axis_name)"
+    ],
     "prim": [
      "lax.axis_index_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -399,10 +413,12 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "pltpu.bitcast(x, new_dtype)"
+    ],
     "prim": [
      "tpu_primitives.bitcast_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -433,12 +449,16 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "x.astype(dtype)",
+     "lax.convert_element_type(x, dtype)",
+     "jnp.clip(x, lo, hi)"
+    ],
     "prim": [
      "lax.bitcast_convert_type_p",
      "lax.clamp_p",
      "lax.convert_element_type_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -456,12 +476,11 @@
    ],
    "partial": true,
    "handle": {
+    "usage": [
+     "jnp.broadcast_to(x, shape)"
+    ],
     "prim": [
      "lax.broadcast_in_dim_p"
-    ],
-    "api": [
-     "broadcast",
-     "broadcast_to"
     ]
    }
   },
@@ -504,11 +523,11 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "jnp.concatenate([a, b], axis)"
+    ],
     "prim": [
      "lax.concatenate_p"
-    ],
-    "api": [
-     "concatenate"
     ]
    }
   },
@@ -564,10 +583,13 @@
    ],
    "fanout": true,
    "handle": {
+    "usage": [
+     "lax.cond(pred, true_fn, false_fn, *ops)",
+     "pl.when(pred)"
+    ],
     "prim": [
      "lax.cond_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -635,6 +657,14 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "jnp.exp(x)",
+     "jnp.tanh(x)",
+     "jnp.log(x)",
+     "lax.rsqrt(x)",
+     "jnp.sqrt(x)",
+     "jnp.sin(x)"
+    ],
     "prim": [
      "lax.cos_p",
      "lax.exp2_p",
@@ -647,10 +677,6 @@
      "lax.sqrt_p",
      "lax.tan_p",
      "lax.tanh_p"
-    ],
-    "api": [
-     "exp",
-     "tanh"
     ]
    }
   },
@@ -671,14 +697,12 @@
    ],
    "partial": true,
    "handle": {
+    "usage": [
+     "pltpu.make_async_copy(src, dst, sem).start()",
+     "pltpu.async_copy(src, dst, sem)"
+    ],
     "prim": [
      "tpu_primitives.dma_start_p"
-    ],
-    "api": [
-     "async_copy",
-     "copy",
-     "emit_pipeline",
-     "make_async_copy"
     ]
    }
   },
@@ -738,14 +762,11 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "pltpu.make_async_copy(src, dst, sem).wait()"
+    ],
     "prim": [
      "tpu_primitives.dma_wait_p"
-    ],
-    "api": [
-     "async_copy",
-     "copy",
-     "emit_pipeline",
-     "make_async_copy"
     ]
    }
   },
@@ -788,12 +809,14 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "jnp.matmul(a, b)",
+     "jnp.dot(a, b)",
+     "pl.dot(a, b)",
+     "lax.dot_general(a, b, dims)"
+    ],
     "prim": [
      "lax.dot_general_p"
-    ],
-    "api": [
-     "dot",
-     "matmul"
     ]
    }
   },
@@ -895,13 +918,13 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "x[idx]",
+     "jnp.take(x, idx, axis)",
+     "jnp.take_along_axis(x, idx, axis)"
+    ],
     "prim": [
      "lax.gather_p"
-    ],
-    "api": [
-     "gather",
-     "take",
-     "take_along_axis"
     ]
    }
   },
@@ -936,10 +959,12 @@
     "moe_v2"
    ],
    "handle": {
+    "usage": [
+     "ref[idx]                     # scalar/array ref read"
+    ],
     "prim": [
      "state_primitives.get_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -968,11 +993,12 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "lax.broadcasted_iota(dtype, shape, dim)",
+     "lax.iota(dtype, n)"
+    ],
     "prim": [
      "lax.iota_p"
-    ],
-    "api": [
-     "iota"
     ]
    }
   },
@@ -1007,10 +1033,12 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "ref[idx]                     # pl.load is deprecated"
+    ],
     "prim": [
      "primitives.load_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1187,10 +1215,12 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "pl.multiple_of(x, n)"
+    ],
     "prim": [
      "primitives.multiple_of_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1221,10 +1251,12 @@
     "gmm"
    ],
    "handle": {
+    "usage": [
+     "pl.num_programs(axis)"
+    ],
     "prim": [
      "primitives.num_programs_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1260,10 +1292,13 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "jnp.pad(x, width)",
+     "lax.pad(x, val, config)"
+    ],
     "prim": [
      "lax.pad_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1280,10 +1315,12 @@
     "kv_cache"
    ],
    "handle": {
+    "usage": [
+     "pl.program_id(axis)"
+    ],
     "prim": [
      "primitives.program_id_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1296,11 +1333,12 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "pl.reciprocal(x)",
+     "1.0 / x"
+    ],
     "prim": [
      "primitives.reciprocal_p"
-    ],
-    "api": [
-     "reciprocal"
     ]
    }
   },
@@ -1334,11 +1372,11 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "pltpu.repeat(x, repeats, axis)"
+    ],
     "prim": [
      "tpu_primitives.repeat_p"
-    ],
-    "api": [
-     "repeat"
     ]
    }
   },
@@ -1380,11 +1418,12 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "x.reshape(shape)",
+     "jnp.reshape(x, shape)"
+    ],
     "prim": [
      "lax.reshape_p"
-    ],
-    "api": [
-     "reshape"
     ]
    }
   },
@@ -1398,11 +1437,11 @@
     "gmm"
    ],
    "handle": {
+    "usage": [
+     "pltpu.roll(x, shift, axis)"
+    ],
     "prim": [
      "tpu_primitives.roll_p"
-    ],
-    "api": [
-     "roll"
     ]
    }
   },
@@ -1434,10 +1473,12 @@
    "fanout": true,
    "partial": true,
    "handle": {
+    "usage": [
+     "pl.run_scoped(fn, *scratch_types)"
+    ],
     "prim": [
      "primitives.run_scoped_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1499,10 +1540,12 @@
    ],
    "partial": true,
    "handle": {
+    "usage": [
+     "lax.scan(body_fn, init, xs)"
+    ],
     "prim": [
      "lax.scan_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1516,11 +1559,11 @@
     "moe_v2"
    ],
    "handle": {
+    "usage": [
+     "pltpu.semaphore_signal(sem)"
+    ],
     "prim": [
      "primitives.semaphore_signal_p"
-    ],
-    "api": [
-     "semaphore_signal"
     ]
    }
   },
@@ -1552,11 +1595,11 @@
    ],
    "partial": true,
    "handle": {
+    "usage": [
+     "pltpu.semaphore_wait(sem)"
+    ],
     "prim": [
      "primitives.semaphore_wait_p"
-    ],
-    "api": [
-     "semaphore_wait"
     ]
    }
   },
@@ -1589,10 +1632,13 @@
     "moe_v2"
    ],
    "handle": {
+    "usage": [
+     "x[lo:hi]",
+     "lax.slice(x, starts, limits)"
+    ],
     "prim": [
      "lax.slice_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1607,10 +1653,12 @@
     "moe_v2"
    ],
    "handle": {
+    "usage": [
+     "jnp.split(x, n, axis)"
+    ],
     "prim": [
      "lax.split_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1625,10 +1673,12 @@
     "moe_v2"
    ],
    "handle": {
+    "usage": [
+     "jnp.squeeze(x, axis)"
+    ],
     "prim": [
      "lax.squeeze_p"
-    ],
-    "api": []
+    ]
    }
   },
   {
@@ -1645,12 +1695,13 @@
    ],
    "fanout": true,
    "handle": {
+    "usage": [
+     "x.T",
+     "jnp.transpose(x, axes)",
+     "jnp.swapaxes(x, i, j)"
+    ],
     "prim": [
      "lax.transpose_p"
-    ],
-    "api": [
-     "swapaxes",
-     "transpose"
     ]
    }
   },
@@ -1688,10 +1739,12 @@
     "rpa"
    ],
    "handle": {
+    "usage": [
+     "lax.while_loop(cond_fn, body_fn, init)"
+    ],
     "prim": [
      "lax.while_p"
-    ],
-    "api": []
+    ]
    }
   },
   {

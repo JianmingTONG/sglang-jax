@@ -149,6 +149,57 @@ _API_ALIAS = {
     "max": ["reduce_max"], "min": ["reduce_min"], "maximum": ["max"], "reciprocal": ["reciprocal"],
 }
 
+# The EXACT way a kernel author INVOKES each box — the real, module-qualified call
+# form(s), NOT the internal `*_p` primitive object. jnp = jax.numpy, lax = jax.lax,
+# pl = jax.experimental.pallas, pltpu = jax.experimental.pallas.tpu. Grounded against
+# the installed jax 0.8.1 API (pl.load/store/swap are DEPRECATED -> `ref[idx]`; there is
+# no pltpu.copy -> async_copy; DMA is make_async_copy(...).start()/.wait()). Keyed by the
+# coarsened box label for FAMILY boxes (representative forms) and by prim-short for 1:1.
+_USAGE = {
+    # coarsened FAMILY boxes -> representative real call forms
+    "elementwise arithmetic":  ["a + b", "a * b", "a - b", "a / b", "jnp.maximum(a, b)", "abs(a)", "a ** n"],
+    "transcendental math":     ["jnp.exp(x)", "jnp.tanh(x)", "jnp.log(x)", "lax.rsqrt(x)", "jnp.sqrt(x)", "jnp.sin(x)"],
+    "logic / compare / select":["jnp.where(cond, a, b)", "a == b", "a < b", "a & b", "a | b", "~a"],
+    "dtype convert":           ["x.astype(dtype)", "lax.convert_element_type(x, dtype)", "jnp.clip(x, lo, hi)"],
+    "reductions":              ["jnp.sum(x, axis)", "jnp.max(x, axis)", "jnp.min(x, axis)", "jnp.argmax(x, axis)"],
+    "bit ops":                 ["x << n", "x >> n", "lax.population_count(x)"],
+    # 1:1 boxes -> the exact invocation
+    "dot_general":  ["jnp.matmul(a, b)", "jnp.dot(a, b)", "pl.dot(a, b)", "lax.dot_general(a, b, dims)"],
+    "dma_start":    ["pltpu.make_async_copy(src, dst, sem).start()", "pltpu.async_copy(src, dst, sem)"],
+    "dma_wait":     ["pltpu.make_async_copy(src, dst, sem).wait()"],
+    "load":         ["ref[idx]                     # pl.load is deprecated"],
+    "get":          ["ref[idx]                     # scalar/array ref read"],
+    "program_id":   ["pl.program_id(axis)"],
+    "num_programs": ["pl.num_programs(axis)"],
+    "run_scoped":   ["pl.run_scoped(fn, *scratch_types)"],
+    "multiple_of":  ["pl.multiple_of(x, n)"],
+    "reciprocal":   ["pl.reciprocal(x)", "1.0 / x"],
+    "roll":         ["pltpu.roll(x, shift, axis)"],
+    "repeat":       ["pltpu.repeat(x, repeats, axis)"],
+    "bitcast":      ["pltpu.bitcast(x, new_dtype)"],
+    "semaphore_signal": ["pltpu.semaphore_signal(sem)"],
+    "semaphore_wait":   ["pltpu.semaphore_wait(sem)"],
+    "iota":         ["lax.broadcasted_iota(dtype, shape, dim)", "lax.iota(dtype, n)"],
+    "gather":       ["x[idx]", "jnp.take(x, idx, axis)", "jnp.take_along_axis(x, idx, axis)"],
+    "concatenate":  ["jnp.concatenate([a, b], axis)"],
+    "broadcast_in_dim": ["jnp.broadcast_to(x, shape)"],
+    "reshape":      ["x.reshape(shape)", "jnp.reshape(x, shape)"],
+    "transpose":    ["x.T", "jnp.transpose(x, axes)", "jnp.swapaxes(x, i, j)"],
+    "squeeze":      ["jnp.squeeze(x, axis)"],
+    "split":        ["jnp.split(x, n, axis)"],
+    "slice":        ["x[lo:hi]", "lax.slice(x, starts, limits)"],
+    "pad":          ["jnp.pad(x, width)", "lax.pad(x, val, config)"],
+    "axis_index":   ["lax.axis_index(axis_name)"],
+    "cond":         ["lax.cond(pred, true_fn, false_fn, *ops)", "pl.when(pred)"],
+    "while":        ["lax.while_loop(cond_fn, body_fn, init)"],
+    "scan":         ["lax.scan(body_fn, init, xs)"],
+    # full-view-only (never in the serving subgraph, but keep --full tidy)
+    "swap":         ["ref[idx] = val               # pl.store / pl.swap are deprecated"],
+    "get_barrier_semaphore": ["pltpu.get_barrier_semaphore()"],
+    "delay":        ["pl.delay(cycles)"],
+    "stop_gradient":["lax.stop_gradient(x)"],
+}
+
 
 def scan_kernel_usage(kernels_dir: Path, prim_shorts: set[str]):
     """For each kernel .py, find which primitive-shorts it exercises (directly by name
@@ -393,8 +444,11 @@ def build_graph(focus_active: bool = True):
         # third tier. `fanout` is kept only as a tooltip hint, not a class.
         fanout = (pl != prim or len({o.split(".")[0] for o in ops}) > 1 or len(ops) > 2)
         p_id = node("pallas", pl, categorize(pl), "nameable", active.get(prim))
-        _ph = prim_handle.setdefault(p_id, {"prim": set(), "api": set()})
-        _ph["prim"] |= set(info["srcs"]); _ph["api"] |= api_for.get(prim, set())
+        _ph = prim_handle.setdefault(p_id, {"prim": set(), "usage": []})
+        _ph["prim"] |= set(info["srcs"])
+        for _u in _USAGE.get(pl, []):        # real invocation form(s) for this box
+            if _u not in _ph["usage"]:
+                _ph["usage"].append(_u)
         if fanout:
             nodes[p_id]["fanout"] = True
         for op in ops:
@@ -450,7 +504,9 @@ def build_graph(focus_active: bool = True):
             continue
         if n["layer"] == "pallas" and i in prim_handle:
             h = prim_handle[i]
-            n["handle"] = {"prim": sorted(h["prim"]), "api": sorted(h["api"])}
+            # `usage` = the real invocation form (headline); `prim` = the internal
+            # lowering-primitive object (secondary — it is NOT how you call it).
+            n["handle"] = {"usage": h["usage"], "prim": sorted(h["prim"])}
         elif n["layer"] == "mosaic" and i in op_handle:
             n["handle"] = {"op": sorted(op_handle[i])}
         elif n["layer"] == "hw":
