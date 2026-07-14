@@ -23,6 +23,72 @@ python akt/core/evolve/loop.py submit --capability <name>         # manual
 
 ---
 
+## Running the loop — setup, execution, and memory
+
+### Before you launch — environment + setup scripts
+
+Environment (this AI-kernel port, `/home/ubuntu/work/sglang-jax`): the project
+**`.venv`** (jax 0.8.1) — *not* the conda `jaxite` env, which belongs to the FHE/maple
+tree — with **`PALLAS_INTERPRET=1`** and **`PYTHONPATH="python:."`**. There is **no
+Go/Lattigo build** (kernels are pure Pallas). The loop injects those two env vars into
+its own subprocesses, so you only need to export them for **hand-run** commands (the
+adapter / eval / extractor); a bare `loop.py …` invocation sets them itself.
+
+Run these in order before `run`:
+
+| # | Command | Required? | Why |
+|---|---------|-----------|-----|
+| 1 | `cd /home/ubuntu/work/sglang-jax` | **yes** | all loop paths are repo-relative and the git keep/restore logic assumes the repo root is CWD |
+| 2 | `.venv/bin/python -c "import jax; print(jax.__version__)"` | optional | sanity-check the interpreter the loop shells out to (expect `0.8.1`) |
+| 3 | `PALLAS_INTERPRET=1 PYTHONPATH="python:." .venv/bin/python akt/core/analysis/flexgraph_extract.py` | optional | refresh the auto-derived gap frontier (`flexgraph_generated.json`). **Off-loop** — the loop never runs this. If absent, the adapter falls back to the hand `FRONTIER`, so the QUERY is non-empty either way |
+| 4 | `.venv/bin/python akt/core/evolve/loop.py init --hours 6 --target 0.02 --runs 3` | **yes** | measures the incumbent (best config in the *existing* design space) and, crucially, **writes the two files `run` depends on**: `evolve_state.json` (loaded every round) and `.evolve_eval.json` (the **only** source `adapter bottleneck` reads — no eval → empty BOTTLENECK). Also resets the campaign deadline, so re-run `init` if a prior deadline has expired |
+| 5 | `git status --porcelain` | **yes** | `run` refuses a **dirty tree** (it git-reverts void/rejected rounds and would clobber uncommitted work) — commit or stash first |
+| 6 | `.venv/bin/python akt/core/evolve/loop.py run --rounds N --oracle claude` | **yes** | the target command (autonomous mode needs the `claude` CLI on `PATH`) |
+
+### What runs during a round
+
+Everything below is **automatic** — `run` spawns it; you don't invoke any of it by hand:
+
+- **`adapter.py bottleneck` + `adapter.py gaps`** — shelled to build the QUERY (and again to reprint it after the gate); `gaps` reads `flexgraph_generated.json`.
+- **the oracle** — `cat .oracle_prompt.txt | claude -p … --output-format stream-json` (the loop *drives* the LLM; streamed to `.oracle.log` + the board heartbeat).
+- **FROZEN-fingerprint guard** — md5 of `akt/benchmark/**` + the loop file, snapshotted before/after the oracle, so tampering with the measurement voids the round.
+- **`akt/benchmark/gates/eval.py --suite full`** — THE GATE: autotune each kernel, check correctness, time it; it also subprocess-runs sglang-jax's **own pytest** per case.
+- **`akt/board/build.py`** — rebuilds the dashboard on every keep/reject.
+- **git** — `git commit` on KEEP, `git checkout <incumbent> -- <file>` on REJECT.
+
+> Note: **`flexgraph_extract.py` is NOT part of the loop** — neither `loop.py` nor
+> `build.py` ever calls it. Regenerate the gap frontier yourself (step 3 above) when the
+> kernels change; the loop only *reads* the JSON it left behind.
+
+Run these **alongside**, to watch (optional, read-only): `loop.py status` (reprint the
+QUERY), `tail -f akt/optimization_history/.oracle.log` (live oracle work),
+`cd akt/board && python -m http.server 8777` (dashboard),
+`tail -f akt/optimization_history/evolve_history.jsonl` (per-round decisions).
+
+### Does the loop consider the changes it made in past runs? — **Yes, it is a ratchet**
+
+The loop is **cumulative, not fresh-each-run**. Each round is measured against the *best
+result kept so far*, and past decisions persist:
+
+- **KEEP advances the incumbent.** On a kept round the loop lowers `incumbent_geomean`,
+  `git commit`s the capability's edits, and sets `incumbent_commit = git HEAD`. Since the
+  next round reloads that state and never reverts kept edits, **every later round builds on
+  top of all kept capabilities** and must beat the *improved* incumbent.
+- **REJECT reverts cleanly.** A rejected round `git checkout`s every touched file back to
+  the incumbent commit (or deletes newly-added files); the incumbent is left untouched.
+- **The oracle is told the history.** The QUERY hands it the **KEPT** capabilities (with
+  their `+Δ%`) and the **REJECTED** ones marked *"do not re-attempt unmodified"* — persisted
+  as `kept`/`rejected` status in `capabilities/*.json`.
+- **The gap frontier shrinks as gaps get elevated.** `flexgraph_extract.py` re-derives
+  `elevated_in_akt` from the *live* runner `Knob`s, so once a gap has been elevated it drops
+  off the actionable OPEN frontier the oracle sees on the next regeneration.
+
+State lives in `akt/optimization_history/evolve_state.json` (the ratchet),
+`evolve_history.jsonl` (append-only per-round ledger), and `core/evolve/capabilities/*.json`
+(the kept/rejected memory).
+
+---
+
 ## Two things people always ask
 
 ### (1) Where is the flexibility gap documented, and how does the loop use it?
