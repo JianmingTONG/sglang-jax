@@ -286,33 +286,26 @@ def hw_units(op: str):
     return out
 
 
-# (c) HIDDEN below Mosaic — capabilities with NO Pallas API and NO Mosaic op (by
-# construction: these are compiler/hardware decisions, so they cannot be discovered
-# from the IR; they are the architectural floor). Each maps under a category column.
-_HIDDEN = [
-    ("physical VREG alloc", "layout"), ("register spill", "layout"),
-    ("shuffle insertion schedule", "layout"),
-    ("vector-layout assignment / relayout insertion", "layout"),
-    ("VMEM bank mapping", "memory"), ("DMA channel selection", "datamove"),
-    ("HW queue assignment", "datamove"), ("MXU push/pop staging", "compute"),
-    ("instruction scheduling", "compute"), ("instruction encoding", "compute"),
-    ("cycle-level unit overlap", "compute"), ("automatic pipeline overlap", "compute"),
-    ("ICI route selection", "sync"), ("contention arbitration", "memory"),
-]
-# which hardware unit each hidden capability sits under (source of the gap edge).
-_HIDDEN_FROM = {
-    "physical VREG alloc": "hw:VREG", "register spill": "hw:VREG",
-    "shuffle insertion schedule": "hw:XLU",
-    "vector-layout assignment / relayout insertion": "hw:XLU",
-    "VMEM bank mapping": "hw:VMEM", "DMA channel selection": "hw:DMA engines",
-    "HW queue assignment": "hw:DMA engines", "MXU push/pop staging": "hw:MXU",
-    # global VLIW-bundle decisions govern ALL units, not one — anchor to a scheduler pseudo-unit
-    "instruction scheduling": "hw:VLIW issue scheduler",
-    "instruction encoding": "hw:VLIW issue scheduler",
-    "cycle-level unit overlap": "hw:VLIW issue scheduler",
-    "automatic pipeline overlap": "hw:VLIW issue scheduler",
-    "ICI route selection": "hw:inter-core / ICI comm",
-    "contention arbitration": "hw:VMEM",   # bank/crossbar/DMA bandwidth arbitration, not the sem fabric
+# (c) The "gap" nodes (no user handle) are re-homed to the LEVEL where they are realized
+# — HW is the floor, so there is no below-hardware band:
+#   - Mosaic BACKEND (LLO) decisions: a genuine lowering pass between Mosaic IR and the
+#     hardware (register/VREG allocation, vector-layout assignment, instruction
+#     scheduling). No user handle -> hidden. Each Mosaic op is routed through the LLO
+#     stage for its category:  mosaic op -> llo stage -> hw unit.
+#   - Hardware-internal micro-behaviours: decided inside a unit (no handle) -> hidden
+#     nodes AT the hw level, attached to their parent unit.
+_LLO_FOR_CAT = {   # op category -> (llo stage label, category column)
+    "layout":   ("vector-layout assignment / relayout insertion", "layout"),
+    "compute":  ("reg-alloc + instruction scheduling (VLIW)", "compute"),
+    "datamove": ("reg-alloc + instruction scheduling (VLIW)", "compute"),
+    "sync":     ("reg-alloc + instruction scheduling (VLIW)", "compute"),
+    "memory":   ("VMEM / register allocation", "memory"),
+}
+_HW_MICRO = {   # hw unit -> its internal, non-nameable micro-behaviours (hidden, at hw)
+    "MXU": ["MXU push/pop staging"],
+    "DMA engines": ["DMA channel selection", "HW queue assignment"],
+    "VMEM": ["VMEM bank mapping", "contention arbitration"],
+    "inter-core / ICI comm": ["ICI route selection"],
 }
 
 
@@ -384,37 +377,29 @@ def build_graph(focus_active: bool = True):
             nodes[p_id]["fanout"] = True
         for op in ops:
             cop = coarsen(op)
-            m_id = node("mosaic", cop, categorize(cop), "nameable", active.get(prim))
+            ocat = categorize(cop)
+            m_id = node("mosaic", cop, ocat, "nameable", active.get(prim))
             low_edges.append([p_id, m_id])
+            # route the op through the Mosaic BACKEND (LLO) stage for its category, then
+            # onto its hardware unit(s):  mosaic op -> llo stage (hidden) -> hw unit.
+            lname, lcat = _LLO_FOR_CAT.get(ocat, _LLO_FOR_CAT["compute"])
+            l_id = node("llo", lname, lcat, "hidden", active.get(prim))
+            low_edges.append([m_id, l_id]); gap_edges.append([m_id, l_id])
             for u in hw_units(op):     # classify HW from the ORIGINAL (specific) op
                 h_id = node("hw", u, categorize(u), "nameable", active.get(prim))
                 hw_seen.add(u)
-                low_edges.append([m_id, h_id])
+                low_edges.append([l_id, h_id])
         if info["partial"]:
-            # a primitive Mosaic only partially lowers = an unexposed corner (gap flag)
-            nodes[p_id]["partial"] = True
+            nodes[p_id]["partial"] = True   # a corner Mosaic can't lower = an unexposed gap
 
-    # Hidden-below-Mosaic capabilities + gap edges from the hardware units.
-    for name, cat in _HIDDEN:
-        x_id = node("hidden", name, cat, "hidden")
-        frm = _HIDDEN_FROM.get(name, "")
-        if frm.startswith("hw:"):
-            unit = frm[3:]
-            h_id = node("hw", unit, categorize(unit), "nameable")   # anchor even if unreached
-            low_edges.append([h_id, x_id])
-            gap_edges.append([h_id, x_id])
-
-    # connect the pseudo-anchor units (they sit BELOW the execution units, which are all
-    # governed by them) so their gaps are reached from the active compute path.
-    _ANCHOR_FEED = {"VLIW issue scheduler": ("MXU", "VPU", "XLU", "DMA engines"),
-                    "VREG": ("VPU", "MXU", "XLU")}
-    for anchor, feeders in _ANCHOR_FEED.items():
-        a_id = _nid("hw", anchor)
-        if a_id in node_ids:
-            for u in feeders:
-                s = _nid("hw", u)
-                if s in node_ids:
-                    low_edges.append([s, a_id])
+    # Hardware-internal micro-behaviours: hidden nodes AT the hw level, attached to their
+    # parent unit (the unit is nameable; the internal decision it makes is not).
+    for unit, micros in _HW_MICRO.items():
+        u_id = _nid("hw", unit)
+        if u_id in node_ids:
+            for mname in micros:
+                x_id = node("hw", mname, nodes[u_id]["category"], "hidden")
+                low_edges.append([u_id, x_id]); gap_edges.append([u_id, x_id])
 
     # de-dup edges
     low_edges = [list(e) for e in dict.fromkeys(map(tuple, low_edges))]
@@ -437,10 +422,10 @@ def build_graph(focus_active: bool = True):
             ("compute", "Compute"), ("layout", "Layout & vectorization"),
             ("sync", "Synchronization & topology")]
     layers = [("pallas", "JAX / Pallas primitives"), ("mosaic", "Mosaic TPU IR ops"),
-              ("hw", "TPU hardware"), ("hidden", "Hidden below Mosaic")]
+              ("llo", "Mosaic backend (LLO): reg-alloc / scheduling"), ("hw", "TPU hardware")]
     n_partial = sum(1 for n in nodes.values() if n.get("partial"))
     return {
-        "kind": "lowering-3layer", "generated_by": "flexgraph_extract.py (automated)",
+        "kind": "lowering-4layer", "generated_by": "flexgraph_extract.py (automated)",
         "categories": [{"id": c, "title": t} for c, t in cats],
         "layers": [{"id": l, "title": t} for l, t in layers],
         "nodes": list(nodes.values()),
@@ -453,14 +438,15 @@ def build_graph(focus_active: bool = True):
                   "active_primitives": sum(1 for p in rules if active.get(p)),
                   "kernels_scanned": len({k for ks in active.values() for k in ks}),
                   "focus_active": focus_active},
-        "note": ("AUTO-EXTRACTED from the stack: JAX/Pallas primitives + primitive→Mosaic-op "
-                 "edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks primitives "
-                 "the sglang-jax kernels use; Mosaic→hardware + the hidden-below-Mosaic floor "
-                 "are rule tables (not in code). Nameability is BINARY: a capability is either "
-                 "NAMEABLE / reschedulable at the top (green, bidirectional) or HIDDEN — reachable "
-                 "in the lowering but not reschedulable from the top (red directed edge into it "
-                 "= the flexibility gap). A high-level op like lax.dot is nameable; the fused "
-                 "internals it can't reschedule are the hidden nodes it lowers into."),
+        "note": ("AUTO-EXTRACTED: JAX/Pallas primitives + primitive→Mosaic-op edges parsed from "
+                 "jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax "
+                 "kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas → Mosaic IR "
+                 "→ Mosaic backend (LLO: reg-alloc / scheduling) → hardware. Nameability is BINARY: "
+                 "NAMEABLE (green, reschedulable at the top) vs HIDDEN (red) — reachable in the "
+                 "lowering but with no handle. The LLO level is hidden (the backend's decisions have "
+                 "no user handle) and every op must traverse it; hardware micro-behaviours (MXU "
+                 "staging, VMEM bank, DMA channel, ICI route) are hidden nodes AT the hw level. A "
+                 "red directed edge into any hidden node = a flexibility gap."),
     }
 
 

@@ -1,5 +1,5 @@
 {
- "kind": "lowering-3layer",
+ "kind": "lowering-4layer",
  "generated_by": "flexgraph_extract.py (automated)",
  "categories": [
   {
@@ -33,12 +33,12 @@
    "title": "Mosaic TPU IR ops"
   },
   {
-   "id": "hw",
-   "title": "TPU hardware"
+   "id": "llo",
+   "title": "Mosaic backend (LLO): reg-alloc / scheduling"
   },
   {
-   "id": "hidden",
-   "title": "Hidden below Mosaic"
+   "id": "hw",
+   "title": "TPU hardware"
   }
  ],
  "nodes": [
@@ -70,6 +70,23 @@
     "gla",
     "gmm",
     "kda",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
+   "id": "llo:reg-alloc + instruction scheduling (VLIW)",
+   "label": "reg-alloc + instruction scheduling (VLIW)",
+   "layer": "llo",
+   "category": "compute",
+   "nameability": "hidden",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
     "moe_v2",
     "rpa"
    ]
@@ -328,6 +345,23 @@
    ]
   },
   {
+   "id": "llo:vector-layout assignment / relayout insertion",
+   "label": "vector-layout assignment / relayout insertion",
+   "layer": "llo",
+   "category": "layout",
+   "nameability": "hidden",
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
+  },
+  {
    "id": "pallas:cond",
    "label": "cond",
    "layer": "pallas",
@@ -388,6 +422,14 @@
    ],
    "fanout": true,
    "partial": true
+  },
+  {
+   "id": "mosaic:tpu.delay",
+   "label": "tpu.delay",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "nameable",
+   "active": []
   },
   {
    "id": "pallas:dma_start",
@@ -595,6 +637,14 @@
    ]
   },
   {
+   "id": "mosaic:tpu.sem_barrier",
+   "label": "tpu.sem_barrier",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
    "id": "hw:semaphore fabric",
    "label": "semaphore fabric",
    "layer": "hw",
@@ -628,6 +678,14 @@
     "gmm",
     "rpa"
    ]
+  },
+  {
+   "id": "mosaic:tpu.weird",
+   "label": "tpu.weird",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
   },
   {
    "id": "pallas:load",
@@ -689,6 +747,20 @@
     "gmm",
     "moe_v1",
     "moe_v2"
+   ]
+  },
+  {
+   "id": "llo:VMEM / register allocation",
+   "label": "VMEM / register allocation",
+   "layer": "llo",
+   "category": "memory",
+   "nameability": "hidden",
+   "active": [
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
    ]
   },
   {
@@ -798,6 +870,14 @@
    ]
   },
   {
+   "id": "mosaic:tpu.pack_elementwise",
+   "label": "tpu.pack_elementwise",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
    "id": "pallas:pad",
    "label": "pad",
    "layer": "pallas",
@@ -814,6 +894,22 @@
    ],
    "fanout": true,
    "partial": true
+  },
+  {
+   "id": "mosaic:tpu.prng_random_bits",
+   "label": "tpu.prng_random_bits",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
+   "id": "mosaic:tpu.prng_set_seed_32",
+   "label": "tpu.prng_set_seed_32",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
   },
   {
    "id": "pallas:program_id",
@@ -975,6 +1071,14 @@
    "partial": true
   },
   {
+   "id": "mosaic:tpu.sem_read",
+   "label": "tpu.sem_read",
+   "layer": "mosaic",
+   "category": "sync",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
    "id": "pallas:semaphore_signal",
    "label": "semaphore_signal",
    "layer": "pallas",
@@ -1057,6 +1161,38 @@
    ]
   },
   {
+   "id": "mosaic:tpu.stochastic_convert",
+   "label": "tpu.stochastic_convert",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
+   "id": "mosaic:memref.store",
+   "label": "memref.store",
+   "layer": "mosaic",
+   "category": "datamove",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
+   "id": "mosaic:tpu.strided_store",
+   "label": "tpu.strided_store",
+   "layer": "mosaic",
+   "category": "datamove",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
+   "id": "mosaic:tpu.vector_store",
+   "label": "tpu.vector_store",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
    "id": "pallas:transpose",
    "label": "transpose",
    "layer": "pallas",
@@ -1084,6 +1220,14 @@
    ]
   },
   {
+   "id": "mosaic:tpu.unpack_elementwise",
+   "label": "tpu.unpack_elementwise",
+   "layer": "mosaic",
+   "category": "compute",
+   "nameability": "nameable",
+   "active": []
+  },
+  {
    "id": "pallas:while",
    "label": "while",
    "layer": "pallas",
@@ -1100,130 +1244,50 @@
    ]
   },
   {
-   "id": "hidden:physical VREG alloc",
-   "label": "physical VREG alloc",
-   "layer": "hidden",
-   "category": "layout",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hw:VREG",
-   "label": "VREG",
-   "layer": "hw",
-   "category": "layout",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
-   "id": "hidden:register spill",
-   "label": "register spill",
-   "layer": "hidden",
-   "category": "layout",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:shuffle insertion schedule",
-   "label": "shuffle insertion schedule",
-   "layer": "hidden",
-   "category": "layout",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:vector-layout assignment / relayout insertion",
-   "label": "vector-layout assignment / relayout insertion",
-   "layer": "hidden",
-   "category": "layout",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:VMEM bank mapping",
-   "label": "VMEM bank mapping",
-   "layer": "hidden",
-   "category": "memory",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:DMA channel selection",
-   "label": "DMA channel selection",
-   "layer": "hidden",
-   "category": "datamove",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:HW queue assignment",
-   "label": "HW queue assignment",
-   "layer": "hidden",
-   "category": "datamove",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:MXU push/pop staging",
+   "id": "hw:MXU push/pop staging",
    "label": "MXU push/pop staging",
-   "layer": "hidden",
-   "category": "compute",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:instruction scheduling",
-   "label": "instruction scheduling",
-   "layer": "hidden",
-   "category": "compute",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hw:VLIW issue scheduler",
-   "label": "VLIW issue scheduler",
    "layer": "hw",
    "category": "compute",
-   "nameability": "nameable",
+   "nameability": "hidden",
    "active": []
   },
   {
-   "id": "hidden:instruction encoding",
-   "label": "instruction encoding",
-   "layer": "hidden",
+   "id": "hw:DMA channel selection",
+   "label": "DMA channel selection",
+   "layer": "hw",
+   "category": "datamove",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hw:HW queue assignment",
+   "label": "HW queue assignment",
+   "layer": "hw",
+   "category": "datamove",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hw:VMEM bank mapping",
+   "label": "VMEM bank mapping",
+   "layer": "hw",
    "category": "compute",
    "nameability": "hidden",
    "active": []
   },
   {
-   "id": "hidden:cycle-level unit overlap",
-   "label": "cycle-level unit overlap",
-   "layer": "hidden",
-   "category": "compute",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:automatic pipeline overlap",
-   "label": "automatic pipeline overlap",
-   "layer": "hidden",
-   "category": "compute",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:ICI route selection",
-   "label": "ICI route selection",
-   "layer": "hidden",
-   "category": "sync",
-   "nameability": "hidden",
-   "active": []
-  },
-  {
-   "id": "hidden:contention arbitration",
+   "id": "hw:contention arbitration",
    "label": "contention arbitration",
-   "layer": "hidden",
-   "category": "memory",
+   "layer": "hw",
+   "category": "compute",
+   "nameability": "hidden",
+   "active": []
+  },
+  {
+   "id": "hw:ICI route selection",
+   "label": "ICI route selection",
+   "layer": "hw",
+   "category": "compute",
    "nameability": "hidden",
    "active": []
   }
@@ -1235,6 +1299,10 @@
   ],
   [
    "mosaic:math.* transcendental",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:VPU"
   ],
   [
@@ -1243,7 +1311,7 @@
   ],
   [
    "mosaic:arith.* arithmetic",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:logic / compare / select",
@@ -1251,7 +1319,7 @@
   ],
   [
    "mosaic:arith.* logic/compare",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:reductions",
@@ -1259,10 +1327,10 @@
   ],
   [
    "mosaic:tpu.reduce_index",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "mosaic:tpu.reduce_index",
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:XLU"
   ],
   [
@@ -1275,10 +1343,14 @@
   ],
   [
    "mosaic:tpu.device_id",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:scalar unit"
   ],
   [
-   "mosaic:tpu.device_id",
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:inter-core / ICI comm"
   ],
   [
@@ -1287,7 +1359,7 @@
   ],
   [
    "mosaic:tpu.bitcast",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:dtype convert",
@@ -1299,11 +1371,7 @@
   ],
   [
    "mosaic:vector.* layout",
-   "hw:XLU"
-  ],
-  [
-   "mosaic:vector.* layout",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:concatenate",
@@ -1311,6 +1379,10 @@
   ],
   [
    "mosaic:tpu.concatenate",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "llo:vector-layout assignment / relayout insertion",
    "hw:XLU"
   ],
   [
@@ -1326,16 +1398,24 @@
    "mosaic:scf.* control flow"
   ],
   [
+   "mosaic:scf.* control flow",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
    "pallas:dtype convert",
    "mosaic:arith.* convert"
   ],
   [
    "mosaic:arith.* convert",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:transcendental math",
    "mosaic:math.* transcendental"
+  ],
+  [
+   "mosaic:tpu.delay",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:dma_start",
@@ -1343,6 +1423,10 @@
   ],
   [
    "mosaic:tpu.enqueue_dma",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:DMA engines"
   ],
   [
@@ -1351,7 +1435,7 @@
   ],
   [
    "mosaic:tpu.wait_dma2",
-   "hw:DMA engines"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:dot_general",
@@ -1359,7 +1443,7 @@
   ],
   [
    "mosaic:arith.constant",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:dot_general",
@@ -1375,6 +1459,10 @@
   ],
   [
    "mosaic:tpu.matmul",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:MXU"
   ],
   [
@@ -1387,11 +1475,7 @@
   ],
   [
    "mosaic:vector.multi_reduction",
-   "hw:VPU"
-  ],
-  [
-   "mosaic:vector.multi_reduction",
-   "hw:XLU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:gather",
@@ -1399,11 +1483,19 @@
   ],
   [
    "mosaic:tpu.dynamic_gather",
-   "hw:XLU"
+   "llo:vector-layout assignment / relayout insertion"
   ],
   [
    "pallas:gather",
    "mosaic:vector.* layout"
+  ],
+  [
+   "mosaic:tpu.sem_barrier",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "llo:reg-alloc + instruction scheduling (VLIW)",
+   "hw:semaphore fabric"
   ],
   [
    "pallas:iota",
@@ -1411,7 +1503,19 @@
   ],
   [
    "mosaic:tpu.iota",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "llo:vector-layout assignment / relayout insertion",
    "hw:VPU"
+  ],
+  [
+   "pallas:logic / compare / select",
+   "mosaic:tpu.weird"
+  ],
+  [
+   "mosaic:tpu.weird",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:load",
@@ -1419,10 +1523,14 @@
   ],
   [
    "mosaic:memref.load",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:SMEM / scalar unit"
   ],
   [
-   "mosaic:memref.load",
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:VMEM"
   ],
   [
@@ -1430,11 +1538,19 @@
    "mosaic:tpu.memory_space<any>"
   ],
   [
+   "mosaic:tpu.memory_space<any>",
+   "llo:VMEM / register allocation"
+  ],
+  [
    "pallas:load",
    "mosaic:tpu.memory_space<smem>"
   ],
   [
    "mosaic:tpu.memory_space<smem>",
+   "llo:VMEM / register allocation"
+  ],
+  [
+   "llo:VMEM / register allocation",
    "hw:SMEM / scalar unit"
   ],
   [
@@ -1443,6 +1559,10 @@
   ],
   [
    "mosaic:tpu.memory_space<vmem>",
+   "llo:VMEM / register allocation"
+  ],
+  [
+   "llo:VMEM / register allocation",
    "hw:VMEM"
   ],
   [
@@ -1451,6 +1571,10 @@
   ],
   [
    "mosaic:tpu.strided_load",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:VMEM\u2192VREG load"
   ],
   [
@@ -1463,7 +1587,7 @@
   ],
   [
    "mosaic:vector.load",
-   "hw:VMEM\u2192VREG load"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:transcendental math",
@@ -1478,6 +1602,10 @@
    "mosaic:tpu.assume_multiple"
   ],
   [
+   "mosaic:tpu.assume_multiple",
+   "llo:VMEM / register allocation"
+  ],
+  [
    "pallas:logic / compare / select",
    "mosaic:arith.constant"
   ],
@@ -1487,7 +1615,11 @@
   ],
   [
    "mosaic:tpu.iteration_bound",
-   "hw:scalar unit"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.pack_elementwise",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:pad",
@@ -1506,12 +1638,20 @@
    "mosaic:arith.* convert"
   ],
   [
+   "mosaic:tpu.prng_random_bits",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.prng_set_seed_32",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
    "pallas:reciprocal",
    "mosaic:tpu.reciprocal"
   ],
   [
    "mosaic:tpu.reciprocal",
-   "hw:VPU"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:reductions",
@@ -1523,7 +1663,7 @@
   ],
   [
    "mosaic:tpu.repeat",
-   "hw:XLU"
+   "llo:vector-layout assignment / relayout insertion"
   ],
   [
    "pallas:reshape",
@@ -1535,7 +1675,7 @@
   ],
   [
    "mosaic:tpu.dynamic_rotate",
-   "hw:XLU"
+   "llo:vector-layout assignment / relayout insertion"
   ],
   [
    "pallas:run_scoped",
@@ -1543,7 +1683,7 @@
   ],
   [
    "mosaic:memref.* alloc/view",
-   "hw:VMEM"
+   "llo:VMEM / register allocation"
   ],
   [
    "pallas:run_scoped",
@@ -1551,11 +1691,19 @@
   ],
   [
    "mosaic:tpu.sem_alloc",
-   "hw:semaphore fabric"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:run_scoped",
    "mosaic:tpu.yield_"
+  ],
+  [
+   "mosaic:tpu.yield_",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.sem_read",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:semaphore_signal",
@@ -1563,7 +1711,7 @@
   ],
   [
    "mosaic:tpu.sem_signal",
-   "hw:semaphore fabric"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:semaphore_wait",
@@ -1571,7 +1719,7 @@
   ],
   [
    "mosaic:tpu.sem_wait",
-   "hw:semaphore fabric"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:slice",
@@ -1586,104 +1734,64 @@
    "mosaic:vector.* layout"
   ],
   [
+   "mosaic:tpu.stochastic_convert",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:memref.store",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.strided_store",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.vector_store",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
    "pallas:transpose",
    "mosaic:tpu.transpose"
   ],
   [
    "mosaic:tpu.transpose",
-   "hw:XLU"
+   "llo:vector-layout assignment / relayout insertion"
   ],
   [
    "pallas:transpose",
    "mosaic:vector.* layout"
   ],
   [
+   "mosaic:tpu.unpack_elementwise",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
    "pallas:while",
    "mosaic:scf.* control flow"
   ],
   [
-   "hw:VREG",
-   "hidden:physical VREG alloc"
+   "hw:MXU",
+   "hw:MXU push/pop staging"
   ],
   [
-   "hw:VREG",
-   "hidden:register spill"
+   "hw:DMA engines",
+   "hw:DMA channel selection"
   ],
   [
-   "hw:XLU",
-   "hidden:shuffle insertion schedule"
-  ],
-  [
-   "hw:XLU",
-   "hidden:vector-layout assignment / relayout insertion"
+   "hw:DMA engines",
+   "hw:HW queue assignment"
   ],
   [
    "hw:VMEM",
-   "hidden:VMEM bank mapping"
+   "hw:VMEM bank mapping"
   ],
   [
-   "hw:DMA engines",
-   "hidden:DMA channel selection"
-  ],
-  [
-   "hw:DMA engines",
-   "hidden:HW queue assignment"
-  ],
-  [
-   "hw:MXU",
-   "hidden:MXU push/pop staging"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hidden:instruction scheduling"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hidden:instruction encoding"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hidden:cycle-level unit overlap"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hidden:automatic pipeline overlap"
+   "hw:VMEM",
+   "hw:contention arbitration"
   ],
   [
    "hw:inter-core / ICI comm",
-   "hidden:ICI route selection"
-  ],
-  [
-   "hw:VMEM",
-   "hidden:contention arbitration"
-  ],
-  [
-   "hw:MXU",
-   "hw:VLIW issue scheduler"
-  ],
-  [
-   "hw:VPU",
-   "hw:VLIW issue scheduler"
-  ],
-  [
-   "hw:XLU",
-   "hw:VLIW issue scheduler"
-  ],
-  [
-   "hw:DMA engines",
-   "hw:VLIW issue scheduler"
-  ],
-  [
-   "hw:VPU",
-   "hw:VREG"
-  ],
-  [
-   "hw:MXU",
-   "hw:VREG"
-  ],
-  [
-   "hw:XLU",
-   "hw:VREG"
+   "hw:ICI route selection"
   ]
  ],
  "exposure_edges": [
@@ -1693,35 +1801,23 @@
   ],
   [
    "hw:VPU",
-   "mosaic:math.* transcendental"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:arith.* arithmetic",
    "pallas:elementwise arithmetic"
   ],
   [
-   "hw:VPU",
-   "mosaic:arith.* arithmetic"
-  ],
-  [
    "mosaic:arith.* logic/compare",
    "pallas:logic / compare / select"
-  ],
-  [
-   "hw:VPU",
-   "mosaic:arith.* logic/compare"
   ],
   [
    "mosaic:tpu.reduce_index",
    "pallas:reductions"
   ],
   [
-   "hw:VPU",
-   "mosaic:tpu.reduce_index"
-  ],
-  [
    "hw:XLU",
-   "mosaic:tpu.reduce_index"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:arith.* arithmetic",
@@ -1733,19 +1829,15 @@
   ],
   [
    "hw:scalar unit",
-   "mosaic:tpu.device_id"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "hw:inter-core / ICI comm",
-   "mosaic:tpu.device_id"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:tpu.bitcast",
    "pallas:bitcast"
-  ],
-  [
-   "hw:VPU",
-   "mosaic:tpu.bitcast"
   ],
   [
    "mosaic:tpu.bitcast",
@@ -1756,20 +1848,12 @@
    "pallas:broadcast_in_dim"
   ],
   [
-   "hw:XLU",
-   "mosaic:vector.* layout"
-  ],
-  [
-   "hw:VPU",
-   "mosaic:vector.* layout"
-  ],
-  [
    "mosaic:tpu.concatenate",
    "pallas:concatenate"
   ],
   [
    "hw:XLU",
-   "mosaic:tpu.concatenate"
+   "llo:vector-layout assignment / relayout insertion"
   ],
   [
    "mosaic:arith.* logic/compare",
@@ -1788,10 +1872,6 @@
    "pallas:dtype convert"
   ],
   [
-   "hw:VPU",
-   "mosaic:arith.* convert"
-  ],
-  [
    "mosaic:math.* transcendental",
    "pallas:transcendental math"
   ],
@@ -1801,23 +1881,15 @@
   ],
   [
    "hw:DMA engines",
-   "mosaic:tpu.enqueue_dma"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:tpu.wait_dma2",
    "pallas:dma_wait"
   ],
   [
-   "hw:DMA engines",
-   "mosaic:tpu.wait_dma2"
-  ],
-  [
    "mosaic:arith.constant",
    "pallas:dot_general"
-  ],
-  [
-   "hw:VPU",
-   "mosaic:arith.constant"
   ],
   [
    "mosaic:arith.* convert",
@@ -1833,7 +1905,7 @@
   ],
   [
    "hw:MXU",
-   "mosaic:tpu.matmul"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:vector.* layout",
@@ -1844,24 +1916,16 @@
    "pallas:dot_general"
   ],
   [
-   "hw:VPU",
-   "mosaic:vector.multi_reduction"
-  ],
-  [
-   "hw:XLU",
-   "mosaic:vector.multi_reduction"
-  ],
-  [
    "mosaic:tpu.dynamic_gather",
    "pallas:gather"
   ],
   [
-   "hw:XLU",
-   "mosaic:tpu.dynamic_gather"
-  ],
-  [
    "mosaic:vector.* layout",
    "pallas:gather"
+  ],
+  [
+   "hw:semaphore fabric",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:tpu.iota",
@@ -1869,7 +1933,11 @@
   ],
   [
    "hw:VPU",
-   "mosaic:tpu.iota"
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "mosaic:tpu.weird",
+   "pallas:logic / compare / select"
   ],
   [
    "mosaic:memref.load",
@@ -1877,11 +1945,11 @@
   ],
   [
    "hw:SMEM / scalar unit",
-   "mosaic:memref.load"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "hw:VMEM",
-   "mosaic:memref.load"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:tpu.memory_space<any>",
@@ -1893,7 +1961,7 @@
   ],
   [
    "hw:SMEM / scalar unit",
-   "mosaic:tpu.memory_space<smem>"
+   "llo:VMEM / register allocation"
   ],
   [
    "mosaic:tpu.memory_space<vmem>",
@@ -1901,7 +1969,7 @@
   ],
   [
    "hw:VMEM",
-   "mosaic:tpu.memory_space<vmem>"
+   "llo:VMEM / register allocation"
   ],
   [
    "mosaic:tpu.strided_load",
@@ -1909,7 +1977,7 @@
   ],
   [
    "hw:VMEM\u2192VREG load",
-   "mosaic:tpu.strided_load"
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:vector.* layout",
@@ -1918,10 +1986,6 @@
   [
    "mosaic:vector.load",
    "pallas:load"
-  ],
-  [
-   "hw:VMEM\u2192VREG load",
-   "mosaic:vector.load"
   ],
   [
    "mosaic:arith.* arithmetic",
@@ -1944,10 +2008,6 @@
    "pallas:num_programs"
   ],
   [
-   "hw:scalar unit",
-   "mosaic:tpu.iteration_bound"
-  ],
-  [
    "mosaic:arith.constant",
    "pallas:pad"
   ],
@@ -1968,20 +2028,12 @@
    "pallas:reciprocal"
   ],
   [
-   "hw:VPU",
-   "mosaic:tpu.reciprocal"
-  ],
-  [
    "mosaic:vector.multi_reduction",
    "pallas:reductions"
   ],
   [
    "mosaic:tpu.repeat",
    "pallas:repeat"
-  ],
-  [
-   "hw:XLU",
-   "mosaic:tpu.repeat"
   ],
   [
    "mosaic:vector.* layout",
@@ -1992,24 +2044,12 @@
    "pallas:roll"
   ],
   [
-   "hw:XLU",
-   "mosaic:tpu.dynamic_rotate"
-  ],
-  [
    "mosaic:memref.* alloc/view",
    "pallas:run_scoped"
   ],
   [
-   "hw:VMEM",
-   "mosaic:memref.* alloc/view"
-  ],
-  [
    "mosaic:tpu.sem_alloc",
    "pallas:run_scoped"
-  ],
-  [
-   "hw:semaphore fabric",
-   "mosaic:tpu.sem_alloc"
   ],
   [
    "mosaic:tpu.yield_",
@@ -2020,16 +2060,8 @@
    "pallas:semaphore_signal"
   ],
   [
-   "hw:semaphore fabric",
-   "mosaic:tpu.sem_signal"
-  ],
-  [
    "mosaic:tpu.sem_wait",
    "pallas:semaphore_wait"
-  ],
-  [
-   "hw:semaphore fabric",
-   "mosaic:tpu.sem_wait"
   ],
   [
    "mosaic:vector.* layout",
@@ -2048,116 +2080,236 @@
    "pallas:transpose"
   ],
   [
-   "hw:XLU",
-   "mosaic:tpu.transpose"
-  ],
-  [
    "mosaic:vector.* layout",
    "pallas:transpose"
   ],
   [
    "mosaic:scf.* control flow",
    "pallas:while"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hw:MXU"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hw:VPU"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hw:XLU"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hw:DMA engines"
-  ],
-  [
-   "hw:VREG",
-   "hw:VPU"
-  ],
-  [
-   "hw:VREG",
-   "hw:MXU"
-  ],
-  [
-   "hw:VREG",
-   "hw:XLU"
   ]
  ],
  "gap_edges": [
   [
-   "hw:VREG",
-   "hidden:physical VREG alloc"
+   "mosaic:math.* transcendental",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "hw:VREG",
-   "hidden:register spill"
+   "mosaic:arith.* arithmetic",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "hw:XLU",
-   "hidden:shuffle insertion schedule"
+   "mosaic:arith.* logic/compare",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "hw:XLU",
-   "hidden:vector-layout assignment / relayout insertion"
+   "mosaic:tpu.reduce_index",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "hw:VMEM",
-   "hidden:VMEM bank mapping"
+   "mosaic:tpu.device_id",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "hw:DMA engines",
-   "hidden:DMA channel selection"
+   "mosaic:tpu.bitcast",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "hw:DMA engines",
-   "hidden:HW queue assignment"
+   "mosaic:vector.* layout",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.concatenate",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "mosaic:scf.* control flow",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:arith.* convert",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.delay",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.enqueue_dma",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.wait_dma2",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:arith.constant",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.matmul",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:vector.multi_reduction",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.dynamic_gather",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "mosaic:tpu.sem_barrier",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.iota",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "mosaic:tpu.weird",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:memref.load",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.memory_space<any>",
+   "llo:VMEM / register allocation"
+  ],
+  [
+   "mosaic:tpu.memory_space<smem>",
+   "llo:VMEM / register allocation"
+  ],
+  [
+   "mosaic:tpu.memory_space<vmem>",
+   "llo:VMEM / register allocation"
+  ],
+  [
+   "mosaic:tpu.strided_load",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:vector.load",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.assume_multiple",
+   "llo:VMEM / register allocation"
+  ],
+  [
+   "mosaic:tpu.iteration_bound",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.pack_elementwise",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.prng_random_bits",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.prng_set_seed_32",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.reciprocal",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.repeat",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "mosaic:tpu.dynamic_rotate",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "mosaic:memref.* alloc/view",
+   "llo:VMEM / register allocation"
+  ],
+  [
+   "mosaic:tpu.sem_alloc",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.yield_",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.sem_read",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.sem_signal",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.sem_wait",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.stochastic_convert",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:memref.store",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.strided_store",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.vector_store",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
+  ],
+  [
+   "mosaic:tpu.transpose",
+   "llo:vector-layout assignment / relayout insertion"
+  ],
+  [
+   "mosaic:tpu.unpack_elementwise",
+   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "hw:MXU",
-   "hidden:MXU push/pop staging"
+   "hw:MXU push/pop staging"
   ],
   [
-   "hw:VLIW issue scheduler",
-   "hidden:instruction scheduling"
+   "hw:DMA engines",
+   "hw:DMA channel selection"
   ],
   [
-   "hw:VLIW issue scheduler",
-   "hidden:instruction encoding"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hidden:cycle-level unit overlap"
-  ],
-  [
-   "hw:VLIW issue scheduler",
-   "hidden:automatic pipeline overlap"
-  ],
-  [
-   "hw:inter-core / ICI comm",
-   "hidden:ICI route selection"
+   "hw:DMA engines",
+   "hw:HW queue assignment"
   ],
   [
    "hw:VMEM",
-   "hidden:contention arbitration"
+   "hw:VMEM bank mapping"
+  ],
+  [
+   "hw:VMEM",
+   "hw:contention arbitration"
+  ],
+  [
+   "hw:inter-core / ICI comm",
+   "hw:ICI route selection"
   ]
  ],
- "n_gap": 14,
- "n_hidden": 14,
+ "n_gap": 52,
+ "n_hidden": 9,
  "n_partial": 14,
  "stats": {
   "jax_primitives_total": 104,
   "primitives_shown": 34,
-  "mosaic_ops": 34,
-  "hw_units": 12,
+  "mosaic_ops": 46,
+  "hw_units": 16,
   "tpu_dialect_ops": 175,
   "active_primitives": 53,
   "kernels_scanned": 8,
   "focus_active": true
  },
- "note": "AUTO-EXTRACTED from the stack: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks primitives the sglang-jax kernels use; Mosaic\u2192hardware + the hidden-below-Mosaic floor are rule tables (not in code). Nameability is BINARY: a capability is either NAMEABLE / reschedulable at the top (green, bidirectional) or HIDDEN \u2014 reachable in the lowering but not reschedulable from the top (red directed edge into it = the flexibility gap). A high-level op like lax.dot is nameable; the fused internals it can't reschedule are the hidden nodes it lowers into."
+ "note": "AUTO-EXTRACTED: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas \u2192 Mosaic IR \u2192 Mosaic backend (LLO: reg-alloc / scheduling) \u2192 hardware. Nameability is BINARY: NAMEABLE (green, reschedulable at the top) vs HIDDEN (red) \u2014 reachable in the lowering but with no handle. The LLO level is hidden (the backend's decisions have no user handle) and every op must traverse it; hardware micro-behaviours (MXU staging, VMEM bank, DMA channel, ICI route) are hidden nodes AT the hw level. A red directed edge into any hidden node = a flexibility gap."
 }
