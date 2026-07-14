@@ -90,7 +90,15 @@
     <div class="sub" style="margin-top:10px" id="flexnote"></div>
   </div>
 
-  <h2>Flexibility-gap frontier <span class="muted">— the candidate capabilities</span></h2>
+  <h2>Serving-stack investigation <span class="muted">— every Pallas kernel auto-scanned; gaps derived from source (not hand-listed)</span></h2>
+  <div class="panel">
+    <div id="gapsummary" class="sub" style="margin-bottom:10px"></div>
+    <div id="gapcats" style="margin-bottom:10px"></div>
+    <div id="autogaps"></div>
+    <div id="stackcov" style="margin-top:12px"></div>
+  </div>
+
+  <h2>Flexibility-gap frontier <span class="muted">— frozen hand-curated subset (adapter.FRONTIER)</span></h2>
   <div class="panel"><ul class="frontier" id="frontier"></ul></div>
 
   <div class="sub" style="margin-top:24px" id="gen"></div>
@@ -298,6 +306,54 @@ function renderFlexGraph(fg){
   }
 }
 
+// Auto-derived serving-stack gap frontier: rendered from the extractor's investigation
+// of every Pallas kernel (fg.serving_stack / fg.gaps / fg.gap_categories). A gap = a
+// tiling/pipeline/schedule axis the lowering CAN execute but no config names.
+function renderGaps(fg){
+  const sm=document.getElementById('gapsummary'); if(!sm) return;
+  const gaps=fg.gaps||[], cats=fg.gap_categories||{}, stack=fg.serving_stack||[],
+        st=fg.stats||{}, cov=fg.frontier_coverage||[];
+  if(!gaps.length){ sm.innerHTML='<span class="empty">no auto-gaps — run the extractor (flexgraph_extract.py).</span>';
+    document.getElementById('gapcats').innerHTML=''; document.getElementById('autogaps').innerHTML='';
+    document.getElementById('stackcov').innerHTML=''; return; }
+  const covHit=cov.filter(c=>c.hit).length, covN=cov.length;
+  const open=gaps.filter(g=>g.in_akt_suite&&!g.elevated_in_akt),
+        elev=gaps.filter(g=>g.elevated_in_akt),
+        other=gaps.filter(g=>!g.in_akt_suite);
+  sm.innerHTML='<b>'+(st.pallas_families||stack.length)+'</b> Pallas kernel families auto-scanned · '+
+    '<b>'+gaps.length+'</b> flexibility gaps derived from source across <b>'+Object.keys(cats).length+'</b> categories · '+
+    '<b style="color:var(--good)">'+open.length+'</b> OPEN in the akt suite (the live evolve frontier) · '+
+    '<span class="badge '+(covHit===covN?'b-keep':'b-reject')+'">hand-FRONTIER rediscovered '+covHit+'/'+covN+'</span>';
+  // category chips
+  document.getElementById('gapcats').innerHTML=Object.entries(cats)
+    .sort((a,b)=>b[1].salience-a[1].salience)
+    .map(([c,i])=>'<span class="badge b-defer" style="margin:2px 4px 2px 0" title="'+esc(i.label)+
+      (i.reachable_prim?' — steers '+esc(i.reachable_prim):'')+'">'+esc(c)+' ×'+i.count+'</span>').join('');
+  // gap table (OPEN suite gaps first, then elevated, then unexplored stack)
+  const badge=g=> !g.in_akt_suite ? '<span class="badge b-defer">unexplored</span>'
+      : g.elevated_in_akt ? '<span class="badge b-keep">elevated</span>'
+      : '<span class="badge b-reject">OPEN</span>';
+  const row=g=>'<tr><td>'+badge(g)+'</td><td><span class="muted">'+esc(g.category)+'</span></td>'+
+    '<td><b>'+esc(g.family)+'</b>'+(g.kernel_ids&&g.kernel_ids.length?' <span class="muted">('+esc(g.kernel_ids.join(','))+')</span>':'')+'</td>'+
+    '<td><code>'+esc(g.axis)+'</code></td>'+
+    '<td>'+esc(g.detail||g.what||'')+'<div class="muted" style="font-size:11px">'+esc(g.evidence||'')+
+      (g.graph_node?' · steers <code>'+esc(g.graph_node.replace("pallas:",""))+'</code>':'')+'</div></td></tr>';
+  const grp=(title,arr)=> arr.length? '<tr><td colspan="5" style="padding-top:8px"><b class="muted">'+title+' ('+arr.length+')</b></td></tr>'+arr.map(row).join('') : '';
+  document.getElementById('autogaps').innerHTML=
+    '<div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12.5px">'+
+    '<thead><tr><th>status</th><th>category</th><th>kernel family</th><th>axis</th><th>evidence (file:line) · reachable lowering node</th></tr></thead><tbody>'+
+    grp('OPEN — reachable but no config names it (elevate one of these)', open)+
+    grp('already elevated by an akt runner', elev)+
+    grp('unexplored serving stack (not in the akt suite)', other)+
+    '</tbody></table></div>';
+  // serving-stack coverage strip
+  document.getElementById('stackcov').innerHTML='<div class="muted" style="font-size:12px;margin-bottom:4px">serving stack (green = in akt suite · ⊞ = ships a tuned table):</div>'+
+    stack.map(s=>{ const inS=s.in_akt_suite&&s.in_akt_suite.length;
+      return '<span class="badge '+(inS?'b-keep':'b-defer')+'" style="margin:2px 4px 2px 0" title="'+
+        esc((s.tile_axes||[]).join(', ')||'no tile axes')+'">'+esc(s.family)+(s.has_tuned_table?' ⊞':'')+'</span>';
+    }).join('');
+}
+
 async function load(){
   let b={}, stt={}, fg={};
   try{ b = await (await fetch('board.json?_='+Date.now())).json(); }catch(e){}
@@ -367,6 +423,7 @@ async function load(){
   ).join('') || '<li class="empty">frontier unavailable</li>';
 
   renderFlexGraph(fg);
+  renderGaps(fg);
 
   document.getElementById('gen').textContent =
     'objective: '+(b.objective||'')+'  ·  generated '+(b.generated||'')+

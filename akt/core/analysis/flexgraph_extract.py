@@ -402,6 +402,358 @@ _SKIP_PRIMS = {
 }
 
 
+# ============================ SERVING-STACK GAP MINING ============================
+# Auto-derive the flexibility-gap frontier the AKT loop evolves against — WITHOUT a
+# hand-authored gap list (cf. the frozen adapter.FRONTIER). Investigate the FULL
+# serving stack (every Pallas kernel under python/sgl_jax/srt/kernels/**), find each
+# kernel's structural tiling / pipeline / schedule axes, and classify every axis as
+# NAMED (a live tuned table or config selector chooses it) or a GAP (fixed in the
+# shipped path at a non-searched value: hardcoded literal / pinned to another axis /
+# dead tuned table / missing table / backend-gated / unsearched schedule toggle).
+# A gap = "the Pallas/Mosaic lowering CAN execute this axis but no config names it" —
+# exactly a candidate capability. Grounded entirely in the source (AST).
+
+# structural-axis name patterns (what a tile / pipeline / schedule knob is called)
+_TILE_RE = re.compile(
+    r"(^tile_|_tile$|^b[df]\d?$|^bt$|^bf$|^bse$|^btc$|^bd\d$|^b_(seq|inter)$|"
+    r"^bkv(_sz|_csz)?$|^bq(_sz|_csz)?$|block_size|_block_size$|^chunk_size$|"
+    r"^page_size$|num_slices_per_block|^B[KVQTMND]$|^num_\w+_per_block$)")
+_PIPE_RE = re.compile(r"(buffer_count|num_stages|n_buffers|num_pipeline|double_buffer|pipeline_depth)")
+_SCHED_RE = re.compile(r"(prefetch|overlap|interleave|^enable_|_mode$|reorder|_bank$|fuse)")
+_TABLE_RE = re.compile(r"(TUNED|tuned|best_\w*config|_TABLE|BLOCK_SIZES|block_config)")
+_SELECTOR_RE = re.compile(r"(get_\w*(block|tile|slice|config|size)|_select|choose_)")
+_BACKEND_RE = re.compile(r"(tpu_version|device_name|device_kind|platform|generation|chip|v6e?|v7)")
+_PALLAS_MARK = ("pallas_call", "pltpu", "emit_pipeline", "pl.Buffered", "make_kernel")
+
+# gap category -> (human label, the reachable lowering primitive it corresponds to,
+# salience for ranking). The primitive links the gap to a node in the lowering graph
+# (the "actual connection": this config axis, if named, would steer THAT capability).
+_GAP_CATEGORIES = {
+    "pipeline-depth":       ("pipeline / double-buffering depth", "dma_start", 6),
+    "compute-tile-pinned":  ("compute sub-tile pinned to load tile", "dot_general", 5),
+    "missing-tuned-table":  ("tiles reachable but kernel ships no tuned table", "dot_general", 5),
+    "dead-tuned-table":     ("tuned table exists but selector never consults it", "dot_general", 5),
+    "schedule-toggle":      ("schedule/fusion toggle never searched", "dma_start", 4),
+    "backend-gated":        ("tuned table gated to one TPU generation", "dot_general", 2),
+    "shape-pinned-tile":    ("tile derived from input shape (not a knob)", "dot_general", 3),
+}
+
+# family label -> the akt runner kernel_id(s) that tune it (the labels whose kernel_id
+# doesn't string-match the source directory). Kept explicit so `mla/v2` etc. don't get
+# mis-attributed by loose substring matching.
+_SUITE_ALIAS = {
+    "ragged_paged_attention": {"rpa_v3"}, "simple_gla": {"gla"},
+    "update_kv_cache": {"kv_cache"}, "fused_moe/v1": {"moe_v1"},
+    "fused_moe/v2": {"moe_v2"}, "kda": {"kda"}, "fused_mlp": {"fused_mlp"},
+    "megablox_gmm_kernel": {"gmm", "gmm_v2"}, "gmm": {"gmm", "gmm_v2"},
+}
+
+
+def _short_family(rel: str) -> str:
+    """kernels/<...>/x.py -> a stable family label (dir-based, v1/v2 kept)."""
+    parts = Path(rel).parts
+    parts = parts[1:] if parts and parts[0] == "kernels" else parts
+    segs = [p for p in parts[:-1] if p not in ("__pycache__",)]
+    if not segs:                       # a top-level kernel file (e.g. fused_mlp.py)
+        return Path(rel).stem
+    if segs[-1] in ("v1", "v2") and len(segs) >= 2:
+        return f"{segs[-2]}/{segs[-1]}"
+    return segs[-1] if len(segs) == 1 else "/".join(segs[-2:]) if segs[-1] in ("v1", "v2") else segs[-1]
+
+
+# benchmark / test / reference scaffolding — NOT the shipped serving kernel; mining
+# these pollutes gap evidence with driver code, so they're skipped in discovery.
+_SKIP_FILE = re.compile(r"(^bench|_bench|^test_|_test\.py$|^native\.py$|^ref\.py$|"
+                        r"^perf\.py$|^bench_)")
+
+
+def discover_kernel_families(kernels_dir: Path):
+    """Walk the WHOLE kernels tree; group .py files into families and mark which
+    families actually build a Pallas kernel. No hardcoded kernel list."""
+    fam = defaultdict(lambda: {"files": [], "pallas": False, "dir": None})
+    for f in sorted(kernels_dir.rglob("*.py")):
+        rel = str(f.relative_to(kernels_dir.parent))
+        if "/__pycache__/" in rel or f.name in ("__init__.py", "_pathways_compat.py") \
+                or _SKIP_FILE.search(f.name):
+            continue
+        label = _short_family(rel)
+        try:
+            text = f.read_text()
+        except Exception:  # noqa: BLE001
+            continue
+        rec = fam[label]
+        rec["files"].append(f)
+        rec["dir"] = f.parent
+        if any(m in text for m in _PALLAS_MARK):
+            rec["pallas"] = True
+    return dict(fam)
+
+
+def runner_named_axes(repo: Path):
+    """Parse akt/core/runners/*.py: {kernel_id: set(knob_names)} — the axes the AKT
+    suite ALREADY searches (i.e. gaps already elevated). Purely from Knob(\"name\",...)
+    and kernel_id=\"...\" literals, so it tracks the live runners with no hardcoding."""
+    out = defaultdict(set)
+    rdir = repo / "akt/core/runners"
+    for f in sorted(rdir.glob("*.py")) if rdir.is_dir() else []:
+        try:
+            tree = ast.parse(f.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        kids, knobs = set(), set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _callee(node.func) == "Knob" and node.args:
+                a0 = node.args[0]
+                if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
+                    knobs.add(a0.value)
+            if isinstance(node, ast.keyword) and node.arg == "kernel_id" \
+                    and isinstance(node.value, ast.Constant):
+                kids.add(node.value.value)
+        for kid in (kids or {f.stem}):
+            out[kid] |= knobs
+    return dict(out)
+
+
+def _const_repr(node):
+    """A short literal repr if `node` is a constant/None, else None."""
+    if isinstance(node, ast.Constant):
+        return repr(node.value)
+    if isinstance(node, ast.Name) and node.id in ("None", "True", "False"):
+        return node.id
+    return None
+
+
+def _mine_file(path: Path, text: str):
+    """AST-mine ONE kernel file for structural axes + fixed-value gap signatures."""
+    try:
+        tree = ast.parse(text)
+    except Exception:  # noqa: BLE001
+        return {"axes": [], "findings": [], "tables": set(), "table_refs": set()}
+    lines = text.splitlines()
+    axes, findings = [], []
+    tables, table_refs = set(), set()
+
+    # module-level tuned tables (dict literals whose name looks like a tuned table)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and _TABLE_RE.search(t.id):
+                    tables.add(t.id)
+    # every reference to a tuned-table name anywhere (for defined-but-unused)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and _TABLE_RE.search(node.id):
+            table_refs.add(node.id)
+
+    def _param_axis(fn, arg, default_node):
+        nm = arg.arg
+        cat = ("pipeline-depth" if _PIPE_RE.search(nm)
+               else "schedule-toggle" if _SCHED_RE.search(nm)
+               else "tile" if _TILE_RE.search(nm) else None)
+        if not cat:
+            return
+        # debug/verbose/logging flags are not perf schedule knobs — drop the noise
+        if cat == "schedule-toggle" and re.search(r"debug|verbose|logg?|dump|trace|profile|assert|mask_mode", nm):
+            return
+        axes.append({"axis": nm, "kind": cat, "fn": fn.name,
+                     "line": arg.lineno, "default": _const_repr(default_node) if default_node else None})
+        # schedule toggle with a literal default = a never-searched schedule knob
+        if cat == "schedule-toggle" and default_node is not None and _const_repr(default_node):
+            findings.append({"category": "schedule-toggle", "axis": nm, "fn": fn.name,
+                             "line": arg.lineno, "detail": f"default={_const_repr(default_node)}"})
+
+    for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+        a = fn.args
+        pos = a.posonlyargs + a.args
+        defs = [None] * (len(pos) - len(a.defaults)) + list(a.defaults)
+        for arg, d in zip(pos, defs):
+            _param_axis(fn, arg, d)
+        for arg, d in zip(a.kwonlyargs, a.kw_defaults):
+            _param_axis(fn, arg, d)
+
+        # (a) DEAD tuned table: an unconditional top-level return BEFORE the body
+        # ever references a tuned table -> the table code is unreachable.
+        if _SELECTOR_RE.search(fn.name):
+            returned_at = None
+            for stmt in fn.body:
+                if isinstance(stmt, ast.Return) and returned_at is None:
+                    returned_at = stmt.lineno
+            if returned_at is not None:
+                for sub in ast.walk(fn):
+                    if isinstance(sub, ast.Name) and _TABLE_RE.search(sub.id) \
+                            and getattr(sub, "lineno", 0) > returned_at:
+                        findings.append({"category": "dead-tuned-table", "axis": sub.id,
+                                         "fn": fn.name, "line": returned_at,
+                                         "detail": f"selector returns at L{returned_at}; "
+                                                   f"table {sub.id} referenced only after (unreachable)"})
+                        break
+
+        # (b) BACKEND-GATED table lookup: a tuned-table reference inside an `if`
+        # whose test mentions the TPU version / device name / platform.
+        for node in ast.walk(fn):
+            if isinstance(node, ast.If):
+                test_names = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+                test_names |= {n.attr for n in ast.walk(node.test) if isinstance(n, ast.Attribute)}
+                if any(_BACKEND_RE.search(t) for t in test_names):
+                    for sub in ast.walk(node):
+                        if isinstance(sub, ast.Name) and _TABLE_RE.search(sub.id):
+                            findings.append({"category": "backend-gated", "axis": sub.id,
+                                             "fn": fn.name, "line": node.lineno,
+                                             "detail": "table lookup guarded by TPU-generation / device test"})
+                            break
+
+        # (c) PINNED tile: `x = x if x is not None else y`  OR  `Bx = ref.shape[i]`.
+        for node in ast.walk(fn):
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                tnames = [t.id for t in targets if isinstance(t, ast.Name)]
+                for tn in tnames:
+                    if not _TILE_RE.search(tn):
+                        continue
+                    v = node.value
+                    if isinstance(v, ast.IfExp):     # A if A is not None else B
+                        els = v.orelse
+                        if isinstance(els, ast.Name):
+                            findings.append({"category": "compute-tile-pinned", "axis": tn,
+                                             "fn": fn.name, "line": node.lineno,
+                                             "detail": f"defaults to load tile `{els.id}` when unset"})
+                    elif isinstance(v, ast.Subscript) and isinstance(v.value, ast.Attribute) \
+                            and v.value.attr == "shape":
+                        base = getattr(v.value.value, "id", "input")
+                        findings.append({"category": "shape-pinned-tile", "axis": tn,
+                                         "fn": fn.name, "line": node.lineno,
+                                         "detail": f"derived from {base}.shape (tied to input dims, not a knob)"})
+
+    # (d) HARDCODED pipeline / tile literal at a call site (Buffered(buffer_count=3),
+    # emit_pipeline(..., buffer_count=N), pallas_call(..., <pipe>=N)).
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            fname = _callee(node.func)
+            for kw in node.keywords:
+                if kw.arg and (_PIPE_RE.search(kw.arg)) and isinstance(kw.value, ast.Constant) \
+                        and isinstance(kw.value.value, (int, float)):
+                    findings.append({"category": "pipeline-depth", "axis": kw.arg, "fn": fname,
+                                     "line": node.lineno,
+                                     "detail": f"{fname}({kw.arg}={kw.value.value}) — hardcoded literal"})
+    return {"axes": axes, "findings": findings, "tables": tables, "table_refs": table_refs}
+
+
+def mine_serving_stack(sources):
+    """Investigate the full serving stack and emit the auto gap frontier + categories.
+    Returns {serving_stack, gaps, gap_categories}. Each gap is a reachable structural
+    axis that the shipped config path fixes without naming — a candidate capability."""
+    kernels_dir, repo = sources["kernels"], sources["repo"]
+    families = discover_kernel_families(kernels_dir)
+    named = runner_named_axes(repo)                 # kernel_id -> searched knob names
+    live = set(named)
+    # family label -> the akt kernel_id(s) that tune it. Alias-first (exact), then a
+    # STRICT stem/exact fallback — no loose substring matching (which cross-linked
+    # every "*_v2" kernel_id to any "*/v2" family).
+    def _suite_ids(label):
+        if label in _SUITE_ALIAS:
+            return set(_SUITE_ALIAS[label]) & live
+        stem = label.split("/")[-1]
+        return {kid for kid in live if kid == label or kid == stem}
+
+    gaps = []
+    stack = []
+    for label, rec in sorted(families.items()):
+        if not rec["pallas"]:
+            continue
+        ids = _suite_ids(label)
+        fam_named = set().union(*(named[k] for k in ids if k in named)) if ids else set()
+        merged = {"axes": [], "findings": [], "tables": set(), "table_refs": set()}
+        per_file = []                          # (relpath, mine-result) for per-file checks
+        for f in rec["files"]:
+            try:
+                m = _mine_file(f, f.read_text())
+            except Exception:  # noqa: BLE001
+                continue
+            rel = str(f.relative_to(repo))
+            per_file.append((rel, m))
+            merged["axes"] += [{**a, "file": rel} for a in m["axes"]]
+            merged["findings"] += [{**g, "file": rel} for g in m["findings"]]
+            merged["tables"] |= m["tables"]; merged["table_refs"] |= m["table_refs"]
+        tile_axes = sorted({a["axis"] for a in merged["axes"] if a["kind"] == "tile"})
+        has_table = bool(merged["tables"] or merged["table_refs"])
+        stack.append({"family": label, "in_akt_suite": sorted(ids),
+                      "tile_axes": tile_axes, "has_tuned_table": has_table,
+                      "n_files": len(rec["files"])})
+
+        seen = set()
+        def _emit(cat, axis, detail, file, line):
+            key = (label, cat, axis)
+            if key in seen:
+                return
+            seen.add(key)
+            # elevated iff THIS family's own runner already searches the axis — use
+            # fam_named only (a global check cross-links same-named knobs, e.g. moe's
+            # `bt` would falsely mark grouped_topk's `bt` as elevated).
+            parts = [p for p in re.split(r"[,\s]+", axis) if p]      # multi-axis findings
+            elevated = bool(parts) and all(p in fam_named for p in parts)
+            gaps.append({
+                "id": f"{label}:{axis}:{cat}", "family": label, "kernel_ids": sorted(ids),
+                "axis": axis, "category": cat, "status": cat,
+                "what": _GAP_CATEGORIES.get(cat, (cat, "", 0))[0],
+                "detail": detail, "evidence": f"{file}:{line}",
+                "reachable_prim": _GAP_CATEGORIES.get(cat, (None, None, 0))[1],
+                "elevated_in_akt": elevated, "in_akt_suite": bool(ids)})
+
+        for g in merged["findings"]:
+            _emit(g["category"], g["axis"], g["detail"], g["file"], g["line"])
+        # missing-tuned-table: per FILE — an entry that constructs its own tiles
+        # (TileSizes / calculate_tiling / >=2 tile axes) but references NO tuned table,
+        # even when a sibling file in the same family ships one (the gmm_v2-vs-v1 case).
+        for rel, m in per_file:
+            ftiles = sorted({a["axis"] for a in m["axes"] if a["kind"] == "tile"})
+            txt = ""
+            try:
+                txt = (repo / rel).read_text()
+            except Exception:  # noqa: BLE001
+                pass
+            builds_tiles = ("TileSizes" in txt or "calculate_tiling" in txt or len(ftiles) >= 2)
+            if builds_tiles and not m["table_refs"] and any(m2 for _, m2 in [(rel, m)]):
+                sib_has = has_table and not m["table_refs"]
+                _emit("missing-tuned-table", ",".join(ftiles[:3]) or "tiles",
+                      (f"{Path(rel).name} constructs tiles but references no tuned table"
+                       + (" (a sibling file in this family ships one)" if sib_has else "")),
+                      rel, 0)
+
+    # rank: gaps in the tuned suite first, then by category salience, then un-elevated
+    def _rank(g):
+        sal = _GAP_CATEGORIES.get(g["category"], (None, None, 0))[2]
+        return (0 if g["in_akt_suite"] else 1, 0 if not g["elevated_in_akt"] else 1, -sal)
+    gaps.sort(key=_rank)
+    cats = {}
+    for c, (lab, prim, sal) in _GAP_CATEGORIES.items():
+        n = sum(1 for g in gaps if g["category"] == c)
+        if n:
+            cats[c] = {"label": lab, "reachable_prim": prim, "salience": sal, "count": n}
+    return {"serving_stack": stack, "gaps": gaps, "gap_categories": cats}
+
+
+# validation: the auto-miner should REDISCOVER the frozen hand-authored FRONTIER
+# (proof it is really investigating the stack, not re-encoding a list). Maps each
+# hand gap to an (family-substr, category) the miner must have produced.
+_FRONTIER_EXPECT = [
+    ("update_kv_cache", "dead-tuned-table"),      # num_slices_per_block dead selector
+    ("megablox_gmm_kernel", "missing-tuned-table"),  # gmm_v2 no table
+    ("fused_mlp", "pipeline-depth"),              # buffer_count=3 hardcoded
+    ("ragged_paged_attention", "compute-tile-pinned"),  # bkv_csz pinned
+    ("fused_moe/v2", "schedule-toggle"),          # moe_v2 toggles
+    ("simple_gla", "shape-pinned-tile"),          # BK/BV from ref.shape
+    ("ragged_paged_attention", "backend-gated"),  # TUNED_BLOCK_SIZES_V3 gen-gated
+]
+
+
+def frontier_coverage(mined):
+    got = {(g["family"], g["category"]) for g in mined["gaps"]}
+    rows = []
+    for famsub, cat in _FRONTIER_EXPECT:
+        hit = any(famsub in f and c == cat for (f, c) in got)
+        rows.append((famsub, cat, hit))
+    return rows
+
+
 def build_graph(focus_active: bool = True):
     src = locate_sources()
     rules = {p: v for p, v in extract_lowering(src["lowering"]).items() if p not in _SKIP_PRIMS}
@@ -522,6 +874,17 @@ def build_graph(focus_active: bool = True):
     layers = [("pallas", "JAX / Pallas primitives"), ("mosaic", "Mosaic TPU IR ops"),
               ("llo", "Mosaic backend (LLO): reg-alloc / scheduling"), ("hw", "TPU hardware")]
     n_partial = sum(1 for n in nodes.values() if n.get("partial"))
+
+    # (3) AUTO-DERIVE the gap frontier + categories from the FULL serving stack, and
+    # CONNECT each gap to the reachable lowering node it would steer (config axis ->
+    # the Pallas primitive that already lowers, but which no config names). This is
+    # the loop's evolve target list, generated — not hand-authored.
+    mined = mine_serving_stack(src)
+    for g in mined["gaps"]:
+        rp = g.get("reachable_prim")
+        g["graph_node"] = f"pallas:{rp}" if rp and f"pallas:{rp}" in nodes else None
+    coverage = frontier_coverage(mined)
+    n_open = sum(1 for g in mined["gaps"] if g["in_akt_suite"] and not g["elevated_in_akt"])
     return {
         "kind": "lowering-4layer", "generated_by": "flexgraph_extract.py (automated)",
         "categories": [{"id": c, "title": t} for c, t in cats],
@@ -529,12 +892,19 @@ def build_graph(focus_active: bool = True):
         "nodes": list(nodes.values()),
         "lowering_edges": low_edges, "exposure_edges": exposure, "gap_edges": gap_edges,
         "n_gap": len(gap_edges), "n_hidden": len(hidden_ids), "n_partial": n_partial,
+        # auto-mined serving-stack investigation + evolve frontier
+        "serving_stack": mined["serving_stack"], "gaps": mined["gaps"],
+        "gap_categories": mined["gap_categories"],
+        "frontier_coverage": [{"family": f, "category": c, "hit": h} for (f, c, h) in coverage],
         "stats": {"jax_primitives_total": len(rules), "primitives_shown": shown_prims,
                   "mosaic_ops": sum(1 for n in nodes.values() if n["layer"] == "mosaic"),
                   "hw_units": sum(1 for n in nodes.values() if n["layer"] == "hw"),
                   "tpu_dialect_ops": len(tpu_ops_all),
                   "active_primitives": sum(1 for p in rules if active.get(p)),
                   "kernels_scanned": len({k for ks in active.values() for k in ks}),
+                  "pallas_families": len(mined["serving_stack"]),
+                  "auto_gaps": len(mined["gaps"]), "open_suite_gaps": n_open,
+                  "frontier_rediscovered": f"{sum(h for _,_,h in coverage)}/{len(coverage)}",
                   "focus_active": focus_active},
         "note": ("AUTO-EXTRACTED: JAX/Pallas primitives + primitive→Mosaic-op edges parsed from "
                  "jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax "
@@ -564,6 +934,14 @@ def main():
           f"{len(g['nodes'])} nodes ({s['primitives_shown']} primitives, {s['mosaic_ops']} Mosaic "
           f"ops, {s['hw_units']} HW units), {len(g['lowering_edges'])} lowering edges, "
           f"{g['n_gap']} gap edges into {g['n_hidden']} hidden capabilities.")
+    print(f"[flexgraph-extract] serving stack: {s['pallas_families']} Pallas kernel families "
+          f"investigated -> {s['auto_gaps']} flexibility gaps auto-derived "
+          f"({s['open_suite_gaps']} OPEN in the akt suite) across {len(g['gap_categories'])} "
+          f"categories; hand-FRONTIER rediscovered {s['frontier_rediscovered']}.")
+    miss = [c for c in g["frontier_coverage"] if not c["hit"]]
+    if miss:
+        print("[flexgraph-extract] WARNING frontier gaps NOT rediscovered: "
+              + ", ".join(f"{c['family']}/{c['category']}" for c in miss))
     print(f"[flexgraph-extract] -> {args.out}")
 
 

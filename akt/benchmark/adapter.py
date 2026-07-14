@@ -106,17 +106,55 @@ FRONTIER = [
 ]
 
 
+# The extractor (akt/core/analysis/flexgraph_extract.py) AUTO-DERIVES the gap frontier
+# by investigating the whole serving stack; it writes flexgraph_generated.json. Prefer
+# that live analysis (same "prefer generated, fall back to hand-authored" pattern as
+# build.py::_flexgraph). The auto-miner rediscovers this FRONTIER 7/7, so it is a fresh
+# SUPERSET — FRONTIER stays the safe fallback when the extractor hasn't run.
+_GENERATED = ROOT / "akt/core/analysis/flexgraph_generated.json"
+
+
+def _auto_gap_lines():
+    """The actionable auto-derived frontier: gaps in the akt suite that no runner has
+    elevated yet, ranked by the extractor. Returns (lines, note) or None to fall back."""
+    try:
+        g = json.loads(_GENERATED.read_text())
+    except Exception:  # noqa: BLE001
+        return None
+    gaps = g.get("gaps")
+    if not gaps:
+        return None
+    actionable = [x for x in gaps if x.get("in_akt_suite") and not x.get("elevated_in_akt")]
+    if not actionable:
+        return None
+    lines = [f"[{x['family']}:{x['axis']}] ({x['category']}) {x.get('detail', x.get('what', ''))[:150]}"
+             f"  <{x.get('evidence', '')}>" for x in actionable]
+    st = g.get("stats", {})
+    n_elev = sum(1 for x in gaps if x.get("elevated_in_akt"))
+    n_other = sum(1 for x in gaps if not x.get("in_akt_suite"))
+    note = (f"AUTO-DERIVED from the full serving stack ({st.get('pallas_families', '?')} Pallas "
+            f"families scanned; hand-FRONTIER rediscovered {st.get('frontier_rediscovered', '?')}). "
+            f"Each gap = a tiling/pipeline/schedule axis the Pallas/Mosaic lowering executes but no "
+            f"config names -> elevate ONE into a runner DesignSpace Knob. Shown = the OPEN suite "
+            f"frontier; {n_elev} already elevated, {n_other} more in non-suite kernels. "
+            f"'backend-gated' = frozen for the loop (flag to user).")
+    return lines, note
+
+
 def cmd_gaps(_args):
-    lines = [f"[{f['interface'][:52]}] ({f['status']}) {f['what'][:150]}"
-             for f in FRONTIER]
-    print("AKT_GAPS " + json.dumps(
-        {"title": "flexibility gaps: lowering-reachable knobs the config schema can't name",
-         "lines": lines,
-         "note": ("each gap = a capability the Pallas/Mosaic lowering executes but no "
-                  "config knob names/selects -> candidate to elevate into a runner "
-                  "DesignSpace Knob; 'pinned' = the axis exists but is tied to another; "
-                  "'floor-only' = backend/config gating, frozen for the loop (flag to user).")},
-        allow_nan=False))
+    auto = _auto_gap_lines()
+    if auto:
+        lines, note = auto
+        title = "flexibility gaps (AUTO-DERIVED from the serving stack): axes reachable but unnamed"
+    else:
+        lines = [f"[{f['interface'][:52]}] ({f['status']}) {f['what'][:150]}" for f in FRONTIER]
+        title = "flexibility gaps: lowering-reachable knobs the config schema can't name"
+        note = ("each gap = a capability the Pallas/Mosaic lowering executes but no "
+                "config knob names/selects -> candidate to elevate into a runner "
+                "DesignSpace Knob; 'pinned' = the axis exists but is tied to another; "
+                "'floor-only' = backend/config gating, frozen for the loop (flag to user).")
+    print("AKT_GAPS " + json.dumps({"title": title, "lines": lines, "note": note},
+                                   allow_nan=False))
 
 
 # ------------------------------------------------------------------ space report
