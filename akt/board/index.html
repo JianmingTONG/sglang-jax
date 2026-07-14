@@ -86,6 +86,7 @@
   <h2>Flexibility graph <span class="muted">— Pallas → Mosaic IR → Mosaic backend (LLO) → hardware (floor) · nameable vs hidden gap (red)</span></h2>
   <div class="panel">
     <div id="flexgraphs"></div>
+    <div id="flexdetail" style="margin-top:10px"></div>
     <div class="sub" style="margin-top:10px" id="flexnote"></div>
   </div>
 
@@ -242,15 +243,46 @@ function renderFlexGraph(fg){
       const on=(na&&na.active&&na.active.length&&nb&&nb.active&&nb.active.length);
       return {a:e[0], b:e[1], op:gap?0.9:(on?0.42:0.12), w:gap?1.7:(on?1.3:1)}; });
     const nbr={}; edgesR.forEach(e=>{ (nbr[e[0]]=nbr[e[0]]||{})[e[1]]=1; (nbr[e[1]]=nbr[e[1]]||{})[e[0]]=1; });
+    const detail=document.getElementById('flexdetail');
+    // On click, surface the node's EXACT 1:1 real handle: the Pallas/JAX API + jax primitive
+    // (pallas), the Mosaic IR op(s) (mosaic), or the hardware descriptor (hw). Family boxes
+    // (>1 member) list every member; hidden boxes have no handle by design — that IS the gap.
+    const kv=(k,v)=>'<div style="margin:2px 0"><span class="muted">'+esc(k)+':</span> <code style="font-size:11.5px">'+esc(v)+'</code></div>';
+    const nodeDetailHTML=n=>{
+      const h=n.handle||{}, gap=(n.nameability==='hidden');
+      // "family" = the box aggregates >1 distinct low-level handle (primitives / Mosaic ops).
+      // Multiple API *spellings* of one primitive (e.g. pl.dot / jnp.matmul → dot_general_p)
+      // is still a 1:1 box — the aliases are synonyms, not an aggregation.
+      const fam=((h.prim&&h.prim.length>1)||(h.op&&h.op.length>1));
+      const tag=gap?'no handle (gap)':(fam?'family (aggregated box)':'1:1 real handle');
+      const tagCol=gap?bad:(fam?warn:good);
+      let body;
+      if(gap){
+        body='<span style="color:'+bad+'">No Pallas / Mosaic API or hardware ISA handle — this box is a compiler/hardware-internal decision with no top-level name. Its absence is the flexibility gap.</span>';
+      } else {
+        const rows=[];
+        if(h.api&&h.api.length)  rows.push(kv(h.api.length>1?'Pallas / JAX API ('+h.api.length+')':'Pallas / JAX API', h.api.join(', ')));
+        if(h.prim&&h.prim.length)rows.push(kv(h.prim.length>1?'JAX primitives ('+h.prim.length+')':'JAX primitive', h.prim.join(', ')));
+        if(h.op&&h.op.length)    rows.push(kv(h.op.length>1?'Mosaic IR ops ('+h.op.length+')':'Mosaic IR op', h.op.join(', ')));
+        if(h.hw)                 rows.push(kv('TPU hardware unit', n.label+' — '+h.hw));
+        body=rows.join('')||'<span class="muted">(no handle recorded)</span>';
+      }
+      const used=(n.active&&n.active.length)? '<div class="muted" style="margin-top:6px">exercised by: '+esc(n.active.join(', '))+'</div>'
+                                            : '<div class="muted" style="margin-top:6px;opacity:.7">reachable in the stack, but no suite kernel exercises it</div>';
+      return '<div style="border:1px solid '+line+';border-left:3px solid '+tagCol+';border-radius:8px;padding:9px 12px">'+
+             '<b>'+esc(n.label)+'</b> <span style="color:'+tagCol+';font-size:11px;font-weight:600">· '+tag+'</span>'+
+             '<span class="muted" style="font-size:11px"> · '+esc(n.layer)+' layer</span>'+
+             '<div style="margin-top:6px;font-size:12.5px">'+body+'</div>'+used+'</div>';
+    };
     let sel=null;
     const reset=()=>{ gEls.forEach((g,i)=>g.setAttribute('opacity', baseOp[i]));
       eEls.forEach((l,i)=>{ if(!eMeta[i])return; l.setAttribute('opacity', eMeta[i].op); l.setAttribute('stroke-width', eMeta[i].w); });
-      sel=null; };
+      if(detail) detail.innerHTML=''; sel=null; };
     const hi=id=>{ const keep=Object.assign({}, nbr[id]||{}); keep[id]=1;
       gEls.forEach((g,i)=>g.setAttribute('opacity', keep[ids[i]]?1:0.07));
       eEls.forEach((l,i)=>{ if(!eMeta[i])return; const on=(eMeta[i].a===id||eMeta[i].b===id);
         l.setAttribute('opacity', on?0.95:0.04); l.setAttribute('stroke-width', on?(eMeta[i].w+1.1):eMeta[i].w); });
-      sel=id; };
+      if(detail && nById[id]) detail.innerHTML=nodeDetailHTML(nById[id]); sel=id; };
     gEls.forEach((g,i)=>{ g.style.cursor='pointer';
       g.addEventListener('click', ev=>{ ev.stopPropagation(); (sel===ids[i]) ? reset() : hi(ids[i]); }); });
     svg.addEventListener('click', ()=>reset());   // background click clears the selection

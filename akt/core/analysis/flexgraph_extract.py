@@ -307,6 +307,20 @@ _HW_MICRO = {   # hw unit -> its internal, non-nameable micro-behaviours (hidden
     "VMEM": ["VMEM bank mapping", "contention arbitration"],
     "inter-core / ICI comm": ["ICI route selection"],
 }
+_HW_DESC = {   # short hardware descriptor per unit (shown in the click detail panel)
+    "MXU": "systolic matrix-multiply array",
+    "VPU": "vector ALU (8 sublanes x 128 lanes)",
+    "scalar unit": "scalar core / SREG",
+    "XLU": "cross-lane unit (shuffles / rotates / transposes / gathers)",
+    "VREG": "vector register file", "Lanes": "128 lanes", "Sublanes": "8 sublanes",
+    "HBM": "main memory", "VMEM": "vector scratchpad", "SMEM": "scalar memory",
+    "CMEM": "constant / compute memory", "DMA engines": "async copy engines",
+    "semaphore fabric": "sync-flag / barrier network",
+    "inter-core / ICI comm": "inter-core / inter-chip (ICI) interconnect",
+    "VMEM->VREG load": "vector load path", "VREG->VMEM store": "vector store path",
+    "HBM->VMEM": "DMA transfer", "VMEM->HBM": "DMA transfer", "remote DMA": "cross-chip DMA",
+    "semaphore memory": "semaphore memory",
+}
 
 
 # ------------------------------------------------------------------- assemble
@@ -361,6 +375,12 @@ def build_graph(focus_active: bool = True):
 
     low_edges, gap_edges = [], []
     hw_seen = set()
+    # exact API/ISA "handles" per node, surfaced in the board's click detail panel.
+    api_for = {}                          # jax primitive short -> Pallas/JAX API tokens
+    for _tok, _prims in _API_ALIAS.items():
+        for _p in _prims:
+            api_for.setdefault(_p, set()).add(_tok)
+    prim_handle, op_handle = {}, {}       # node id -> exact primitive srcs / raw Mosaic ops
 
     # Pallas primitive nodes + primitive->mosaic-op edges + mosaic-op->hw edges.
     for prim, info in sorted(rules.items()):
@@ -373,12 +393,15 @@ def build_graph(focus_active: bool = True):
         # third tier. `fanout` is kept only as a tooltip hint, not a class.
         fanout = (pl != prim or len({o.split(".")[0] for o in ops}) > 1 or len(ops) > 2)
         p_id = node("pallas", pl, categorize(pl), "nameable", active.get(prim))
+        _ph = prim_handle.setdefault(p_id, {"prim": set(), "api": set()})
+        _ph["prim"] |= set(info["srcs"]); _ph["api"] |= api_for.get(prim, set())
         if fanout:
             nodes[p_id]["fanout"] = True
         for op in ops:
             cop = coarsen(op)
             ocat = categorize(cop)
             m_id = node("mosaic", cop, ocat, "nameable", active.get(prim))
+            op_handle.setdefault(m_id, set()).add(op)
             low_edges.append([p_id, m_id])
             # route the op through the Mosaic BACKEND (LLO) stage for its category, then
             # onto its hardware unit(s):  mosaic op -> llo stage (hidden) -> hw unit.
@@ -419,6 +442,20 @@ def build_graph(focus_active: bool = True):
         nodes = {i: n for i, n in nodes.items() if i in keep}
         low_edges = [e for e in low_edges if e[0] in nodes and e[1] in nodes]
         gap_edges = [e for e in gap_edges if e[0] in nodes and e[1] in nodes]
+
+    # attach the exact API/ISA HANDLE to each node (1:1 for single-API boxes, the member
+    # list for coarsened families; hidden nodes get no handle — that absence IS the gap).
+    for i, n in nodes.items():
+        if n["nameability"] == "hidden":
+            continue
+        if n["layer"] == "pallas" and i in prim_handle:
+            h = prim_handle[i]
+            n["handle"] = {"prim": sorted(h["prim"]), "api": sorted(h["api"])}
+        elif n["layer"] == "mosaic" and i in op_handle:
+            n["handle"] = {"op": sorted(op_handle[i])}
+        elif n["layer"] == "hw":
+            n["handle"] = {"hw": _HW_DESC.get(n["label"], n["label"])}
+
     hidden_ids = {n["id"] for n in nodes.values() if n["nameability"] == "hidden"}
     exposure = [[b, a] for (a, b) in low_edges if b not in hidden_ids]
     shown_prims = sum(1 for n in nodes.values() if n["layer"] == "pallas")
