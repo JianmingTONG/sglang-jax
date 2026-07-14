@@ -398,7 +398,9 @@ def build_graph(focus_active: bool = True):
         u_id = _nid("hw", unit)
         if u_id in node_ids:
             for mname in micros:
-                x_id = node("hw", mname, nodes[u_id]["category"], "hidden")
+                # inherit the parent unit's ACTIVE set — a micro-behaviour is exercised
+                # whenever its unit is (else it would look falsely "unused by the suite").
+                x_id = node("hw", mname, nodes[u_id]["category"], "hidden", nodes[u_id]["active"])
                 low_edges.append([u_id, x_id]); gap_edges.append([u_id, x_id])
 
     # de-dup edges
@@ -408,9 +410,12 @@ def build_graph(focus_active: bool = True):
     # primitives + everything they lower into + the hidden gaps under those HW units.
     if focus_active:
         keep = {i for i, n in nodes.items() if n["active"]}
-        keep |= {i for i, n in nodes.items() if n["nameability"] == "hidden"}  # keep the floor
-        for a, b in gap_edges:                     # + the HW anchor of each gap
-            keep.add(a); keep.add(b)
+        # keep only the hidden gaps that hang off an ACTIVE node, so the shown floor is
+        # exactly the part the serving stack reaches — not ops/gaps the suite never triggers
+        # (those belong to the --full view). This keeps the focused view fully-exercised.
+        for a, b in gap_edges:
+            if a in keep:
+                keep.add(b)
         nodes = {i: n for i, n in nodes.items() if i in keep}
         low_edges = [e for e in low_edges if e[0] in nodes and e[1] in nodes]
         gap_edges = [e for e in gap_edges if e[0] in nodes and e[1] in nodes]

@@ -424,14 +424,6 @@
    "partial": true
   },
   {
-   "id": "mosaic:tpu.delay",
-   "label": "tpu.delay",
-   "layer": "mosaic",
-   "category": "sync",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
    "id": "pallas:dma_start",
    "label": "dma_start",
    "layer": "pallas",
@@ -637,14 +629,6 @@
    ]
   },
   {
-   "id": "mosaic:tpu.sem_barrier",
-   "label": "tpu.sem_barrier",
-   "layer": "mosaic",
-   "category": "sync",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
    "id": "hw:semaphore fabric",
    "label": "semaphore fabric",
    "layer": "hw",
@@ -678,14 +662,6 @@
     "gmm",
     "rpa"
    ]
-  },
-  {
-   "id": "mosaic:tpu.weird",
-   "label": "tpu.weird",
-   "layer": "mosaic",
-   "category": "compute",
-   "nameability": "nameable",
-   "active": []
   },
   {
    "id": "pallas:load",
@@ -870,14 +846,6 @@
    ]
   },
   {
-   "id": "mosaic:tpu.pack_elementwise",
-   "label": "tpu.pack_elementwise",
-   "layer": "mosaic",
-   "category": "compute",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
    "id": "pallas:pad",
    "label": "pad",
    "layer": "pallas",
@@ -894,22 +862,6 @@
    ],
    "fanout": true,
    "partial": true
-  },
-  {
-   "id": "mosaic:tpu.prng_random_bits",
-   "label": "tpu.prng_random_bits",
-   "layer": "mosaic",
-   "category": "compute",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
-   "id": "mosaic:tpu.prng_set_seed_32",
-   "label": "tpu.prng_set_seed_32",
-   "layer": "mosaic",
-   "category": "compute",
-   "nameability": "nameable",
-   "active": []
   },
   {
    "id": "pallas:program_id",
@@ -1071,14 +1023,6 @@
    "partial": true
   },
   {
-   "id": "mosaic:tpu.sem_read",
-   "label": "tpu.sem_read",
-   "layer": "mosaic",
-   "category": "sync",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
    "id": "pallas:semaphore_signal",
    "label": "semaphore_signal",
    "layer": "pallas",
@@ -1161,38 +1105,6 @@
    ]
   },
   {
-   "id": "mosaic:tpu.stochastic_convert",
-   "label": "tpu.stochastic_convert",
-   "layer": "mosaic",
-   "category": "compute",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
-   "id": "mosaic:memref.store",
-   "label": "memref.store",
-   "layer": "mosaic",
-   "category": "datamove",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
-   "id": "mosaic:tpu.strided_store",
-   "label": "tpu.strided_store",
-   "layer": "mosaic",
-   "category": "datamove",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
-   "id": "mosaic:tpu.vector_store",
-   "label": "tpu.vector_store",
-   "layer": "mosaic",
-   "category": "compute",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
    "id": "pallas:transpose",
    "label": "transpose",
    "layer": "pallas",
@@ -1220,14 +1132,6 @@
    ]
   },
   {
-   "id": "mosaic:tpu.unpack_elementwise",
-   "label": "tpu.unpack_elementwise",
-   "layer": "mosaic",
-   "category": "compute",
-   "nameability": "nameable",
-   "active": []
-  },
-  {
    "id": "pallas:while",
    "label": "while",
    "layer": "pallas",
@@ -1249,7 +1153,15 @@
    "layer": "hw",
    "category": "compute",
    "nameability": "hidden",
-   "active": []
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kda",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
   },
   {
    "id": "hw:DMA channel selection",
@@ -1257,7 +1169,15 @@
    "layer": "hw",
    "category": "datamove",
    "nameability": "hidden",
-   "active": []
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
   },
   {
    "id": "hw:HW queue assignment",
@@ -1265,7 +1185,15 @@
    "layer": "hw",
    "category": "datamove",
    "nameability": "hidden",
-   "active": []
+   "active": [
+    "fused_mlp",
+    "gla",
+    "gmm",
+    "kv_cache",
+    "moe_v1",
+    "moe_v2",
+    "rpa"
+   ]
   },
   {
    "id": "hw:VMEM bank mapping",
@@ -1273,7 +1201,11 @@
    "layer": "hw",
    "category": "compute",
    "nameability": "hidden",
-   "active": []
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
   },
   {
    "id": "hw:contention arbitration",
@@ -1281,7 +1213,11 @@
    "layer": "hw",
    "category": "compute",
    "nameability": "hidden",
-   "active": []
+   "active": [
+    "gmm",
+    "moe_v1",
+    "moe_v2"
+   ]
   },
   {
    "id": "hw:ICI route selection",
@@ -1289,7 +1225,10 @@
    "layer": "hw",
    "category": "compute",
    "nameability": "hidden",
-   "active": []
+   "active": [
+    "moe_v1",
+    "moe_v2"
+   ]
   }
  ],
  "lowering_edges": [
@@ -1414,10 +1353,6 @@
    "mosaic:math.* transcendental"
   ],
   [
-   "mosaic:tpu.delay",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "pallas:dma_start",
    "mosaic:tpu.enqueue_dma"
   ],
@@ -1490,10 +1425,6 @@
    "mosaic:vector.* layout"
   ],
   [
-   "mosaic:tpu.sem_barrier",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "llo:reg-alloc + instruction scheduling (VLIW)",
    "hw:semaphore fabric"
   ],
@@ -1508,14 +1439,6 @@
   [
    "llo:vector-layout assignment / relayout insertion",
    "hw:VPU"
-  ],
-  [
-   "pallas:logic / compare / select",
-   "mosaic:tpu.weird"
-  ],
-  [
-   "mosaic:tpu.weird",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:load",
@@ -1618,10 +1541,6 @@
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "mosaic:tpu.pack_elementwise",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "pallas:pad",
    "mosaic:arith.constant"
   ],
@@ -1636,14 +1555,6 @@
   [
    "pallas:elementwise arithmetic",
    "mosaic:arith.* convert"
-  ],
-  [
-   "mosaic:tpu.prng_random_bits",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:tpu.prng_set_seed_32",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:reciprocal",
@@ -1702,10 +1613,6 @@
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "mosaic:tpu.sem_read",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "pallas:semaphore_signal",
    "mosaic:tpu.sem_signal"
   ],
@@ -1734,22 +1641,6 @@
    "mosaic:vector.* layout"
   ],
   [
-   "mosaic:tpu.stochastic_convert",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:memref.store",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:tpu.strided_store",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:tpu.vector_store",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "pallas:transpose",
    "mosaic:tpu.transpose"
   ],
@@ -1760,10 +1651,6 @@
   [
    "pallas:transpose",
    "mosaic:vector.* layout"
-  ],
-  [
-   "mosaic:tpu.unpack_elementwise",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "pallas:while",
@@ -1934,10 +1821,6 @@
   [
    "hw:VPU",
    "llo:vector-layout assignment / relayout insertion"
-  ],
-  [
-   "mosaic:tpu.weird",
-   "pallas:logic / compare / select"
   ],
   [
    "mosaic:memref.load",
@@ -2130,10 +2013,6 @@
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "mosaic:tpu.delay",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "mosaic:tpu.enqueue_dma",
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
@@ -2158,16 +2037,8 @@
    "llo:vector-layout assignment / relayout insertion"
   ],
   [
-   "mosaic:tpu.sem_barrier",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "mosaic:tpu.iota",
    "llo:vector-layout assignment / relayout insertion"
-  ],
-  [
-   "mosaic:tpu.weird",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "mosaic:memref.load",
@@ -2202,18 +2073,6 @@
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "mosaic:tpu.pack_elementwise",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:tpu.prng_random_bits",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:tpu.prng_set_seed_32",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "mosaic:tpu.reciprocal",
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
@@ -2238,10 +2097,6 @@
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "mosaic:tpu.sem_read",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "mosaic:tpu.sem_signal",
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
@@ -2250,28 +2105,8 @@
    "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
-   "mosaic:tpu.stochastic_convert",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:memref.store",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:tpu.strided_store",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
-   "mosaic:tpu.vector_store",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
-  ],
-  [
    "mosaic:tpu.transpose",
    "llo:vector-layout assignment / relayout insertion"
-  ],
-  [
-   "mosaic:tpu.unpack_elementwise",
-   "llo:reg-alloc + instruction scheduling (VLIW)"
   ],
   [
    "hw:MXU",
@@ -2298,13 +2133,13 @@
    "hw:ICI route selection"
   ]
  ],
- "n_gap": 52,
+ "n_gap": 40,
  "n_hidden": 9,
  "n_partial": 14,
  "stats": {
   "jax_primitives_total": 104,
   "primitives_shown": 34,
-  "mosaic_ops": 46,
+  "mosaic_ops": 34,
   "hw_units": 16,
   "tpu_dialect_ops": 175,
   "active_primitives": 53,

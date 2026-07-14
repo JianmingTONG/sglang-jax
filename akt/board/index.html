@@ -221,7 +221,7 @@ function renderFlexGraph(fg){
     '<span>'+sw(bad,true)+' <b style="color:'+bad+'">flexibility gap: reachable ▼, NOT reschedulable</b></span>'+
     '<span>'+chip(acc)+' nameable capability</span>'+
     '<span>'+chip(bad,true)+' hidden capability</span>'+
-    '<span style="opacity:.45">'+chip(ink)+' faded = unused by the suite</span>'+
+    (fg.nodes.some(n=>!(n.active&&n.active.length)) ? '<span style="opacity:.45">'+chip(ink)+' faded = reachable in the stack but no suite kernel uses it</span>' : '')+
     '<span style="margin-left:auto;opacity:.85"><b>tip:</b> click a box to trace its connections (click it again / background to reset)</span></div>';
   host.innerHTML = lg + '<div style="overflow-x:auto">'+s+'</div>';
   document.getElementById('flexnote').textContent = fg.note||'';
