@@ -108,13 +108,14 @@ def eval_case(case, runs: int, native: bool = True) -> dict:
     out.update(correct=correct, forward_s=r["best_median_s"],
                default_s=r["default_median_s"], best_config=best_cfg,
                default_config=default_cfg, n_correct=r["n_correct"],
-               n_valid=r["n_valid"])
+               n_valid=r["n_valid"], truncated=r.get("truncated", False))
     # search evidence (the "enlarged space was searched, not sampled" proof)
     speedup = (r["default_median_s"] / r["best_median_s"]
                if r["best_median_s"] and r["default_median_s"] else None)
     out["search_note"] = (
-        f"searched {r['n_correct']}/{r['space_size']} configs; "
-        f"best={best_cfg} vs default={default_cfg}"
+        f"searched {r['n_correct']}/{r['space_size']} configs"
+        + (" [TRUNCATED — cap hit, NOT exhaustive]" if r.get("truncated") else "")
+        + f"; best={best_cfg} vs default={default_cfg}"
         + (f"; {speedup:.2f}x" if speedup else ""))
     return out
 
@@ -171,13 +172,18 @@ def main():
                       "other": sum(1 for n in nats if n["status"] not in ("passed", "failed"))}
     # A native-test FAILURE is a hard correctness failure (the repo's own assertions).
     native_ok = native_summary["failed"] == 0
+    truncated = [r["case"] for r in results if r.get("truncated")]
     summary = {"suite": args.suite, "all_correct": all_ok and native_ok,
                "allclose_correct": all_ok, "native_ok": native_ok,
                "geomean_s": geo, "geomean_default_s": geo_def,
                "n_runnable": len(runnable), "n_deferred": sum(1 for r in results if r.get("correct") is None),
+               "truncated_cases": truncated,   # searches that hit the cap (not exhaustive)
                "native_summary": native_summary,
                "n_choices": n_choices, "results": results,
                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
+    if truncated:
+        print(f"[akt-eval] WARNING: search TRUNCATED (cap hit, not exhaustive) for: "
+              f"{', '.join(truncated)}", flush=True)
     print(f"[akt-eval] SUMMARY all_correct={all_ok and native_ok} (allclose={all_ok} "
           f"native={native_summary['passed']}/{native_summary['ran']} pass) "
           f"search_geomean={geo*1e3:.2f}ms default_geomean={geo_def*1e3:.2f}ms "

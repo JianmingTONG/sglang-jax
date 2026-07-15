@@ -143,10 +143,17 @@ def time_config(case: KernelCase, cfg: dict, iters: int = 30, warmup: int = 3) -
 
 # --------------------------------------------------------------- search
 def search_best(case: KernelCase, space: DesignSpace | None = None,
-                iters: int = 20, cap: int = 256) -> dict:
+                iters: int = 20, cap: int = 4096) -> dict:
     """Autotune: over `space`, keep correct configs, time them, return the fastest.
     This is the AI-domain analog of vn_go's DP over the layout space. Returns
-    {best_config, best_median_s, n_valid, n_correct, n_evaluated, default_median_s}."""
+    {best_config, best_median_s, n_valid, n_correct, n_evaluated, default_median_s,
+     truncated}.
+
+    `cap` bounds how many VALID configs are enumerated; it defaults to `enumerate`'s
+    own 4096 so the current kernels (largest raw space ~1620) are searched EXHAUSTIVELY.
+    If a space ever exceeds `cap`, `truncated=True` is returned so the caller/gate can
+    see that "optimal within the space" no longer holds (a silent 256-cap previously hid
+    this for the larger moe spaces)."""
     space = space or case.space
     default = case.space.default_config()
     best_cfg, best_t = None, math.inf
@@ -171,7 +178,10 @@ def search_best(case: KernelCase, space: DesignSpace | None = None,
     return {"best_config": best_cfg, "best_median_s": best_t if best_cfg else None,
             "default_config": default, "default_median_s": default_t,
             "n_valid": n_valid, "n_correct": n_correct, "n_evaluated": n_eval,
-            "space_size": space.size()}
+            "space_size": space.size(),
+            # the enumeration hit the cap before exhausting the space -> the returned
+            # config is the best of a PREFIX, not a proven optimum.
+            "truncated": n_valid >= cap}
 
 
 # --------------------------------------------------------------- regime probe

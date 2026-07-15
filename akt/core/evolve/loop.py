@@ -252,6 +252,10 @@ def hw_eval(runs, suite="full"):
     (all_correct, geomean_s, per_case, results, n_choices) — results carry per-case
     search_note (the enlarged-search evidence produced during compile)."""
     out_path = ROOT / "akt/optimization_history/.evolve_eval.json"
+    # Delete any prior-round result FIRST: if this eval crashes before writing, the
+    # missing file is detected below instead of the stale previous result being read
+    # back as if it were fresh (a crashed eval must fail the round, not pass on old data).
+    out_path.unlink(missing_ok=True)
     rc, log = sh(f"{EVAL} --suite {suite} --runs {runs} --out {out_path}", timeout=3600)
     if not out_path.exists():
         print(f"[evolve] eval produced no output (rc={rc}):\n{log[-800:]}")
@@ -319,6 +323,10 @@ def cmd_init(args):
     if not correct or geo != geo:
         print(f"[evolve] init ABORTED: incumbent gate failed (correct={correct}, geo={geo}).")
         return
+    # Snapshot the FULL set of suite cases the incumbent eval produced. Every later round
+    # must reproduce this set; a capability that breaks a runner import (silently dropping
+    # a kernel from the eval, and thus from the geomean) then fails the missing-case guard.
+    expected_cases = sorted(r.get("case") for r in _res if r.get("case"))
     CAPS.mkdir(exist_ok=True)
     # Incumbent = the BEST performance achievable with the EXISTING knobs (the
     # base-space autotuning optimum), NOT the shipped default (a suboptimal config).
@@ -331,7 +339,7 @@ def cmd_init(args):
           "round": 0, "target_improvement": args.target,
           "incumbent_geomean": incumbent, "incumbent_choices": n_choices,
           "shipped_default_geomean": geo_def, "base_search_geomean": geo,
-          "incumbent_commit": git_head(),
+          "incumbent_commit": git_head(), "expected_cases": expected_cases,
           "objective_name": "geomean_s", "objective_unit": "s"}
     save(st)
     write_status("idle", round=0, reset=True)   # start a fresh campaign clock
@@ -383,15 +391,36 @@ def gate_capability(st, m, mpath, args):
            for r in results}
     # A case that DOESN'T run here (correct is None -> tpu-deferred) is wired but not
     # gated locally; only a case that RAN and MISMATCHED its reference (correct is
-    # False) fails the guard. On TPU every case runs and is gated.
+    # False) fails the guard. On TPU every case runs and is gated. n_verified/n_deferred
+    # are recorded so a KEEP whose touched kernel was never correctness-checked here is
+    # VISIBLE rather than silent.
     failing = [f"{c}[{(v['why'] or 'mismatch')[:40]}]"
                for c, v in acc.items() if v.get("correct") is False]
-    guard_ok = bool(correct) and not failing and geo == geo
+    n_verified = sum(1 for v in acc.values() if v.get("correct") is True)
+    n_deferred = sum(1 for v in acc.values() if v.get("correct") is None)
+    # MISSING-CASE GUARD: every suite case the incumbent produced must reappear. A
+    # capability that breaks a runner import silently drops that kernel from the eval
+    # (and from the geomean) — that must fail, not pass on a smaller suite.
+    present = {r.get("case") for r in results if r.get("case")}
+    missing = sorted(c for c in (st.get("expected_cases") or []) if c not in present)
+    # TRUNCATION GUARD: a search that hit the enumeration cap did NOT prove its optimum,
+    # so a KEEP built on it is unsound.
+    truncated = [r.get("case") for r in results if r.get("truncated")]
+    guard_ok = (bool(correct) and not failing and not missing and not truncated
+                and geo == geo)
 
     if not guard_ok:
         decision = "reject"
-        reason = ("CORRECTNESS GUARD FAILED: " + "; ".join(failing)
-                  if failing else "correctness gate FAILED (eval error / NaN)")
+        if failing:
+            reason = "CORRECTNESS GUARD FAILED: " + "; ".join(failing)
+        elif missing:
+            reason = ("MISSING-CASE GUARD FAILED: eval dropped " + ", ".join(missing)
+                      + " (a runner likely failed to import) — geomean is over a partial suite")
+        elif truncated:
+            reason = ("SEARCH-TRUNCATION GUARD FAILED: search hit the cap for "
+                      + ", ".join(truncated) + " — optimum not proven within the space")
+        else:
+            reason = "correctness gate FAILED (eval error / NaN)"
     elif geo < incumbent * (1 - tgt):
         decision, reason = "keep", f"new optimum {geo:.4f} beats incumbent {incumbent:.4f} by {-delta_pct:.2f}% (> {tgt*100:.0f}%)"
     else:
@@ -404,6 +433,8 @@ def gate_capability(st, m, mpath, args):
            "files_touched": m.get("files_touched"),
            "correct": guard_ok, "accuracy": acc, "geomean_s": (None if geo != geo else geo),
            "incumbent_geomean": incumbent, "delta_pct": delta_pct,
+           "n_verified": n_verified, "n_deferred": n_deferred,
+           "missing_cases": missing, "truncated_cases": truncated,
            "target_pct": tgt * 100, "decision": decision, "reason": reason,
            "per_case": per, "search_notes": notes, "audit": bool(args.audit),
            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}

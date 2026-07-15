@@ -107,6 +107,20 @@ def _flexgraph(eval_summary):
                 "n_gap": 0, "n_hidden": 0, "note": ""}
 
 
+def _clean(o):
+    """Coerce NaN/Inf floats to None throughout a nested structure. board.json/
+    flexgraph.json are dumped with allow_nan=False (browsers reject NaN/Inf JSON), so a
+    single non-finite metric (e.g. an all-deferred geomean, or a failed-eval latency)
+    would otherwise raise ValueError and leave the board un-rebuilt."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _clean(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_clean(v) for v in o]
+    return o
+
+
 def build():
     st = _load_json(STATE, {})
     manifests = _manifests()
@@ -162,9 +176,9 @@ def build():
         "trail": trail, "kept": kept, "rejected": rejected,
         "n_rounds": len(trail),
     }
-    (BOARD / "board.json").write_text(json.dumps(board, indent=1, allow_nan=False))
+    (BOARD / "board.json").write_text(json.dumps(_clean(board), indent=1, allow_nan=False))
     fg = _flexgraph(eval_summary)
-    (BOARD / "flexgraph.json").write_text(json.dumps(fg, indent=1, allow_nan=False))
+    (BOARD / "flexgraph.json").write_text(json.dumps(_clean(fg), indent=1, allow_nan=False))
     n_run = sum(1 for k in kernels if k.get("best_s"))
     print(f"akt-board: {len(kernels)} kernels ({n_run} runnable, {len(kernels)-n_run} deferred), "
           f"{len(trail)} round(s) ({len(kept)} kept, {len(rejected)} rejected), "
