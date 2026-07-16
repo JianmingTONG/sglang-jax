@@ -1,0 +1,16 @@
+{
+ "name": "kda_zero_state_output_elision",
+ "gap": "[kda:BT,chunk_size] (missing-tuned-table) kda.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/kda/kda.py:0>",
+ "hypothesis": "When the single full-sequence chunk has an exact zero entrance state, naming output-state-term elision lets search remove the Stage-4 q/g/h loads and zero q@h matmul while preserving the intra-chunk output exactly.",
+ "estimated_relief_pct": 3.4,
+ "search_dimension": "Knob zero_state_output_elision=[false,true] (default false); the KDA runner passes cfg.zero_state_output_elision through chunk_kda_fwd into chunk_kda_fwd_o_gk, where true omits q/g/h gather and BlockSpecs plus the identically-zero inter-chunk matmul. Validity admits true only with the exact single_chunk_state_elision precondition.",
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_zero_state_output_elision.json"
+ ],
+ "status": "kept",
+ "delta_pct": 3.98,
+ "measured_geomean_s": 0.0003165468017175379
+}

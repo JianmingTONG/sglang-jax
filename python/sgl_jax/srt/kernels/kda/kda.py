@@ -895,6 +895,7 @@ def _chunk_kda_fwd_o_gk_pl_kernel(
     COMPUTE_BLOCK_CHUNKS,
     scale,
     USE_EXP2,
+    ZERO_STATE_OUTPUT,
 ):
     m_s = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
 
@@ -902,33 +903,40 @@ def _chunk_kda_fwd_o_gk_pl_kernel(
     # their boundary states are materialized.  Grouping them changes only the
     # Pallas load/program tile; each chunk retains its original arithmetic.
     for i_chunk in range(COMPUTE_BLOCK_CHUNKS):
-        b_q = q_ref[0, i_chunk]
-        b_g = g_ref[0, i_chunk]
         b_v = v_ref[0, i_chunk]
-        b_h = h_ref[0, i_chunk]
         b_A = A_ref[0, i_chunk]
 
-        b_g_f32 = b_g.astype(jnp.float32)
-        b_q_f32 = b_q.astype(jnp.float32)
-        # Compute inter-chunk output: o = scale * q * exp2(g) @ h.
-        # Use g[0] (first position, largest cumsum) as reference to avoid overflow/underflow:
-        #   exp2(g[t]) = exp2(g[t] - g[0]) * exp2(g[0])
-        # g[t] - g[0] ≤ 0 for all t (cumsum is monotonically decreasing), so exp2 is safe.
-        # Factor exp2(g[0]) into h to preserve the matmul structure.
-        _exp_fn = exp2 if USE_EXP2 else exp
-        b_g_ref = b_g_f32[0:1, :]  # [1, K] — reference point
-        b_qg = b_q_f32 * _exp_fn(jnp.maximum(b_g_f32 - b_g_ref, -126.0))
-        # Scale h rows: h_scaled[k, v] = h[k, v] * exp2(g_ref[k])
-        b_h_scaled = b_h.astype(jnp.float32) * _exp_fn(
-            jnp.maximum(b_g_ref[0], -126.0)
-        )[:, None]
-        b_o = jnp.dot(
-            b_qg,
-            b_h_scaled,
-            precision=jax.lax.Precision.HIGHEST,
-            preferred_element_type=jnp.float32,
-        )
-        b_o *= scale
+        if ZERO_STATE_OUTPUT:
+            # The only chunk entrance is the exact zero state, so its inter-
+            # chunk contribution is identically zero.  Avoid loading q/g/h or
+            # issuing the zero matmul; the retained intra-chunk term below is
+            # unchanged.
+            b_o = jnp.zeros_like(b_v, dtype=jnp.float32)
+        else:
+            b_q = q_ref[0, i_chunk]
+            b_g = g_ref[0, i_chunk]
+            b_h = h_ref[0, i_chunk]
+            b_g_f32 = b_g.astype(jnp.float32)
+            b_q_f32 = b_q.astype(jnp.float32)
+            # Compute inter-chunk output: o = scale * q * exp2(g) @ h.
+            # Use g[0] (first position, largest cumsum) as reference to avoid overflow/underflow:
+            #   exp2(g[t]) = exp2(g[t] - g[0]) * exp2(g[0])
+            # g[t] - g[0] <= 0 for all t (cumsum is monotonically decreasing), so exp2 is safe.
+            # Factor exp2(g[0]) into h to preserve the matmul structure.
+            _exp_fn = exp2 if USE_EXP2 else exp
+            b_g_ref = b_g_f32[0:1, :]  # [1, K] — reference point
+            b_qg = b_q_f32 * _exp_fn(jnp.maximum(b_g_f32 - b_g_ref, -126.0))
+            # Scale h rows: h_scaled[k, v] = h[k, v] * exp2(g_ref[k])
+            b_h_scaled = b_h.astype(jnp.float32) * _exp_fn(
+                jnp.maximum(b_g_ref[0], -126.0)
+            )[:, None]
+            b_o = jnp.dot(
+                b_qg,
+                b_h_scaled,
+                precision=jax.lax.Precision.HIGHEST,
+                preferred_element_type=jnp.float32,
+            )
+            b_o *= scale
 
         b_A_f32 = jnp.where(m_s, b_A, 0.0).astype(jnp.float32)
         b_o += jnp.dot(
@@ -954,13 +962,13 @@ def chunk_kda_fwd_o_gk(
     chunk_size=64,
     compute_block_chunks=1,
     use_exp2=False,
+    zero_state_output=False,
 ):
     assert cu_seqlens is not None, "This varlen-only module requires cu_seqlens"
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = chunk_size
     COMPUTE_BLOCK_CHUNKS = compute_block_chunks
-    NT_h = h.shape[1]
     assert B == 1
     assert T % BT == 0
     assert COMPUTE_BLOCK_CHUNKS >= 1, "compute_block_chunks must be positive"
@@ -968,8 +976,11 @@ def chunk_kda_fwd_o_gk(
     N = cu_seqlens.shape[0] - 1
     T_alloc = T + BT
 
+    assert zero_state_output or h is not None, "h is required unless its zero term is elided"
     pad4d = lambda x: jnp.pad(x, ((0, 0), (0, BT), (0, 0), (0, 0)))
-    q_pad, v_pad, g_pad, A_pad = pad4d(q), pad4d(v), pad4d(g), pad4d(A)
+    v_pad, A_pad = pad4d(v), pad4d(A)
+    q_pad = None if zero_state_output else pad4d(q)
+    g_pad = None if zero_state_output else pad4d(g)
 
     cu_i32 = cu_seqlens.astype(jnp.int32)
     seq_lens = jnp.diff(cu_i32)
@@ -994,24 +1005,38 @@ def chunk_kda_fwd_o_gk(
 
         return jax.vmap(extract)(chunk_starts)
 
-    q_c, v_c, g_c, A_c = gather(q_pad, K), gather(v_pad, V), gather(g_pad, K), gather(A_pad, BT)
+    q_c = None if zero_state_output else gather(q_pad, K)
+    g_c = None if zero_state_output else gather(g_pad, K)
+    v_c, A_c = gather(v_pad, V), gather(A_pad, BT)
 
-    _q = q_c.transpose(2, 0, 1, 3)
+    _q = None if zero_state_output else q_c.transpose(2, 0, 1, 3)
     _v = v_c.transpose(2, 0, 1, 3)
-    _g = g_c.transpose(2, 0, 1, 3)
+    _g = None if zero_state_output else g_c.transpose(2, 0, 1, 3)
     _A = A_c.transpose(2, 0, 1, 3)
 
-    _h = h[0].transpose(1, 0, 2, 3)
-    if NC_max > NT_h:
-        _h = jnp.pad(_h, ((0, 0), (0, NC_max - NT_h), (0, 0), (0, 0)))
-    elif NC_max < NT_h:
-        _h = _h[:, :NC_max]
+    if zero_state_output:
+        _h = None
+    else:
+        NT_h = h.shape[1]
+        _h = h[0].transpose(1, 0, 2, 3)
+        if NC_max > NT_h:
+            _h = jnp.pad(_h, ((0, 0), (0, NC_max - NT_h), (0, 0), (0, 0)))
+        elif NC_max < NT_h:
+            _h = _h[:, :NC_max]
 
-    q_spec = pl.BlockSpec(
-        [1, COMPUTE_BLOCK_CHUNKS, BT, K], index_map=lambda h, nt: (h, nt, 0, 0)
+    q_spec = (
+        None
+        if zero_state_output
+        else pl.BlockSpec(
+            [1, COMPUTE_BLOCK_CHUNKS, BT, K], index_map=lambda h, nt: (h, nt, 0, 0)
+        )
     )
-    g_spec = pl.BlockSpec(
-        [1, COMPUTE_BLOCK_CHUNKS, BT, K], index_map=lambda h, nt: (h, nt, 0, 0)
+    g_spec = (
+        None
+        if zero_state_output
+        else pl.BlockSpec(
+            [1, COMPUTE_BLOCK_CHUNKS, BT, K], index_map=lambda h, nt: (h, nt, 0, 0)
+        )
     )
     v_spec = pl.BlockSpec(
         [1, COMPUTE_BLOCK_CHUNKS, BT, V], index_map=lambda h, nt: (h, nt, 0, 0)
@@ -1019,8 +1044,12 @@ def chunk_kda_fwd_o_gk(
     A_spec = pl.BlockSpec(
         [1, COMPUTE_BLOCK_CHUNKS, BT, BT], index_map=lambda h, nt: (h, nt, 0, 0)
     )
-    h_spec = pl.BlockSpec(
-        [1, COMPUTE_BLOCK_CHUNKS, K, V], index_map=lambda h, nt: (h, nt, 0, 0)
+    h_spec = (
+        None
+        if zero_state_output
+        else pl.BlockSpec(
+            [1, COMPUTE_BLOCK_CHUNKS, K, V], index_map=lambda h, nt: (h, nt, 0, 0)
+        )
     )
     o_shape = jax.ShapeDtypeStruct([H, NC_max, BT, V], v.dtype)
     o_spec = pl.BlockSpec(
@@ -1034,6 +1063,7 @@ def chunk_kda_fwd_o_gk(
             COMPUTE_BLOCK_CHUNKS=COMPUTE_BLOCK_CHUNKS,
             scale=scale,
             USE_EXP2=use_exp2,
+            ZERO_STATE_OUTPUT=zero_state_output,
         ),
         grid=(H, NC_max // COMPUTE_BLOCK_CHUNKS),
         out_shape=o_shape,
@@ -1197,6 +1227,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "state_block_chunks",
         "state_dim_alignment",
         "single_chunk_state_elision",
+        "zero_state_output_elision",
         "safe_gate",
         "lower_bound",
         "use_gate_in_kernel",
@@ -1234,6 +1265,7 @@ def chunk_kda_fwd(
     compute_block_chunks: int = 1,
     state_dim_alignment: int = 128,
     single_chunk_state_elision: bool = False,
+    zero_state_output_elision: bool = False,
 ):
     """KDA chunked forward pass for variable-length sequences (varlen).
 
@@ -1249,6 +1281,8 @@ def chunk_kda_fwd(
          using ``state_dim_alignment`` for its physical K/V state tile.
          ``single_chunk_state_elision`` skips this stage when its sole entrance
          state is known zero and its terminal state is not requested.
+         ``zero_state_output_elision`` lets Stage 4 omit the corresponding
+         zero inter-chunk term and its q/g/h loads.
       4. Output computation (inter-chunk state + intra-chunk attention)
 
     Returns:
@@ -1285,6 +1319,10 @@ def chunk_kda_fwd(
         )
         assert initial_state is None, "single-chunk state elision requires initial_state=None"
         assert not output_final_state, "single-chunk state elision cannot return a final state"
+    if zero_state_output_elision:
+        assert single_chunk_state_elision, (
+            "zero-state output elision requires single_chunk_state_elision"
+        )
 
     # Varlen alignment
     _orig_cu_seqlens = cu_seqlens
@@ -1370,7 +1408,11 @@ def chunk_kda_fwd(
         # consumed output is v_new = u - w @ h, which therefore equals u.  The
         # state update after this chunk is terminal and unobserved when no final
         # state is requested, so the complete Stage-3 launch can be elided.
-        h = jnp.zeros((B, 1, H, K, V), dtype=jnp.float32)
+        h = (
+            None
+            if zero_state_output_elision
+            else jnp.zeros((B, 1, H, K, V), dtype=jnp.float32)
+        )
         v_new = u.astype(jnp.float32)
         final_state = None
     else:
@@ -1400,6 +1442,7 @@ def chunk_kda_fwd(
         chunk_size=BT,
         compute_block_chunks=compute_block_chunks,
         use_exp2=True,
+        zero_state_output=zero_state_output_elision,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,
     )

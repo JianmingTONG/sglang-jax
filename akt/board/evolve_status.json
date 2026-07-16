@@ -1,18 +1,18 @@
 {
  "state": "running",
- "updated_ts": 1784203644.8405576,
+ "updated_ts": 1784208138.1121058,
  "init_ts": 1784175936.7558303,
- "round": 9,
- "capability": "kda_single_chunk_state_elision",
+ "round": 10,
+ "capability": "kda_zero_state_output_elision",
  "phase": "HW eval (kernel suite)",
- "started_ts": 1784198816.9584918,
+ "started_ts": 1784205182.3892548,
  "last": {
-  "round": 8,
-  "capability": "gla_single_chunk_state_elision",
+  "round": 9,
+  "capability": "kda_single_chunk_state_elision",
   "decision": "keep",
-  "reason": "new optimum 0.0004 beats incumbent 0.0005 by 21.87% (> 2%)",
-  "geomean_s": 0.0003900664956267027,
-  "delta_pct": -21.87,
-  "finished_ts": 1784198816.886236
+  "reason": "new optimum 0.0003 beats incumbent 0.0004 by 15.48% (> 2%)",
+  "geomean_s": 0.0003296776913109917,
+  "delta_pct": -15.48,
+  "finished_ts": 1784205182.3193076
  }
 }
