@@ -1,10 +1,18 @@
 {
  "state": "running",
- "updated_ts": 1784176970.0273657,
+ "updated_ts": 1784179572.2864857,
  "init_ts": 1784175936.7558303,
- "round": 1,
- "capability": "kda_state_block_chunks",
+ "round": 2,
+ "capability": "kda_intra_solve_blocks",
  "phase": "HW eval (kernel suite)",
- "started_ts": 1784175936.7558303,
- "last": null
+ "started_ts": 1784177385.363084,
+ "last": {
+  "round": 1,
+  "capability": "kda_state_block_chunks",
+  "decision": "keep",
+  "reason": "new optimum 0.0008 beats incumbent 0.0008 by 3.60% (> 2%)",
+  "geomean_s": 0.0007722373486021602,
+  "delta_pct": -3.6,
+  "finished_ts": 1784177242.727954
+ }
 }

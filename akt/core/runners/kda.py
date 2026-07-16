@@ -3,8 +3,8 @@
 Tuned entry: `chunk_kda_fwd(..., chunk_size)` (Pallas, threads an `interpret`
 flag via `get_interpret()` → runs here under PALLAS_INTERPRET=1 on CPU).
 Reference:   `naive_recurrent_kda(...)` (pure JAX per-step delta recurrence).
-Design space: base `chunk_size` plus capability-elevated `state_block_chunks`,
-which groups logical chunks inside the stage-3 state-propagation schedule tile.
+Design space: base `chunk_size`, capability-elevated `intra_block_size` for the
+stage-2 triangular solve, and kept `state_block_chunks` for stage-3 propagation.
 
 The authoritative correctness contract (reference impl, tolerances, canonical
 inputs, native-test wiring) lives in the FROZEN akt.benchmark.refs.kda module and
@@ -30,11 +30,17 @@ from akt.benchmark.refs.kda import (
 from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 
 
-_CAPABILITY = "kda_state_block_chunks"
+_INTRA_CAPABILITY = "kda_intra_solve_blocks"
+_STATE_CAPABILITY = "kda_state_block_chunks"
 
 
 @functools.lru_cache(maxsize=None)
-def _jit_chunk(chunk_size: int, state_block_chunks: int, scale: float):
+def _jit_chunk(
+    chunk_size: int,
+    intra_block_size: int,
+    state_block_chunks: int,
+    scale: float,
+):
     # chunk_kda_fwd is itself jitted with static chunk_size/output_final_state;
     # initial_state=None, output_final_state=False → fresh state, output-only.
     def f(q, k, v, g, beta, cu):
@@ -49,6 +55,7 @@ def _jit_chunk(chunk_size: int, state_block_chunks: int, scale: float):
             False,
             cu,
             chunk_size=chunk_size,
+            intra_block_size=intra_block_size,
             state_block_chunks=state_block_chunks,
         )
         return out[0]  # o
@@ -58,6 +65,7 @@ def _jit_chunk(chunk_size: int, state_block_chunks: int, scale: float):
 def _run(inp, cfg):
     return _jit_chunk(
         int(cfg["chunk_size"]),
+        int(cfg.get("intra_block_size", 16)),
         int(cfg.get("state_block_chunks", 1)),
         float(inp["scale"]),
     )(
@@ -78,11 +86,15 @@ def _space(seqlen: int) -> DesignSpace:
     # The divisibility bound also caps chunk_size at T, so the space cannot explode.
     def _valid(c, T=seqlen):
         chunk_size = c["chunk_size"]
+        intra_block_size = c.get("intra_block_size", 16)
         state_block_chunks = c.get("state_block_chunks", 1)
         return (
             chunk_size >= 16
             and (chunk_size & (chunk_size - 1)) == 0
             and T % chunk_size == 0
+            and intra_block_size >= 8
+            and (intra_block_size & (intra_block_size - 1)) == 0
+            and chunk_size % intra_block_size == 0
             and state_block_chunks >= 1
             and (state_block_chunks & (state_block_chunks - 1)) == 0
             and (T // chunk_size) % state_block_chunks == 0
@@ -92,10 +104,16 @@ def _space(seqlen: int) -> DesignSpace:
         knobs=[
             Knob("chunk_size", [16, 32, 64, 128, 256], default=64),
             Knob(
+                "intra_block_size",
+                [8, 16, 32],
+                default=16,
+                elevated_by=_INTRA_CAPABILITY,
+            ),
+            Knob(
                 "state_block_chunks",
                 [1, 2, 4],
                 default=1,
-                elevated_by=_CAPABILITY,
+                elevated_by=_STATE_CAPABILITY,
             ),
         ],
         valid=_valid,

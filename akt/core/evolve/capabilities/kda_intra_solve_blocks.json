@@ -1,0 +1,16 @@
+{
+ "name": "kda_intra_solve_blocks",
+ "gap": "[kda:BT,chunk_size] (missing-tuned-table) kda.py constructs tiles but references no tuned table <python/sgl_jax/srt/kernels/kda/kda.py:0>",
+ "hypothesis": "Decoupling the exact triangular solve's row block from the logical KDA chunk lets search reduce sequential row work without changing chunk boundaries or recurrence order.",
+ "estimated_relief_pct": 4.2,
+ "search_dimension": "Knob intra_block_size=[8,16,32] (default 16); the KDA runner passes cfg.intra_block_size through chunk_kda_fwd and kda_fwd_intra to _solve_unit_lower_triangular, where it sets the stage-2 row block size.",
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_intra_solve_blocks.json"
+ ],
+ "status": "kept",
+ "delta_pct": 5.9,
+ "measured_geomean_s": 0.0007266428694836148
+}

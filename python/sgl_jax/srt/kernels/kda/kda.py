@@ -275,9 +275,10 @@ def chunk_local_cumsum_vector(
 # ============================================================================
 
 
-def _solve_unit_lower_triangular(A, b):
+def _solve_unit_lower_triangular(A, b, block_size=16):
     N, D = b.shape
-    BS = 16
+    BS = block_size
+    assert BS > 0 and N % BS == 0
     num_blocks = N // BS
     A = A.astype(jnp.float32)
     b = b.astype(jnp.float32)
@@ -344,6 +345,7 @@ def _kda_fwd_intra_kernel(
     scale,
     disable_recompute,
     safe_gate,
+    intra_block_size,
 ):
     dtype = q_ref.dtype
     q = q_ref[0, 0, 0]
@@ -385,7 +387,7 @@ def _kda_fwd_intra_kernel(
     identity = jnp.eye(BT, dtype=jnp.float32)
 
     combined_b = jnp.concatenate([v_beta, k_eg_beta, identity], axis=-1)
-    combined_x = _solve_unit_lower_triangular(L, combined_b)
+    combined_x = _solve_unit_lower_triangular(L, combined_b, block_size=intra_block_size)
 
     u = combined_x[:, :value_dim]
     w = combined_x[:, value_dim : value_dim + head_dim]
@@ -408,6 +410,7 @@ def _kda_fwd_intra_kernel(
     jax.jit,
     static_argnames=[
         "chunk_size",
+        "intra_block_size",
         "scale",
         "safe_gate",
         "disable_recompute",
@@ -422,6 +425,7 @@ def kda_fwd_intra(
     scale,
     cu_seqlens,
     chunk_size=64,
+    intra_block_size=16,
     chunk_indices=None,
     safe_gate=True,
     disable_recompute=False,
@@ -432,6 +436,7 @@ def kda_fwd_intra(
     BT = chunk_size
     assert B == 1, f"varlen requires B=1 (packed layout), got B={B}"
     assert BT >= 16 and BT % 16 == 0
+    assert intra_block_size > 0 and BT % intra_block_size == 0
 
     assert_shape(q, (B, T, H, K), "q")
     assert_shape(k, (B, T, H, K), "k")
@@ -504,6 +509,7 @@ def kda_fwd_intra(
             scale=scale,
             disable_recompute=disable_recompute,
             safe_gate=safe_gate,
+            intra_block_size=intra_block_size,
         ),
         interpret=get_interpret(),
         out_shape=[
@@ -1128,6 +1134,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "output_final_state",
         "use_qk_l2norm_in_kernel",
         "chunk_size",
+        "intra_block_size",
         "state_block_chunks",
         "safe_gate",
         "lower_bound",
@@ -1151,6 +1158,7 @@ def chunk_kda_fwd(
     use_qk_l2norm_in_kernel: bool = False,
     chunk_indices: jax.Array | None = None,
     chunk_size: int = 64,
+    intra_block_size: int = 16,
     safe_gate: bool = True,
     lower_bound: float | None = None,
     use_gate_in_kernel: bool = False,
@@ -1263,6 +1271,7 @@ def chunk_kda_fwd(
         scale=scale,
         safe_gate=safe_gate,
         chunk_size=BT,
+        intra_block_size=intra_block_size,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,
     )
