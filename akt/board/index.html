@@ -53,6 +53,20 @@
   .muted{color:var(--mut)}
   .empty{color:var(--mut);font-style:italic;padding:10px 2px}
   .flex{display:flex;gap:12px;flex-wrap:wrap;align-items:baseline}
+  .trail-change{min-width:320px;max-width:520px;color:var(--ink)}
+  .trail-detail td{padding-top:0;background:var(--panel2)}
+  .trail-detail details{padding:7px 0 9px}
+  .trail-detail summary{color:var(--accent);cursor:pointer;font-size:12px;font-weight:600}
+  .trail-review{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,.8fr);gap:8px 22px;
+    margin-top:8px;color:var(--mut);font-size:12px}
+  .trail-review .wide{grid-column:1/-1}
+  .trail-files code{display:inline-block;margin:2px 4px 2px 0;overflow-wrap:anywhere}
+  .config-line{margin:3px 0;overflow-wrap:anywhere}
+  @media (max-width:720px){
+    .trail-change{min-width:260px}
+    .trail-review{grid-template-columns:minmax(0,1fr)}
+    .trail-review .wide{grid-column:auto}
+  }
 </style>
 </head>
 <body>
@@ -80,7 +94,7 @@
   <h2>Capability-elevation trail</h2>
   <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
     <th class="num">R</th><th>capability</th><th>decision</th><th class="num">Δ%</th>
-    <th class="num">est%</th><th>gap / reason</th>
+    <th>key change</th><th>verification</th>
   </tr></thead><tbody></tbody></table></div>
 
   <h2>Flexibility graph <span class="muted">— Pallas → Mosaic IR → Mosaic backend (LLO) → hardware (floor) · nameable vs hidden gap (red)</span></h2>
@@ -409,12 +423,37 @@ async function load(){
 
   // trail
   const tt = document.querySelector('#ttab tbody');
-  tt.innerHTML = (b.trail||[]).slice().reverse().map(t=>
-    '<tr><td class="num">'+esc(t.round)+'</td><td><b>'+esc(t.capability)+'</b></td>'+
-    '<td>'+decBadge(t.decision)+'</td><td class="num">'+pct(t.delta_pct)+'</td>'+
-    '<td class="num">'+(t.estimated_relief_pct!=null? t.estimated_relief_pct+'%':'—')+'</td>'+
-    '<td class="muted">'+esc((t.gap||t.reason||'').slice(0,180))+'</td></tr>'
-  ).join('') || '<tr><td colspan="6" class="empty">no capability rounds yet.</td></tr>';
+  tt.innerHTML = (b.trail||[]).slice().reverse().map(t=>{
+    const change = t.search_dimension||t.hypothesis||'key change not recorded';
+    const verified = t.correct===true
+      ? '<span class="badge b-keep">correct</span>'
+      : t.correct===false
+        ? '<span class="badge b-reject">failed</span>'
+        : '<span class="badge b-defer">not run</span>';
+    const coverage = (t.n_verified!=null || t.n_deferred!=null)
+      ? '<div class="muted" style="margin-top:4px">'+esc(t.n_verified??0)+' checked · '+
+        esc(t.n_deferred??0)+' deferred</div>' : '';
+    const files = (t.files_touched||[]).map(f=>'<code>'+esc(f)+'</code>').join('');
+    const configs = (t.best_configs||[]).map(c=>
+      '<div class="config-line"><b>'+esc(c.case)+'</b> <code>'+esc(JSON.stringify(c.config))+'</code></div>'
+    ).join('') || '<span class="muted">no selected configuration recorded</span>';
+    const issues = [
+      ...(t.missing_cases||[]).map(c=>'missing '+c),
+      ...(t.truncated_cases||[]).map(c=>'truncated '+c),
+    ];
+    const gate = issues.length
+      ? '<span class="badge b-reject">'+esc(issues.join(' · '))+'</span>'
+      : '<span class="badge b-keep">no missing or truncated cases</span>';
+    return '<tr><td class="num">'+esc(t.round)+'</td><td><b>'+esc(t.capability)+'</b></td>'+
+      '<td>'+decBadge(t.decision)+'</td><td class="num">'+pct(t.delta_pct)+'</td>'+
+      '<td class="trail-change">'+esc(change)+'</td><td>'+verified+coverage+'</td></tr>'+
+      '<tr class="trail-detail"><td></td><td colspan="5"><details><summary>Review implementation evidence</summary>'+
+      '<div class="trail-review"><div><b>Why</b><br>'+esc(t.hypothesis||'—')+'</div>'+
+      '<div><b>Gate result</b><br>'+esc(t.reason||'—')+'<div style="margin-top:5px">'+gate+'</div></div>'+
+      '<div class="wide"><b>Source gap</b><br>'+esc(t.gap||'—')+'</div>'+
+      '<div class="wide trail-files"><b>Files changed</b><br>'+(files||'—')+'</div>'+
+      '<div class="wide"><b>Selected configurations</b>'+configs+'</div></div></details></td></tr>';
+  }).join('') || '<tr><td colspan="6" class="empty">no capability rounds yet.</td></tr>';
 
   // frontier
   document.getElementById('frontier').innerHTML = (b.frontier||[]).map(f=>

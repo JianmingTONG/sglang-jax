@@ -130,6 +130,12 @@ def build():
     trail = []
     for r in hist:
         mm = manifests.get(r.get("capability"), {})
+        accuracy = r.get("accuracy") or {}
+        best_configs = [
+            {"case": case, "config": evidence.get("best_config")}
+            for case, evidence in accuracy.items()
+            if evidence.get("best_config") is not None
+        ]
         trail.append({
             "round": r.get("round"), "capability": r.get("capability"),
             "gap": r.get("gap") or mm.get("gap"),
@@ -139,9 +145,17 @@ def build():
                                      if r.get("estimated_relief_pct") is not None
                                      else mm.get("estimated_relief_pct")),
             "geomean_s": r.get("geomean_s"), "incumbent_geomean": r.get("incumbent_geomean"),
-            "reason": r.get("reason"), "hypothesis": mm.get("hypothesis"),
-            "search_dimension": mm.get("search_dimension"),
+            "reason": r.get("reason"),
+            "hypothesis": r.get("hypothesis") or mm.get("hypothesis"),
+            "search_dimension": r.get("search_dimension") or mm.get("search_dimension"),
             "files_touched": r.get("files_touched") or mm.get("files_touched"),
+            "correct": r.get("correct"),
+            "n_verified": r.get("n_verified"),
+            "n_deferred": r.get("n_deferred"),
+            "missing_cases": r.get("missing_cases") or [],
+            "truncated_cases": r.get("truncated_cases") or [],
+            "best_configs": best_configs,
+            "timestamp": r.get("timestamp"),
         })
     kept = [t for t in trail if t["decision"] in ("keep", "baseline")]
     rejected = [t for t in trail if t["decision"] not in ("keep", "baseline")]
