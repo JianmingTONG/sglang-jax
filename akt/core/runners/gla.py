@@ -55,11 +55,11 @@ def _run(inp, cfg):
 # (asserted at simple_gla.py:445,771; BK/BV pinned to 128). The maintainers' convention
 # (and every production caller — lightning_backend default 64) is powers of two, so the
 # candidate set is all pow2 tiles from the existing lower bound up to a VMEM-sane cap.
-_CHUNK_CANDIDATES = [16, 32, 64, 128, 256, 512, 1024]
-# VMEM-sane cap: the intra-chunk score tile is BT×BT float32; bound it to 4 MiB so the
-# space can't enumerate configs that OOM TPU VMEM (BT=2048 -> 16 MiB tile is excluded,
-# and is also slower + degenerates to a single full-seq dense chunk).
-_SCORE_TILE_BYTES_CAP = 4 * 1024 * 1024  # -> chunk_size <= 1024
+_CHUNK_CANDIDATES = [16, 32, 64, 128, 256, 512, 1024, 2048]
+# VMEM-sane cap: the intra-chunk score tile is BT×BT float32. A 16 MiB ceiling
+# admits the full-sequence BT=2048 tile while remaining inside the Pallas launcher's
+# explicit 128 MiB VMEM budget once its elementwise temporaries are included.
+_SCORE_TILE_BYTES_CAP = 16 * 1024 * 1024  # -> chunk_size <= 2048
 
 
 def _space(seqlen: int):

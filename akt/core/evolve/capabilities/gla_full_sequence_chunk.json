@@ -1,0 +1,16 @@
+{
+ "name": "gla_full_sequence_chunk",
+ "gap": "[simple_gla:BT,chunk_size] (missing-tuned-table) simple_gla.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:0>",
+ "hypothesis": "Admitting a full-sequence BT=2048 tile lets search remove one chunk boundary and its duplicate grid, state, and alignment work on the dominant long-context GLA case.",
+ "estimated_relief_pct": 5.0,
+ "search_dimension": "Widened Knob chunk_size=[16,32,64,128,256,512,1024,2048] (default 64); the GLA runner already passes cfg.chunk_size through chunk_simple_gla_fwd_varlen into both Pallas stages, and the output launcher now matches the state launcher's 128 MiB VMEM ceiling so the 16 MiB BT=2048 score tile is executable.",
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_full_sequence_chunk.json"
+ ],
+ "status": "kept",
+ "delta_pct": 5.62,
+ "measured_geomean_s": 0.0005254656610605136
+}

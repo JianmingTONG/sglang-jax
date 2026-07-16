@@ -1,16 +1,18 @@
 {
  "state": "running",
- "updated_ts": 1784185384.355597,
+ "updated_ts": 1784187091.036225,
  "init_ts": 1784175936.7558303,
- "round": 4,
- "capability": "gla_compact_alignment",
+ "round": 5,
+ "capability": "gla_full_sequence_chunk",
  "phase": "HW eval (kernel suite)",
- "started_ts": 1784183830.697289,
+ "started_ts": 1784185956.3451784,
  "last": {
   "round": 4,
   "capability": "gla_compact_alignment",
-  "decision": "void",
-  "reason": "oracle modified FROZEN harness ['akt/benchmark/gates/__pycache__/__init__.cpython-312.pyc']",
-  "finished_ts": 1784183830.6971333
+  "decision": "keep",
+  "reason": "new optimum 0.0006 beats incumbent 0.0007 by 17.18% (> 2%)",
+  "geomean_s": 0.0005567414222019853,
+  "delta_pct": -17.18,
+  "finished_ts": 1784185956.274708
  }
 }

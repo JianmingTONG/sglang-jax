@@ -727,6 +727,10 @@ def _chunk_fwd_o_pl(
         out_shape=jax.ShapeDtypeStruct((H_VT, total_NT, BT, BV), v.dtype),
         compiler_params=pltpu.CompilerParams(
             dimension_semantics=("parallel", "parallel"),
+            # Full-sequence BT=2048 uses a 16 MiB fp32 score tile plus
+            # elementwise temporaries. Match the state stage's VMEM ceiling
+            # so Mosaic can schedule that exact tile without spilling it.
+            vmem_limit_bytes=128 * 1024 * 1024,
         ),
         interpret=interpret,
     )(_q, _k, _v, _h, _g, g_gamma, jnp.asarray(scale, dtype=jnp.float32).reshape(1))
