@@ -1,0 +1,16 @@
+{
+ "name": "kda_state_dim_alignment",
+ "gap": "[kda:BT,chunk_size] (missing-tuned-table) kda.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/kda/kda.py:0>",
+ "hypothesis": "Naming the Stage-3 state-dimension alignment lets search keep d64 K/V state loads, scratch, and matmuls at 64 instead of padding them to 128, while preserving the exact recurrence.",
+ "estimated_relief_pct": 17.0,
+ "search_dimension": "Knob state_dim_alignment=[64,128] (default 128); the KDA runner passes cfg.state_dim_alignment through chunk_kda_fwd into chunk_gated_delta_rule_fwd_h, where it controls the physical K/V state extent used by BlockSpecs, scratch, and recurrence matmuls. The runner canonicalizes d128 to 128 so search does not time duplicate execution.",
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_state_dim_alignment.json"
+ ],
+ "status": "kept",
+ "delta_pct": 2.1,
+ "measured_geomean_s": 0.0005144261770009846
+}

@@ -676,6 +676,7 @@ def chunk_gated_delta_rule_fwd_h(
     cu_seqlens=None,
     chunk_indices=None,
     state_block_chunks=1,
+    state_dim_alignment=128,
 ):
     B, T, H, K = k.shape
     V = u.shape[-1]
@@ -685,6 +686,9 @@ def chunk_gated_delta_rule_fwd_h(
     assert cu_seqlens is not None, "This varlen-only module requires cu_seqlens"
     assert B == 1, f"varlen mode requires B==1, got B={B}"
     assert state_block_chunks >= 1, "state_block_chunks must be positive"
+    assert state_dim_alignment > 0 and (
+        state_dim_alignment & (state_dim_alignment - 1)
+    ) == 0, "state_dim_alignment must be a positive power of 2"
     assert T % STATE_BT == 0, f"T={T} must be divisible by state block size {STATE_BT}"
 
     N = cu_seqlens.shape[-1] - 1
@@ -701,8 +705,8 @@ def chunk_gated_delta_rule_fwd_h(
     w = w.astype(jnp.float32)
     u_f32 = u.astype(jnp.float32)
 
-    K_PADSIZE = int(align_up(K, 128))
-    V_ALIGNED = int(align_up(V, 128))
+    K_PADSIZE = int(align_up(K, state_dim_alignment))
+    V_ALIGNED = int(align_up(V, state_dim_alignment))
 
     assert chunk_indices is not None
     NT = len(chunk_indices)
@@ -1140,6 +1144,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "intra_block_size",
         "scalar_intra_solve",
         "state_block_chunks",
+        "state_dim_alignment",
         "safe_gate",
         "lower_bound",
         "use_gate_in_kernel",
@@ -1174,6 +1179,7 @@ def chunk_kda_fwd(
     transpose_state_layout: bool = False,
     state_block_chunks: int = 1,
     scalar_intra_solve: bool = False,
+    state_dim_alignment: int = 128,
 ):
     """KDA chunked forward pass for variable-length sequences (varlen).
 
@@ -1184,6 +1190,7 @@ def chunk_kda_fwd(
       2. Exact intra-chunk delta-rule triangular solve. ``scalar_intra_solve``
          selects one row per solve block; otherwise ``intra_block_size`` is used.
       3. Inter-chunk hidden state propagation via delta-rule recurrence
+         using ``state_dim_alignment`` for its physical K/V state tile.
       4. Output computation (inter-chunk state + intra-chunk attention)
 
     Returns:
@@ -1293,6 +1300,7 @@ def chunk_kda_fwd(
         output_final_state=output_final_state,
         chunk_size=BT,
         state_block_chunks=state_block_chunks,
+        state_dim_alignment=state_dim_alignment,
         use_exp2=True,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,

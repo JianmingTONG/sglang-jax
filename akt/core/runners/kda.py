@@ -5,7 +5,8 @@ flag via `get_interpret()` → runs here under PALLAS_INTERPRET=1 on CPU).
 Reference:   `naive_recurrent_kda(...)` (pure JAX per-step delta recurrence).
 Design space: base `chunk_size`, capability-elevated `intra_block_size` for the
 stage-2 triangular solve, exact `scalar_intra_solve` scheduling, and kept
-`state_block_chunks` for stage-3 propagation.
+`state_block_chunks` for stage-3 propagation. `state_dim_alignment` exposes
+the stage-3 K/V state tile instead of always rounding both dimensions to 128.
 
 The authoritative correctness contract (reference impl, tolerances, canonical
 inputs, native-test wiring) lives in the FROZEN akt.benchmark.refs.kda module and
@@ -34,6 +35,7 @@ from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 _INTRA_CAPABILITY = "kda_intra_solve_blocks"
 _SCALAR_INTRA_CAPABILITY = "kda_scalar_intra_solve"
 _STATE_CAPABILITY = "kda_state_block_chunks"
+_STATE_DIM_CAPABILITY = "kda_state_dim_alignment"
 
 
 @functools.lru_cache(maxsize=None)
@@ -42,6 +44,7 @@ def _jit_chunk(
     intra_block_size: int,
     scalar_intra_solve: bool,
     state_block_chunks: int,
+    state_dim_alignment: int,
     scale: float,
 ):
     # chunk_kda_fwd is itself jitted with static chunk_size/output_final_state;
@@ -61,6 +64,7 @@ def _jit_chunk(
             intra_block_size=intra_block_size,
             scalar_intra_solve=scalar_intra_solve,
             state_block_chunks=state_block_chunks,
+            state_dim_alignment=state_dim_alignment,
         )
         return out[0]  # o
     return jax.jit(f)
@@ -72,12 +76,13 @@ def _run(inp, cfg):
         int(cfg.get("intra_block_size", 16)),
         bool(cfg.get("scalar_intra_solve", False)),
         int(cfg.get("state_block_chunks", 1)),
+        int(cfg.get("state_dim_alignment", 128)),
         float(inp["scale"]),
     )(
         inp["q"], inp["k"], inp["v"], inp["g"], inp["beta"], inp["cu"])
 
 
-def _space(seqlen: int) -> DesignSpace:
+def _space(seqlen: int, head_dim: int) -> DesignSpace:
     # `chunk_size` is the BT time tile the four-stage pipeline blocks over. The
     # kernel's OWN constraints (no shipped tuned table for KDA) define the real
     # supported set:
@@ -94,6 +99,7 @@ def _space(seqlen: int) -> DesignSpace:
         intra_block_size = c.get("intra_block_size", 16)
         scalar_intra_solve = c.get("scalar_intra_solve", False)
         state_block_chunks = c.get("state_block_chunks", 1)
+        state_dim_alignment = c.get("state_dim_alignment", 128)
         return (
             chunk_size >= 16
             and (chunk_size & (chunk_size - 1)) == 0
@@ -108,6 +114,8 @@ def _space(seqlen: int) -> DesignSpace:
             and state_block_chunks >= 1
             and (state_block_chunks & (state_block_chunks - 1)) == 0
             and (T // chunk_size) % state_block_chunks == 0
+            and state_dim_alignment >= head_dim
+            and (state_dim_alignment & (state_dim_alignment - 1)) == 0
         )
 
     return DesignSpace(
@@ -131,6 +139,12 @@ def _space(seqlen: int) -> DesignSpace:
                 default=1,
                 elevated_by=_STATE_CAPABILITY,
             ),
+            Knob(
+                "state_dim_alignment",
+                [64, 128],
+                default=128,
+                elevated_by=_STATE_DIM_CAPABILITY,
+            ),
         ],
         valid=_valid,
     )
@@ -140,7 +154,7 @@ CASES = [
     KernelCase(
         kernel_id="kda", shape_id=f"seq{sl}_h{h}_d{d}",
         make_inputs=functools.partial(make_inputs, sl, h, d),
-        run=_run, reference=reference, space=_space(sl),
+        run=_run, reference=reference, space=_space(sl, d),
         atol=ATOL, rtol=RTOL,
         check_out=check_out,  # _run/reference already return o
         native_test=NATIVE_TEST,
