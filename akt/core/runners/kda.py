@@ -4,7 +4,8 @@ Tuned entry: `chunk_kda_fwd(..., chunk_size)` (Pallas, threads an `interpret`
 flag via `get_interpret()` → runs here under PALLAS_INTERPRET=1 on CPU).
 Reference:   `naive_recurrent_kda(...)` (pure JAX per-step delta recurrence).
 Design space: base `chunk_size`, capability-elevated `intra_block_size` for the
-stage-2 triangular solve, and kept `state_block_chunks` for stage-3 propagation.
+stage-2 triangular solve, exact `scalar_intra_solve` scheduling, and kept
+`state_block_chunks` for stage-3 propagation.
 
 The authoritative correctness contract (reference impl, tolerances, canonical
 inputs, native-test wiring) lives in the FROZEN akt.benchmark.refs.kda module and
@@ -31,6 +32,7 @@ from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 
 
 _INTRA_CAPABILITY = "kda_intra_solve_blocks"
+_SCALAR_INTRA_CAPABILITY = "kda_scalar_intra_solve"
 _STATE_CAPABILITY = "kda_state_block_chunks"
 
 
@@ -38,6 +40,7 @@ _STATE_CAPABILITY = "kda_state_block_chunks"
 def _jit_chunk(
     chunk_size: int,
     intra_block_size: int,
+    scalar_intra_solve: bool,
     state_block_chunks: int,
     scale: float,
 ):
@@ -56,6 +59,7 @@ def _jit_chunk(
             cu,
             chunk_size=chunk_size,
             intra_block_size=intra_block_size,
+            scalar_intra_solve=scalar_intra_solve,
             state_block_chunks=state_block_chunks,
         )
         return out[0]  # o
@@ -66,6 +70,7 @@ def _run(inp, cfg):
     return _jit_chunk(
         int(cfg["chunk_size"]),
         int(cfg.get("intra_block_size", 16)),
+        bool(cfg.get("scalar_intra_solve", False)),
         int(cfg.get("state_block_chunks", 1)),
         float(inp["scale"]),
     )(
@@ -87,6 +92,7 @@ def _space(seqlen: int) -> DesignSpace:
     def _valid(c, T=seqlen):
         chunk_size = c["chunk_size"]
         intra_block_size = c.get("intra_block_size", 16)
+        scalar_intra_solve = c.get("scalar_intra_solve", False)
         state_block_chunks = c.get("state_block_chunks", 1)
         return (
             chunk_size >= 16
@@ -95,6 +101,10 @@ def _space(seqlen: int) -> DesignSpace:
             and intra_block_size >= 8
             and (intra_block_size & (intra_block_size - 1)) == 0
             and chunk_size % intra_block_size == 0
+            # Scalar mode has no blocked solve size. Anchor the existing knob at
+            # its smallest value so search enumerates one, not three, identical
+            # scalar executions for each (chunk_size, state_block_chunks) pair.
+            and (not scalar_intra_solve or intra_block_size == 8)
             and state_block_chunks >= 1
             and (state_block_chunks & (state_block_chunks - 1)) == 0
             and (T // chunk_size) % state_block_chunks == 0
@@ -108,6 +118,12 @@ def _space(seqlen: int) -> DesignSpace:
                 [8, 16, 32],
                 default=16,
                 elevated_by=_INTRA_CAPABILITY,
+            ),
+            Knob(
+                "scalar_intra_solve",
+                [False, True],
+                default=False,
+                elevated_by=_SCALAR_INTRA_CAPABILITY,
             ),
             Knob(
                 "state_block_chunks",

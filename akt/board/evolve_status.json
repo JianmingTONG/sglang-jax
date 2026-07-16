@@ -1,18 +1,18 @@
 {
  "state": "running",
- "updated_ts": 1784179572.2864857,
+ "updated_ts": 1784181880.7942839,
  "init_ts": 1784175936.7558303,
- "round": 2,
- "capability": "kda_intra_solve_blocks",
+ "round": 3,
+ "capability": "kda_scalar_intra_solve",
  "phase": "HW eval (kernel suite)",
- "started_ts": 1784177385.363084,
+ "started_ts": 1784180096.402727,
  "last": {
-  "round": 1,
-  "capability": "kda_state_block_chunks",
+  "round": 2,
+  "capability": "kda_intra_solve_blocks",
   "decision": "keep",
-  "reason": "new optimum 0.0008 beats incumbent 0.0008 by 3.60% (> 2%)",
-  "geomean_s": 0.0007722373486021602,
-  "delta_pct": -3.6,
-  "finished_ts": 1784177242.727954
+  "reason": "new optimum 0.0007 beats incumbent 0.0008 by 5.90% (> 2%)",
+  "geomean_s": 0.0007266428694836148,
+  "delta_pct": -5.9,
+  "finished_ts": 1784180096.3342385
  }
 }

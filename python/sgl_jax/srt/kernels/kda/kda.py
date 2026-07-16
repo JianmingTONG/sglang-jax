@@ -411,6 +411,7 @@ def _kda_fwd_intra_kernel(
     static_argnames=[
         "chunk_size",
         "intra_block_size",
+        "scalar_intra_solve",
         "scale",
         "safe_gate",
         "disable_recompute",
@@ -429,14 +430,16 @@ def kda_fwd_intra(
     chunk_indices=None,
     safe_gate=True,
     disable_recompute=False,
+    scalar_intra_solve=False,
 ):
     assert cu_seqlens is not None, "cu_seqlens must be provided for varlen"
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = chunk_size
+    solve_block_size = 1 if scalar_intra_solve else intra_block_size
     assert B == 1, f"varlen requires B=1 (packed layout), got B={B}"
     assert BT >= 16 and BT % 16 == 0
-    assert intra_block_size > 0 and BT % intra_block_size == 0
+    assert solve_block_size > 0 and BT % solve_block_size == 0
 
     assert_shape(q, (B, T, H, K), "q")
     assert_shape(k, (B, T, H, K), "k")
@@ -509,7 +512,7 @@ def kda_fwd_intra(
             scale=scale,
             disable_recompute=disable_recompute,
             safe_gate=safe_gate,
-            intra_block_size=intra_block_size,
+            intra_block_size=solve_block_size,
         ),
         interpret=get_interpret(),
         out_shape=[
@@ -1135,6 +1138,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "use_qk_l2norm_in_kernel",
         "chunk_size",
         "intra_block_size",
+        "scalar_intra_solve",
         "state_block_chunks",
         "safe_gate",
         "lower_bound",
@@ -1169,6 +1173,7 @@ def chunk_kda_fwd(
     cp_context: None = None,
     transpose_state_layout: bool = False,
     state_block_chunks: int = 1,
+    scalar_intra_solve: bool = False,
 ):
     """KDA chunked forward pass for variable-length sequences (varlen).
 
@@ -1176,7 +1181,8 @@ def chunk_kda_fwd(
 
     Four-stage pipeline:
       1. Gate activation + chunk-local cumsum
-      2. Intra-chunk delta-rule solve via Neumann series
+      2. Exact intra-chunk delta-rule triangular solve. ``scalar_intra_solve``
+         selects one row per solve block; otherwise ``intra_block_size`` is used.
       3. Inter-chunk hidden state propagation via delta-rule recurrence
       4. Output computation (inter-chunk state + intra-chunk attention)
 
@@ -1272,6 +1278,7 @@ def chunk_kda_fwd(
         safe_gate=safe_gate,
         chunk_size=BT,
         intra_block_size=intra_block_size,
+        scalar_intra_solve=scalar_intra_solve,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,
     )

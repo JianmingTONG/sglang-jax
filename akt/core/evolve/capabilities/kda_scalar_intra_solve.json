@@ -1,0 +1,16 @@
+{
+ "name": "kda_scalar_intra_solve",
+ "gap": "[kda:BT,chunk_size] (missing-tuned-table) kda.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/kda/kda.py:0>",
+ "hypothesis": "An exact one-row triangular-solve schedule removes the within-block row solve and lets search trade finer sequential dependencies for cheaper stage-2 work.",
+ "estimated_relief_pct": 6.7,
+ "search_dimension": "Knob scalar_intra_solve=[false,true] (default false); the KDA runner passes cfg.scalar_intra_solve through chunk_kda_fwd to kda_fwd_intra, where true selects solve block size 1, while valid anchors the prior intra_block_size knob at 8 to avoid duplicate scalar executions.",
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_scalar_intra_solve.json"
+ ],
+ "status": "kept",
+ "delta_pct": 7.49,
+ "measured_geomean_s": 0.0006722195304740711
+}
