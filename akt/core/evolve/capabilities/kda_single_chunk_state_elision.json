@@ -1,0 +1,16 @@
+{
+ "name": "kda_single_chunk_state_elision",
+ "gap": "[kda:BT,chunk_size] (missing-tuned-table) kda.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/kda/kda.py:0>",
+ "hypothesis": "When search selects one full-sequence KDA chunk, the kernel can synthesize its exact zero entrance state and v_new=u, eliminating a Stage-3 launch whose remaining state update is terminal and unobserved.",
+ "estimated_relief_pct": 16.0,
+ "search_dimension": "Knob single_chunk_state_elision=[false,true] (default false); the KDA runner passes cfg.single_chunk_state_elision through chunk_kda_fwd, and validity admits true only when chunk_size equals the sequence length with canonical state knobs. The kernel then keeps the exact one-chunk layout, supplies h=0 and v_new=u in FP32, and skips the unobserved Stage-3 terminal state update.",
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_single_chunk_state_elision.json"
+ ],
+ "status": "kept",
+ "delta_pct": 15.48,
+ "measured_geomean_s": 0.0003296776913109917
+}

@@ -9,7 +9,8 @@ stage-2 triangular solve, exact `scalar_intra_solve` scheduling, and kept
 `compute_block_chunks` for grouping the independent stage-2/stage-4 programs.
 `state_block_chunks` separately groups stage-3 propagation, while
 `state_dim_alignment` exposes its K/V state tile instead of always rounding
-both dimensions to 128.
+both dimensions to 128. `single_chunk_state_elision` removes an unobserved
+terminal state update when the packed input is one full-sequence chunk.
 
 The authoritative correctness contract (reference impl, tolerances, canonical
 inputs, native-test wiring) lives in the FROZEN akt.benchmark.refs.kda module and
@@ -40,6 +41,7 @@ _SCALAR_INTRA_CAPABILITY = "kda_scalar_intra_solve"
 _COMPUTE_CAPABILITY = "kda_compute_block_chunks"
 _STATE_CAPABILITY = "kda_state_block_chunks"
 _STATE_DIM_CAPABILITY = "kda_state_dim_alignment"
+_STATE_ELISION_CAPABILITY = "kda_single_chunk_state_elision"
 
 
 @functools.lru_cache(maxsize=None)
@@ -50,6 +52,7 @@ def _jit_chunk(
     compute_block_chunks: int,
     state_block_chunks: int,
     state_dim_alignment: int,
+    single_chunk_state_elision: bool,
     scale: float,
 ):
     # chunk_kda_fwd is itself jitted with static chunk_size/output_final_state;
@@ -71,6 +74,7 @@ def _jit_chunk(
             compute_block_chunks=compute_block_chunks,
             state_block_chunks=state_block_chunks,
             state_dim_alignment=state_dim_alignment,
+            single_chunk_state_elision=single_chunk_state_elision,
         )
         return out[0]  # o
     return jax.jit(f)
@@ -84,6 +88,7 @@ def _run(inp, cfg):
         int(cfg.get("compute_block_chunks", 1)),
         int(cfg.get("state_block_chunks", 1)),
         int(cfg.get("state_dim_alignment", 128)),
+        bool(cfg.get("single_chunk_state_elision", False)),
         float(inp["scale"]),
     )(
         inp["q"], inp["k"], inp["v"], inp["g"], inp["beta"], inp["cu"])
@@ -108,6 +113,7 @@ def _space(seqlen: int, head_dim: int) -> DesignSpace:
         compute_block_chunks = c.get("compute_block_chunks", 1)
         state_block_chunks = c.get("state_block_chunks", 1)
         state_dim_alignment = c.get("state_dim_alignment", 128)
+        state_elision = c.get("single_chunk_state_elision", False)
         return (
             chunk_size >= 16
             and (chunk_size & (chunk_size - 1)) == 0
@@ -129,6 +135,17 @@ def _space(seqlen: int, head_dim: int) -> DesignSpace:
             and (T // chunk_size) % state_block_chunks == 0
             and state_dim_alignment >= head_dim
             and (state_dim_alignment & (state_dim_alignment - 1)) == 0
+            # Elision is exact only for this runner's output-only, zero-state,
+            # single-sequence case with one full-sequence logical chunk. Anchor
+            # the now-unused state knobs so search does not time duplicates.
+            and (
+                not state_elision
+                or (
+                    chunk_size == T
+                    and state_block_chunks == 1
+                    and state_dim_alignment == 128
+                )
+            )
         )
 
     return DesignSpace(
@@ -163,6 +180,12 @@ def _space(seqlen: int, head_dim: int) -> DesignSpace:
                 [64, 128],
                 default=128,
                 elevated_by=_STATE_DIM_CAPABILITY,
+            ),
+            Knob(
+                "single_chunk_state_elision",
+                [False, True],
+                default=False,
+                elevated_by=_STATE_ELISION_CAPABILITY,
             ),
         ],
         valid=_valid,

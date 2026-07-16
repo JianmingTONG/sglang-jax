@@ -1196,6 +1196,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "compute_block_chunks",
         "state_block_chunks",
         "state_dim_alignment",
+        "single_chunk_state_elision",
         "safe_gate",
         "lower_bound",
         "use_gate_in_kernel",
@@ -1232,6 +1233,7 @@ def chunk_kda_fwd(
     scalar_intra_solve: bool = False,
     compute_block_chunks: int = 1,
     state_dim_alignment: int = 128,
+    single_chunk_state_elision: bool = False,
 ):
     """KDA chunked forward pass for variable-length sequences (varlen).
 
@@ -1245,6 +1247,8 @@ def chunk_kda_fwd(
          stage and the output stage under one physical Pallas program tile.
       3. Inter-chunk hidden state propagation via delta-rule recurrence
          using ``state_dim_alignment`` for its physical K/V state tile.
+         ``single_chunk_state_elision`` skips this stage when its sole entrance
+         state is known zero and its terminal state is not requested.
       4. Output computation (inter-chunk state + intra-chunk attention)
 
     Returns:
@@ -1273,6 +1277,15 @@ def chunk_kda_fwd(
     assert_shape(beta, (B, T, H), "beta")
     assert_shape_or_none(initial_state, (N, H, K, V), "initial_state")
 
+    if single_chunk_state_elision:
+        assert N == 1, "single-chunk state elision requires exactly one sequence"
+        assert T == BT, (
+            "single-chunk state elision requires chunk_size to equal the input length; "
+            f"got T={T}, chunk_size={BT}"
+        )
+        assert initial_state is None, "single-chunk state elision requires initial_state=None"
+        assert not output_final_state, "single-chunk state elision cannot return a final state"
+
     # Varlen alignment
     _orig_cu_seqlens = cu_seqlens
     T_input = T
@@ -1280,7 +1293,11 @@ def chunk_kda_fwd(
     # when its static extent is divisible by STATE_BT. Avoid materializing the
     # generic varlen helper's conservative trailing block in that case; the
     # default (one chunk per state block) retains the shipped alignment path.
-    if not (state_block_chunks > 1 and N == 1 and T % STATE_BT == 0):
+    tight_single_chunk = single_chunk_state_elision and N == 1 and T == BT
+    if not (
+        tight_single_chunk
+        or (state_block_chunks > 1 and N == 1 and T % STATE_BT == 0)
+    ):
         [q, k, v, g], [beta], cu_seqlens, _ = _align_seqs(
             [q, k, v, g],
             [beta],
@@ -1347,20 +1364,30 @@ def chunk_kda_fwd(
     )
 
     # Step 3: Inter-chunk state propagation
-    h, v_new, final_state = chunk_gated_delta_rule_fwd_h(
-        k=kg,
-        w=w,
-        u=u,
-        gk=g_cumsum,
-        initial_state=initial_state,
-        output_final_state=output_final_state,
-        chunk_size=BT,
-        state_block_chunks=state_block_chunks,
-        state_dim_alignment=state_dim_alignment,
-        use_exp2=True,
-        cu_seqlens=cu_seqlens,
-        chunk_indices=chunk_indices,
-    )
+    if single_chunk_state_elision:
+        # Stage 3 stores the state at each chunk entrance for Stage 4.  With one
+        # chunk and no initial state that entrance is exactly zero.  Its other
+        # consumed output is v_new = u - w @ h, which therefore equals u.  The
+        # state update after this chunk is terminal and unobserved when no final
+        # state is requested, so the complete Stage-3 launch can be elided.
+        h = jnp.zeros((B, 1, H, K, V), dtype=jnp.float32)
+        v_new = u.astype(jnp.float32)
+        final_state = None
+    else:
+        h, v_new, final_state = chunk_gated_delta_rule_fwd_h(
+            k=kg,
+            w=w,
+            u=u,
+            gk=g_cumsum,
+            initial_state=initial_state,
+            output_final_state=output_final_state,
+            chunk_size=BT,
+            state_block_chunks=state_block_chunks,
+            state_dim_alignment=state_dim_alignment,
+            use_exp2=True,
+            cu_seqlens=cu_seqlens,
+            chunk_indices=chunk_indices,
+        )
 
     # Step 4: Output computation
     o = chunk_kda_fwd_o_gk(
