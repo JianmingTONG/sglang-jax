@@ -1,14 +1,16 @@
 """GLA (simple gated linear attention) — chunked prefill kernel (EDITABLE runner).
 
 Tuned entry: `chunk_simple_gla_fwd_varlen(..., chunk_size,
-compact_alignment, single_chunk_state_elision)` (Pallas).
+compact_alignment, single_chunk_state_elision,
+zero_state_output_elision)` (Pallas).
 The correctness contract (reference, tolerance, canonical inputs, native test) is
 FROZEN in `akt/benchmark/refs/gla.py` — this runner only owns the DesignSpace and
 the config->kernel run mapping.
 
-Design space: base `chunk_size` plus capability-elevated `compact_alignment`
-and `single_chunk_state_elision`.  The latter removes an unobserved terminal
-state update when the aligned input is exactly one logical chunk.
+Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
+`single_chunk_state_elision`, and `zero_state_output_elision`.  State elision
+removes an unobserved terminal update when the aligned input is exactly one
+logical chunk; output elision removes the matching zero state load and matmul.
 """
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 
 _COMPACT_ALIGNMENT_CAPABILITY = "gla_compact_alignment"
 _STATE_ELISION_CAPABILITY = "gla_single_chunk_state_elision"
+_OUTPUT_ELISION_CAPABILITY = "gla_zero_state_output_elision"
 
 
 @functools.lru_cache(maxsize=None)
@@ -37,13 +40,15 @@ def _jit_chunk(
     chunk_size: int,
     compact_alignment: bool,
     single_chunk_state_elision: bool,
+    zero_state_output_elision: bool,
 ):
     def f(q, k, v, g_gamma, cu):
         o, _ht = chunk_simple_gla_fwd_varlen(
             q, k, v, g_gamma=g_gamma, scale=None,
             cu_seqlens_dev=cu, chunk_size=chunk_size,
             compact_alignment=compact_alignment,
-            single_chunk_state_elision=single_chunk_state_elision)
+            single_chunk_state_elision=single_chunk_state_elision,
+            zero_state_output_elision=zero_state_output_elision)
         return o
     return jax.jit(f)
 
@@ -53,6 +58,7 @@ def _run(inp, cfg):
         int(cfg["chunk_size"]),
         bool(cfg.get("compact_alignment", False)),
         bool(cfg.get("single_chunk_state_elision", False)),
+        bool(cfg.get("zero_state_output_elision", False)),
     )(
         inp["q"], inp["k"], inp["v"], inp["g_gamma"], inp["cu"])
 
@@ -73,6 +79,7 @@ def _space(seqlen: int):
     def _valid(c):
         cs = c["chunk_size"]
         state_elision = c.get("single_chunk_state_elision", False)
+        output_elision = c.get("zero_state_output_elision", False)
         return (
             cs > 0
             and (cs & (cs - 1)) == 0          # power of two (maintainer convention)
@@ -82,6 +89,7 @@ def _space(seqlen: int):
                 not state_elision
                 or (c.get("compact_alignment", False) and cs == seqlen)
             )
+            and (not output_elision or state_elision)
         )
 
     return DesignSpace(
@@ -98,6 +106,12 @@ def _space(seqlen: int):
                 [False, True],
                 default=False,
                 elevated_by=_STATE_ELISION_CAPABILITY,
+            ),
+            Knob(
+                "zero_state_output_elision",
+                [False, True],
+                default=False,
+                elevated_by=_OUTPUT_ELISION_CAPABILITY,
             ),
         ],
         valid=_valid,

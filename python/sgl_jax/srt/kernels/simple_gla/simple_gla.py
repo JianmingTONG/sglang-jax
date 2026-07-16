@@ -572,6 +572,7 @@ def _chunk_fwd_o_kernel(
     o_ref,
     *,
     BT: int,
+    ZERO_STATE_OUTPUT: bool,
 ):
     """Pallas kernel for chunk_fwd_o.
 
@@ -579,7 +580,7 @@ def _chunk_fwd_o_kernel(
     Refs (after block spec indexing):
       q_ref/k_ref: (1, 1, BT, K)
       v_ref: (1, 1, BT, BV)
-      h_ref: (1, 1, K, BV)
+      h_ref: (1, 1, K, BV), or None when its zero term is elided
       g_ref: (1, 1, BT, 128) or None  (broadcast to 4D for TPU alignment)
       g_gamma_ref: [H] via SMEM or ANY
       scale_ref: (1,) via SMEM or ANY
@@ -588,13 +589,14 @@ def _chunk_fwd_o_kernel(
     b_q = q_ref[0, 0]  # (BT, K)
     b_k = k_ref[0, 0]  # (BT, K)
     b_v = v_ref[0, 0]  # (BT, BV)
-    b_h = h_ref[0, 0]  # (K, BV)
 
-    b_o = jnp.dot(
-        b_q,
-        b_h,
-        preferred_element_type=jnp.float32,
-    )
+    if not ZERO_STATE_OUTPUT:
+        b_h = h_ref[0, 0]  # (K, BV)
+        b_o = jnp.dot(
+            b_q,
+            b_h,
+            preferred_element_type=jnp.float32,
+        )
     b_A = jnp.dot(
         b_q,
         b_k.T,
@@ -603,7 +605,8 @@ def _chunk_fwd_o_kernel(
 
     if g_ref is not None:
         b_g = g_ref[0, 0, :, 0].astype(jnp.float32)  # (BT,)
-        b_o = b_o * exp(b_g)[:, None]
+        if not ZERO_STATE_OUTPUT:
+            b_o = b_o * exp(b_g)[:, None]
         g_diff = b_g[:, None] - b_g[None, :]
         fwd_mask = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
         safe_g_diff = jnp.where(fwd_mask, g_diff, 0.0)
@@ -613,7 +616,8 @@ def _chunk_fwd_o_kernel(
         head_idx = pl.program_id(0)
         b_gamma = g_gamma_ref[head_idx].astype(jnp.float32)
         b_g_gamma = b_gamma * (jnp.arange(BT) + 1).astype(jnp.float32)
-        b_o = b_o * exp(b_g_gamma)[:, None]
+        if not ZERO_STATE_OUTPUT:
+            b_o = b_o * exp(b_g_gamma)[:, None]
         g_gamma_diff = b_g_gamma[:, None] - b_g_gamma[None, :]
         fwd_mask = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
         safe_g_gamma_diff = jnp.where(fwd_mask, g_gamma_diff, 0.0)
@@ -623,34 +627,36 @@ def _chunk_fwd_o_kernel(
     b_A = jnp.where(mask, b_A, 0.0)
     scale = scale_ref[0].astype(jnp.float32)
 
-    # Keep b_A in fp32 for precision; upcast b_v instead.
-    b_o = (
-        b_o * scale
-        + jnp.dot(
-            b_A,
-            b_v.astype(jnp.float32),
-            precision=jax.lax.Precision.HIGHEST,
-            preferred_element_type=jnp.float32,
-        )
-        * scale
+    # Keep b_A in fp32 for precision; upcast b_v instead. When the state
+    # contribution is zero, do not materialize or decay/scale that zero term.
+    b_intra = jnp.dot(
+        b_A,
+        b_v.astype(jnp.float32),
+        precision=jax.lax.Precision.HIGHEST,
+        preferred_element_type=jnp.float32,
     )
+    if ZERO_STATE_OUTPUT:
+        b_o = b_intra * scale
+    else:
+        b_o = b_o * scale + b_intra * scale
     o_ref[0, 0] = b_o.astype(o_ref.dtype)
 
 
 @functools.partial(
     jax.jit,
-    static_argnames=("chunk_size",),
+    static_argnames=("chunk_size", "zero_state_output_elision"),
 )
 def _chunk_fwd_o_pl(
     q: jax.Array,
     k: jax.Array,
     v: jax.Array,
-    h: jax.Array,
+    h: jax.Array | None,
     *,
     g: jax.Array | None = None,
     g_gamma: jax.Array | None = None,
     scale: float,
     chunk_size: int = 64,
+    zero_state_output_elision: bool = False,
 ) -> jax.Array:
     """Pallas launcher for chunk_fwd_o on the uniform-length path."""
     B, T, H, K = q.shape
@@ -665,7 +671,10 @@ def _chunk_fwd_o_pl(
     _q = _reshape_bt(q, K)  # (H, total_NT, BT, K)
     _k = _reshape_bt(k, K)  # (H, total_NT, BT, K)
     _v = _reshape_bt(v, V)  # (H, total_NT, BT, V)
-    _h = h.reshape(B, NT, H, K, V).transpose(2, 0, 1, 3, 4).reshape(H, total_NT, K, V)
+    _h = None
+    if not zero_state_output_elision:
+        assert h is not None, "h is required unless its zero output term is elided"
+        _h = h.reshape(B, NT, H, K, V).transpose(2, 0, 1, 3, 4).reshape(H, total_NT, K, V)
     _g = None
     if g is not None:
         _g = g.reshape(B, NT, BT, H).transpose(3, 0, 1, 2).reshape(H, total_NT, BT)
@@ -681,11 +690,12 @@ def _chunk_fwd_o_pl(
             .transpose(0, 3, 1, 2, 4)
             .reshape(H * num_v_tiles, total_NT, BT, BV)
         )
-        _h = (
-            _h.reshape(H, total_NT, K, num_v_tiles, BV)
-            .transpose(0, 3, 1, 2, 4)
-            .reshape(H * num_v_tiles, total_NT, K, BV)
-        )
+        if _h is not None:
+            _h = (
+                _h.reshape(H, total_NT, K, num_v_tiles, BV)
+                .transpose(0, 3, 1, 2, 4)
+                .reshape(H * num_v_tiles, total_NT, K, BV)
+            )
         # g_gamma: repeat each head value for its V-tiles
         if g_gamma is not None:
             g_gamma = jnp.repeat(g_gamma, num_v_tiles)  # (H * num_v_tiles,)
@@ -698,7 +708,11 @@ def _chunk_fwd_o_pl(
         (1, 1, BT, K), index_map=lambda hv_idx, nt_idx: (hv_idx // num_v_tiles, nt_idx, 0, 0)
     )
     spec_v = pl.BlockSpec((1, 1, BT, BV), index_map=lambda hv_idx, nt_idx: (hv_idx, nt_idx, 0, 0))
-    spec_h = pl.BlockSpec((1, 1, K, BV), index_map=lambda hv_idx, nt_idx: (hv_idx, nt_idx, 0, 0))
+    spec_h = (
+        None
+        if zero_state_output_elision
+        else pl.BlockSpec((1, 1, K, BV), index_map=lambda hv_idx, nt_idx: (hv_idx, nt_idx, 0, 0))
+    )
     interpret = get_interpret()
     spec_g = (
         None
@@ -715,7 +729,11 @@ def _chunk_fwd_o_pl(
     spec_scale = pl.BlockSpec(memory_space=pltpu.ANY if interpret else pltpu.SMEM)
 
     o = pl.pallas_call(
-        functools.partial(_chunk_fwd_o_kernel, BT=BT),
+        functools.partial(
+            _chunk_fwd_o_kernel,
+            BT=BT,
+            ZERO_STATE_OUTPUT=zero_state_output_elision,
+        ),
         grid_spec=pltpu.PrefetchScalarGridSpec(
             num_scalar_prefetch=0,
             grid=grid,
@@ -750,7 +768,7 @@ def chunk_fwd_o(
     q: jax.Array,
     k: jax.Array,
     v: jax.Array,
-    h: jax.Array,
+    h: jax.Array | None,
     *,
     g: jax.Array | None = None,
     g_gamma: jax.Array | None = None,
@@ -758,8 +776,13 @@ def chunk_fwd_o(
     cu_seqlens_cpu: jax.Array | None = None,
     cu_seqlens_dev: jax.Array | None = None,
     chunk_size: int = 64,
+    zero_state_output_elision: bool = False,
 ) -> jax.Array:
-    """Chunk forward output computation."""
+    """Chunk forward output computation.
+
+    ``zero_state_output_elision`` omits the state input and its identically-zero
+    contribution for an output stage whose sole chunk entrance is zero.
+    """
     B, T, H, K = q.shape
     V = v.shape[-1]
     C = chunk_size
@@ -778,6 +801,9 @@ def chunk_fwd_o(
     ).all(), "All sequence lengths must be divisible by chunk_size"
     if cu_seqlens_cpu is not None or cu_seqlens_dev is not None:
         assert B == 1, f"Packed varlen chunk_fwd_o expects B=1, got B={B}"
+    assert zero_state_output_elision or h is not None, (
+        "h is required unless its zero output term is elided"
+    )
     assert scale is not None
 
     return _chunk_fwd_o_pl(
@@ -789,6 +815,7 @@ def chunk_fwd_o(
         g_gamma=g_gamma,
         scale=scale,
         chunk_size=chunk_size,
+        zero_state_output_elision=zero_state_output_elision,
     )
 
 
@@ -870,6 +897,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
         "chunk_size",
         "compact_alignment",
         "single_chunk_state_elision",
+        "zero_state_output_elision",
     ],
 )
 def chunk_simple_gla_fwd_varlen(
@@ -887,6 +915,7 @@ def chunk_simple_gla_fwd_varlen(
     chunk_size: int = 64,
     compact_alignment: bool = False,
     single_chunk_state_elision: bool = False,
+    zero_state_output_elision: bool = False,
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
@@ -899,6 +928,10 @@ def chunk_simple_gla_fwd_varlen(
     and no final state is requested.  In that case the output stage consumes
     only the all-zero state at the sole chunk boundary; the state produced
     after the chunk is terminal and otherwise unused.
+
+    ``zero_state_output_elision`` removes the matching state load and ``q @ h``
+    term from the output stage when single-chunk state elision proves that
+    ``h`` is exactly zero.
     """
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
     N = cu_seqlens_dev.shape[0] - 1 if cu_seqlens_dev is not None else B
@@ -929,6 +962,11 @@ def chunk_simple_gla_fwd_varlen(
         T_aligned,
     )
 
+    if zero_state_output_elision:
+        assert single_chunk_state_elision, (
+            "zero-state output elision requires single-chunk state elision"
+        )
+
     if single_chunk_state_elision:
         assert N == 1, "single-chunk state elision requires exactly one sequence"
         assert T_aligned == chunk_size, (
@@ -940,7 +978,11 @@ def chunk_simple_gla_fwd_varlen(
         # chunk_fwd_h stores the state at each chunk's *entrance*.  The sole
         # entrance state is exactly zero; its post-update state is terminal and
         # unobserved when use_ht=False, so no state Pallas launch is necessary.
-        h = jnp.zeros((1, H, K, V), dtype=k_a.dtype)
+        h = (
+            None
+            if zero_state_output_elision
+            else jnp.zeros((1, H, K, V), dtype=k_a.dtype)
+        )
         ht = None
     else:
         h, ht = chunk_fwd_h_kernel_varlen(
@@ -978,6 +1020,7 @@ def chunk_simple_gla_fwd_varlen(
         cu_seqlens_cpu=cu_seqlens_cpu,
         cu_seqlens_dev=aligned_cu,
         chunk_size=chunk_size,
+        zero_state_output_elision=zero_state_output_elision,
     )
 
     o = _unalign_output(o, cu_seqlens_dev, aligned_cu, T_orig)
@@ -1006,6 +1049,7 @@ def simple_gla_fwd(
     chunk_size: int = 64,
     compact_alignment: bool = False,
     single_chunk_state_elision: bool = False,
+    zero_state_output_elision: bool = False,
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is not None:
@@ -1029,4 +1073,5 @@ def simple_gla_fwd(
         chunk_size=chunk_size,
         compact_alignment=compact_alignment,
         single_chunk_state_elision=single_chunk_state_elision,
+        zero_state_output_elision=zero_state_output_elision,
     )

@@ -1,0 +1,16 @@
+{
+ "name": "gla_zero_state_output_elision",
+ "gap": "[simple_gla:BT,chunk_size] (missing-tuned-table) simple_gla.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:0>",
+ "hypothesis": "When search selects one full-sequence GLA chunk with its exact zero entrance state, naming output-state-term elision lets the output stage remove the state load and identically-zero q @ h matmul while preserving the intra-chunk output exactly.",
+ "estimated_relief_pct": 3.7,
+ "search_dimension": "Knob zero_state_output_elision=[false,true] (default false); the GLA runner passes cfg.zero_state_output_elision through chunk_simple_gla_fwd_varlen into chunk_fwd_o and _chunk_fwd_o_pl, where true omits h and the zero q @ h term. Validity admits true only with the kept single_chunk_state_elision precondition.",
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_zero_state_output_elision.json"
+ ],
+ "status": "kept",
+ "delta_pct": 3.31,
+ "measured_geomean_s": 0.0003060663796914128
+}
