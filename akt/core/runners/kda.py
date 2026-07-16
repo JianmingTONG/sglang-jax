@@ -3,10 +3,8 @@
 Tuned entry: `chunk_kda_fwd(..., chunk_size)` (Pallas, threads an `interpret`
 flag via `get_interpret()` → runs here under PALLAS_INTERPRET=1 on CPU).
 Reference:   `naive_recurrent_kda(...)` (pure JAX per-step delta recurrence).
-Design space (base): `chunk_size` — the BT time tile the four-stage pipeline
-(gate cumsum / intra solve / inter-chunk state / output) blocks over. K/V head
-dims are padded to 128 inside the kernel; elevating independent BK/BV tiling
-would be a natural CAPABILITY.
+Design space: base `chunk_size` plus capability-elevated `state_block_chunks`,
+which groups logical chunks inside the stage-3 state-propagation schedule tile.
 
 The authoritative correctness contract (reference impl, tolerances, canonical
 inputs, native-test wiring) lives in the FROZEN akt.benchmark.refs.kda module and
@@ -32,18 +30,37 @@ from akt.benchmark.refs.kda import (
 from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 
 
+_CAPABILITY = "kda_state_block_chunks"
+
+
 @functools.lru_cache(maxsize=None)
-def _jit_chunk(chunk_size: int, scale: float):
+def _jit_chunk(chunk_size: int, state_block_chunks: int, scale: float):
     # chunk_kda_fwd is itself jitted with static chunk_size/output_final_state;
     # initial_state=None, output_final_state=False → fresh state, output-only.
     def f(q, k, v, g, beta, cu):
-        out = chunk_kda(q, k, v, g, beta, scale, None, False, cu, chunk_size=chunk_size)
+        out = chunk_kda(
+            q,
+            k,
+            v,
+            g,
+            beta,
+            scale,
+            None,
+            False,
+            cu,
+            chunk_size=chunk_size,
+            state_block_chunks=state_block_chunks,
+        )
         return out[0]  # o
     return jax.jit(f)
 
 
 def _run(inp, cfg):
-    return _jit_chunk(int(cfg["chunk_size"]), float(inp["scale"]))(
+    return _jit_chunk(
+        int(cfg["chunk_size"]),
+        int(cfg.get("state_block_chunks", 1)),
+        float(inp["scale"]),
+    )(
         inp["q"], inp["k"], inp["v"], inp["g"], inp["beta"], inp["cu"])
 
 
@@ -59,12 +76,29 @@ def _space(seqlen: int) -> DesignSpace:
     #   * >= 16 — chunk_size 8 (and below) trips an AssertionError in the chunked
     #     pipeline, so 16 is the smallest supported tile (empirically verified).
     # The divisibility bound also caps chunk_size at T, so the space cannot explode.
+    def _valid(c, T=seqlen):
+        chunk_size = c["chunk_size"]
+        state_block_chunks = c.get("state_block_chunks", 1)
+        return (
+            chunk_size >= 16
+            and (chunk_size & (chunk_size - 1)) == 0
+            and T % chunk_size == 0
+            and state_block_chunks >= 1
+            and (state_block_chunks & (state_block_chunks - 1)) == 0
+            and (T // chunk_size) % state_block_chunks == 0
+        )
+
     return DesignSpace(
-        knobs=[Knob("chunk_size", [16, 32, 64, 128, 256], default=64)],
-        valid=lambda c, T=seqlen: (
-            c["chunk_size"] >= 16
-            and (c["chunk_size"] & (c["chunk_size"] - 1)) == 0
-            and T % c["chunk_size"] == 0),
+        knobs=[
+            Knob("chunk_size", [16, 32, 64, 128, 256], default=64),
+            Knob(
+                "state_block_chunks",
+                [1, 2, 4],
+                default=1,
+                elevated_by=_CAPABILITY,
+            ),
+        ],
+        valid=_valid,
     )
 
 

@@ -575,6 +575,8 @@ def _chunk_gated_delta_rule_fwd_kernel(
     scratch_ref,
     *,
     NT,
+    BT,
+    STATE_BLOCK_CHUNKS,
     USE_G,
     USE_GK,
     USE_INITIAL_STATE,
@@ -583,66 +585,72 @@ def _chunk_gated_delta_rule_fwd_kernel(
     USE_EXP2,
 ):
     idx_n = pl.program_id(0)
-    idx_nt = pl.program_id(2)
+    idx_nb = pl.program_id(2)
 
     bos = seqlens_ref[idx_n]
     eos = seqlens_ref[idx_n + 1]
-    real_NT = (eos - bos) // k_ref.shape[2]
+    real_NT = (eos - bos) // BT
 
-    BT = k_ref.shape[2]
     K, V = k_ref.shape[-1], v_ref.shape[-1]
-    b_k = k_ref[0, 0]
 
-    @pl.when(idx_nt == 0)
+    @pl.when(idx_nb == 0)
     def _():
         scratch_ref[...] = jnp.zeros([K, V], dtype=jnp.float32)
         if USE_INITIAL_STATE:
             scratch_ref[...] = h0_ref[0, 0].astype(jnp.float32)
 
-    @pl.when(idx_nt < real_NT)
-    def _():
-        h_ref[0, 0, 0] = scratch_ref[...].astype(h_ref.dtype)
+    # The Pallas load/schedule tile may contain multiple logical KDA chunks.
+    # Preserve the original recurrence by executing those chunk updates in
+    # order while the state stays resident in the same VMEM scratch buffer.
+    for i_chunk in range(STATE_BLOCK_CHUNKS):
+        idx_nt = idx_nb * STATE_BLOCK_CHUNKS + i_chunk
+        chunk_slice = dslice(i_chunk * BT, BT)
 
-        b_w = w_ref[0, 0]
-        b_v = jnp.dot(
-            b_w.astype(jnp.float32),
-            scratch_ref[...],
-            precision=jax.lax.Precision.HIGHEST,
-            preferred_element_type=jnp.float32,
-        )
-        b_u = v_ref[0, 0]
-        b_v = b_u.astype(b_v.dtype) - b_v
-        if SAVE_NEW_VALUE:
-            v_new_ref[0, 0] = b_v.astype(v_new_ref.dtype)
+        @pl.when(idx_nt < real_NT)
+        def _():
+            h_ref[0, i_chunk, 0] = scratch_ref[...].astype(h_ref.dtype)
 
-        if USE_G:
-            b_g = g_ref[0, 0, :, 0]
-            b_g_last = g_ref[0, 0, BT - 1, 0].astype(jnp.float32)
-            if USE_EXP2:
-                b_v = b_v * exp2(b_g_last - b_g)[:, None]
-                b_g_last = exp2(b_g_last)
-            else:
-                b_v = b_v * exp(b_g_last - b_g)[:, None]
-                b_g_last = exp(b_g_last)
-            scratch_ref[...] *= b_g_last
-        if USE_GK:
-            b_gk_last = gk_ref[0, 0, BT - 1].astype(jnp.float32)
-            if USE_EXP2:
-                scratch_ref[...] *= exp2(b_gk_last)[:, None]
-            else:
-                scratch_ref[...] *= exp(b_gk_last)[:, None]
+            b_k = k_ref[0, 0, chunk_slice, :]
+            b_w = w_ref[0, 0, chunk_slice, :]
+            b_v = jnp.dot(
+                b_w.astype(jnp.float32),
+                scratch_ref[...],
+                precision=jax.lax.Precision.HIGHEST,
+                preferred_element_type=jnp.float32,
+            )
+            b_u = v_ref[0, 0, chunk_slice, :]
+            b_v = b_u.astype(b_v.dtype) - b_v
+            if SAVE_NEW_VALUE:
+                v_new_ref[0, 0, chunk_slice, :] = b_v.astype(v_new_ref.dtype)
 
-        scratch_ref[...] += jnp.dot(
-            b_k.astype(jnp.float32).T,
-            b_v.astype(jnp.float32),
-            precision=jax.lax.Precision.HIGHEST,
-            preferred_element_type=jnp.float32,
-        )
+            if USE_G:
+                b_g = g_ref[0, 0, chunk_slice, 0]
+                b_g_last = g_ref[0, 0, i_chunk * BT + BT - 1, 0].astype(jnp.float32)
+                if USE_EXP2:
+                    b_v = b_v * exp2(b_g_last - b_g)[:, None]
+                    b_g_last = exp2(b_g_last)
+                else:
+                    b_v = b_v * exp(b_g_last - b_g)[:, None]
+                    b_g_last = exp(b_g_last)
+                scratch_ref[...] *= b_g_last
+            if USE_GK:
+                b_gk_last = gk_ref[0, 0, i_chunk * BT + BT - 1].astype(jnp.float32)
+                if USE_EXP2:
+                    scratch_ref[...] *= exp2(b_gk_last)[:, None]
+                else:
+                    scratch_ref[...] *= exp(b_gk_last)[:, None]
 
-    @pl.when(idx_nt == real_NT - 1)
-    def _():
-        if STORE_FINAL_STATE:
-            ht_ref[0, 0] = scratch_ref[...].astype(ht_ref.dtype)
+            scratch_ref[...] += jnp.dot(
+                b_k.astype(jnp.float32).T,
+                b_v.astype(jnp.float32),
+                precision=jax.lax.Precision.HIGHEST,
+                preferred_element_type=jnp.float32,
+            )
+
+        @pl.when(idx_nt == real_NT - 1)
+        def _():
+            if STORE_FINAL_STATE:
+                ht_ref[0, 0] = scratch_ref[...].astype(ht_ref.dtype)
 
 
 def chunk_gated_delta_rule_fwd_h(
@@ -658,13 +666,17 @@ def chunk_gated_delta_rule_fwd_h(
     use_exp2=True,
     cu_seqlens=None,
     chunk_indices=None,
+    state_block_chunks=1,
 ):
     B, T, H, K = k.shape
     V = u.shape[-1]
     BT = chunk_size
+    STATE_BT = BT * state_block_chunks
 
     assert cu_seqlens is not None, "This varlen-only module requires cu_seqlens"
     assert B == 1, f"varlen mode requires B==1, got B={B}"
+    assert state_block_chunks >= 1, "state_block_chunks must be positive"
+    assert T % STATE_BT == 0, f"T={T} must be divisible by state block size {STATE_BT}"
 
     N = cu_seqlens.shape[-1] - 1
     assert_shape(k, (B, T, H, K), "k")
@@ -685,36 +697,36 @@ def chunk_gated_delta_rule_fwd_h(
 
     assert chunk_indices is not None
     NT = len(chunk_indices)
-    NT_max = T // BT
+    NB_max = T // STATE_BT
     chunk_offsets = _prepare_chunk_offsets(cu_seqlens, BT)
     assert initial_state is None or initial_state.shape == (N, H, K, V)
 
-    T_alloc = T + BT
+    T_alloc = T + STATE_BT
 
     k_pad = (
-        jnp.pad(k, ((0, 0), (0, BT), (0, 0), (0, K_PADSIZE - K)))
+        jnp.pad(k, ((0, 0), (0, STATE_BT), (0, 0), (0, K_PADSIZE - K)))
         if K_PADSIZE > K
-        else jnp.pad(k, ((0, 0), (0, BT), (0, 0), (0, 0)))
+        else jnp.pad(k, ((0, 0), (0, STATE_BT), (0, 0), (0, 0)))
     )
     w_pad = (
-        jnp.pad(w, ((0, 0), (0, BT), (0, 0), (0, K_PADSIZE - K)))
+        jnp.pad(w, ((0, 0), (0, STATE_BT), (0, 0), (0, K_PADSIZE - K)))
         if K_PADSIZE > K
-        else jnp.pad(w, ((0, 0), (0, BT), (0, 0), (0, 0)))
+        else jnp.pad(w, ((0, 0), (0, STATE_BT), (0, 0), (0, 0)))
     )
     k_t = jnp.transpose(k_pad, (0, 2, 1, 3))
     w_t = jnp.transpose(w_pad, (0, 2, 1, 3))
 
     v_pad = (
-        jnp.pad(u_f32, ((0, 0), (0, BT), (0, 0), (0, V_ALIGNED - V)))
+        jnp.pad(u_f32, ((0, 0), (0, STATE_BT), (0, 0), (0, V_ALIGNED - V)))
         if V_ALIGNED > V
-        else jnp.pad(u_f32, ((0, 0), (0, BT), (0, 0), (0, 0)))
+        else jnp.pad(u_f32, ((0, 0), (0, STATE_BT), (0, 0), (0, 0)))
     )
     v_t = jnp.transpose(v_pad, (0, 2, 1, 3))
 
     if g is not None:
         g_fp32 = g.astype(jnp.float32).reshape(B, T, H, 1)
         g_fp32 = pad_to_multiple(g_fp32, 128, -1, 0)
-        g_fp32 = jnp.pad(g_fp32, ((0, 0), (0, BT), (0, 0), (0, 0)))
+        g_fp32 = jnp.pad(g_fp32, ((0, 0), (0, STATE_BT), (0, 0), (0, 0)))
         g_t = jnp.transpose(g_fp32, (0, 2, 1, 3))
     else:
         g_t = None
@@ -723,7 +735,7 @@ def chunk_gated_delta_rule_fwd_h(
         gk_fp32 = gk.astype(jnp.float32)
         if K_PADSIZE > K:
             gk_fp32 = jnp.pad(gk_fp32, ((0, 0), (0, 0), (0, 0), (0, K_PADSIZE - K)))
-        gk_fp32 = jnp.pad(gk_fp32, ((0, 0), (0, BT), (0, 0), (0, 0)))
+        gk_fp32 = jnp.pad(gk_fp32, ((0, 0), (0, STATE_BT), (0, 0), (0, 0)))
         gk_t = jnp.transpose(gk_fp32, (0, 2, 1, 3))
     else:
         gk_t = None
@@ -748,24 +760,28 @@ def chunk_gated_delta_rule_fwd_h(
         else None
     )
 
-    def _t_index_map(n, h, nt, seqlens_ref, chunk_offsets_ref):
-        bos = pl.multiple_of(seqlens_ref[n], BT)
-        block_idx = jnp.minimum(bos // BT + nt, T // BT)
+    def _t_index_map(n, h, nb, seqlens_ref, chunk_offsets_ref):
+        bos = pl.multiple_of(seqlens_ref[n], STATE_BT)
+        block_idx = jnp.minimum(bos // STATE_BT + nb, T // STATE_BT)
         return (0, h, block_idx, 0)
 
-    def _h_index_map(n, h, nt, seqlens_ref, chunk_offsets_ref):
-        bos = pl.multiple_of(seqlens_ref[n], BT)
-        chunk_idx = jnp.minimum(bos // BT + nt, NT - 1)
-        return (0, chunk_idx, h, 0, 0)
+    def _h_index_map(n, h, nb, seqlens_ref, chunk_offsets_ref):
+        bos = pl.multiple_of(seqlens_ref[n], STATE_BT)
+        block_idx = jnp.minimum(bos // STATE_BT + nb, NT // state_block_chunks - 1)
+        return (0, block_idx, h, 0, 0)
 
-    k_blockspec = pl.BlockSpec([1, 1, BT, K_PADSIZE], index_map=_t_index_map)
-    v_blockspec = pl.BlockSpec([1, 1, BT, V_ALIGNED], index_map=_t_index_map)
-    w_blockspec = pl.BlockSpec([1, 1, BT, K_PADSIZE], index_map=_t_index_map)
+    k_blockspec = pl.BlockSpec([1, 1, STATE_BT, K_PADSIZE], index_map=_t_index_map)
+    v_blockspec = pl.BlockSpec([1, 1, STATE_BT, V_ALIGNED], index_map=_t_index_map)
+    w_blockspec = pl.BlockSpec([1, 1, STATE_BT, K_PADSIZE], index_map=_t_index_map)
     g_blockspec = (
-        pl.BlockSpec([1, 1, BT, g_pad_size], index_map=_t_index_map) if g is not None else None
+        pl.BlockSpec([1, 1, STATE_BT, g_pad_size], index_map=_t_index_map)
+        if g is not None
+        else None
     )
     gk_blockspec = (
-        pl.BlockSpec([1, 1, BT, K_PADSIZE], index_map=_t_index_map) if gk is not None else None
+        pl.BlockSpec([1, 1, STATE_BT, K_PADSIZE], index_map=_t_index_map)
+        if gk is not None
+        else None
     )
     h0_blockspec = (
         pl.BlockSpec([1, 1, K_PADSIZE, V_ALIGNED], index_map=lambda n, h, nt, *_: (n, h, 0, 0))
@@ -773,9 +789,13 @@ def chunk_gated_delta_rule_fwd_h(
         else None
     )
 
-    h_blockspec_out = pl.BlockSpec([1, 1, 1, K_PADSIZE, V_ALIGNED], index_map=_h_index_map)
+    h_blockspec_out = pl.BlockSpec(
+        [1, state_block_chunks, 1, K_PADSIZE, V_ALIGNED], index_map=_h_index_map
+    )
     v_new_blockspec_out = (
-        pl.BlockSpec([1, 1, BT, V_ALIGNED], index_map=_t_index_map) if save_new_value else None
+        pl.BlockSpec([1, 1, STATE_BT, V_ALIGNED], index_map=_t_index_map)
+        if save_new_value
+        else None
     )
     ht_blockspec_out = (
         pl.BlockSpec([1, 1, K_PADSIZE, V_ALIGNED], index_map=lambda n, h, nt, *_: (n, h, 0, 0))
@@ -784,13 +804,15 @@ def chunk_gated_delta_rule_fwd_h(
     )
 
     scratch = pltpu.VMEM((K_PADSIZE, V_ALIGNED), jnp.float32)
-    grid = (N, H, NT_max)
+    grid = (N, H, NB_max)
     interpret = get_interpret()
 
     h_out, v_new_out, ht_out = pl.pallas_call(
         functools.partial(
             _chunk_gated_delta_rule_fwd_kernel,
             NT=NT,
+            BT=BT,
+            STATE_BLOCK_CHUNKS=state_block_chunks,
             USE_G=(g is not None),
             USE_GK=(gk is not None),
             USE_INITIAL_STATE=(initial_state is not None),
@@ -1106,6 +1128,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "output_final_state",
         "use_qk_l2norm_in_kernel",
         "chunk_size",
+        "state_block_chunks",
         "safe_gate",
         "lower_bound",
         "use_gate_in_kernel",
@@ -1137,6 +1160,7 @@ def chunk_kda_fwd(
     return_intermediate_states: bool = False,
     cp_context: None = None,
     transpose_state_layout: bool = False,
+    state_block_chunks: int = 1,
 ):
     """KDA chunked forward pass for variable-length sequences (varlen).
 
@@ -1154,12 +1178,14 @@ def chunk_kda_fwd(
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = chunk_size
+    STATE_BT = BT * state_block_chunks
 
     assert use_qk_l2norm_in_kernel is False
     assert cp_context is None
     assert not transpose_state_layout
     assert not return_intermediate_states
     assert not disable_recompute
+    assert state_block_chunks >= 1, "state_block_chunks must be positive"
 
     assert_shape(q, (B, T, H, K), "q")
     assert_shape(k, (B, T, H, K), "k")
@@ -1174,12 +1200,17 @@ def chunk_kda_fwd(
     # Varlen alignment
     _orig_cu_seqlens = cu_seqlens
     T_input = T
-    [q, k, v, g], [beta], cu_seqlens, _ = _align_seqs(
-        [q, k, v, g],
-        [beta],
-        cu_seqlens,
-        align=BT,
-    )
+    # A grouped state block already spans this single packed sequence exactly
+    # when its static extent is divisible by STATE_BT. Avoid materializing the
+    # generic varlen helper's conservative trailing block in that case; the
+    # default (one chunk per state block) retains the shipped alignment path.
+    if not (state_block_chunks > 1 and N == 1 and T % STATE_BT == 0):
+        [q, k, v, g], [beta], cu_seqlens, _ = _align_seqs(
+            [q, k, v, g],
+            [beta],
+            cu_seqlens,
+            align=STATE_BT,
+        )
     T = q.shape[1]
     chunk_indices = prepare_chunk_indices(cu_seqlens, BT, max_T=T)
 
@@ -1245,6 +1276,7 @@ def chunk_kda_fwd(
         initial_state=initial_state,
         output_final_state=output_final_state,
         chunk_size=BT,
+        state_block_chunks=state_block_chunks,
         use_exp2=True,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,

@@ -1,0 +1,16 @@
+{
+ "name": "kda_state_block_chunks",
+ "gap": "[kda:BT] (shape-pinned-tile) derived from k_ref.shape (tied to input dims, not a knob) <python/sgl_jax/srt/kernels/kda/kda.py:592>",
+ "hypothesis": "Grouping consecutive logical KDA chunks in one state-propagation schedule tile will amortize grid and padding overhead while preserving every chunk-boundary recurrence update.",
+ "estimated_relief_pct": 12.0,
+ "search_dimension": "Knob state_block_chunks=[1,2,4] (default 1); the KDA runner passes cfg.state_block_chunks through chunk_kda_fwd to chunk_gated_delta_rule_fwd_h, where it sets the grouped Pallas time block and ordered inner chunk loop.",
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_state_block_chunks.json"
+ ],
+ "status": "kept",
+ "delta_pct": 3.6,
+ "measured_geomean_s": 0.0007722373486021602
+}

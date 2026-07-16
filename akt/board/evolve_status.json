@@ -1,10 +1,10 @@
 {
- "state": "idle",
- "updated_ts": 1783975075.7306645,
- "init_ts": 1783975075.7306645,
- "round": 0,
- "capability": null,
- "phase": null,
- "started_ts": null,
+ "state": "running",
+ "updated_ts": 1784176970.0273657,
+ "init_ts": 1784175936.7558303,
+ "round": 1,
+ "capability": "kda_state_block_chunks",
+ "phase": "HW eval (kernel suite)",
+ "started_ts": 1784175936.7558303,
  "last": null
 }
