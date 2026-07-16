@@ -567,6 +567,8 @@ def _render_oracle_line(line):
         ev = json.loads(line)
     except Exception:
         return line[:120]                              # non-JSON oracle -> raw
+    if not isinstance(ev, dict):
+        return line[:120]                              # valid JSON scalar/array -> raw
     t = ev.get("type")
     if t == "assistant":
         out = []
@@ -595,6 +597,8 @@ def _scan_rate_limit(line):
     try:
         ev = json.loads(line)
     except Exception:
+        return None
+    if not isinstance(ev, dict):
         return None
     if ev.get("type") == "rate_limit_event":
         info = ev.get("rate_limit_info", {}) or {}
