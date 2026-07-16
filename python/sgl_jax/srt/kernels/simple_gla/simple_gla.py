@@ -809,10 +809,19 @@ def _build_align_gather_idx(cu_seqlens, aligned_cu, T_aligned):
     return gather_idx, is_valid
 
 
-def _compute_t_aligned(T_orig, N, chunk_size):
-    """Static upper bound for the per-seq-aligned packed length."""
+def _compute_t_aligned(T_orig, N, chunk_size, compact_alignment=False):
+    """Static upper bound for the per-sequence aligned packed length.
+
+    Each aligned sequence length is a multiple of ``BT`` and their sum is at
+    most ``T_orig + N * (BT - 1)``.  Therefore the greatest ``BT`` multiple not
+    exceeding that expression remains a safe upper bound.  The shipped path
+    conservatively rounds it up once more; ``compact_alignment`` exposes the
+    tight grid extent while retaining the same gather/mask layout semantics.
+    """
     BT = chunk_size
     T_max = T_orig + N * (BT - 1)
+    if compact_alignment:
+        return (T_max // BT) * BT
     return ((T_max + BT - 1) // BT) * BT
 
 
@@ -851,7 +860,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
 
 @functools.partial(
     jax.jit,
-    static_argnames=["scale", "use_ht", "chunk_size"],
+    static_argnames=["scale", "use_ht", "chunk_size", "compact_alignment"],
 )
 def chunk_simple_gla_fwd_varlen(
     q: jax.Array,
@@ -866,7 +875,14 @@ def chunk_simple_gla_fwd_varlen(
     cu_seqlens_cpu: jax.Array | None = None,
     cu_seqlens_dev: jax.Array | None = None,
     chunk_size: int = 64,
+    compact_alignment: bool = False,
 ) -> tuple[jax.Array, jax.Array | None]:
+    """Chunked varlen Simple GLA.
+
+    ``compact_alignment`` selects the tight static upper bound for the number
+    of aligned ``chunk_size`` tiles.  It changes only padding/grid extent; the
+    gather, masking, recurrence order, and output unalignment remain exact.
+    """
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
     N = cu_seqlens_dev.shape[0] - 1 if cu_seqlens_dev is not None else B
 
@@ -881,7 +897,12 @@ def chunk_simple_gla_fwd_varlen(
     assert (K % 128 == 0) and (V % 128 == 0)
     assert B == 1, "B must be 1."
 
-    T_aligned = _compute_t_aligned(T_orig, N, chunk_size)
+    T_aligned = _compute_t_aligned(
+        T_orig,
+        N,
+        chunk_size,
+        compact_alignment=compact_alignment,
+    )
     q_a, k_a, v_a, aligned_cu, real_seq_lens = _align_varlen_inputs(
         q,
         k,
@@ -952,6 +973,7 @@ def simple_gla_fwd(
     cu_seqlens_cpu: jax.Array | None = None,
     cu_seqlens_dev: jax.Array | None = None,
     chunk_size: int = 64,
+    compact_alignment: bool = False,
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is not None:
@@ -973,4 +995,5 @@ def simple_gla_fwd(
         cu_seqlens_cpu=cu_seqlens_cpu,
         cu_seqlens_dev=cu_seqlens_dev,
         chunk_size=chunk_size,
+        compact_alignment=compact_alignment,
     )

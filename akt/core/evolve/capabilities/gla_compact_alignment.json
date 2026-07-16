@@ -1,0 +1,16 @@
+{
+ "name": "gla_compact_alignment",
+ "gap": "[simple_gla:BT,chunk_size] (missing-tuned-table) simple_gla.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:0>",
+ "hypothesis": "Naming the tight BT-aligned grid bound lets search avoid the generic varlen path's conservative trailing chunk and its redundant alignment work without changing layout semantics, recurrence, or arithmetic.",
+ "estimated_relief_pct": 9.0,
+ "search_dimension": "Knob compact_alignment=[false,true] (default false); the GLA runner passes cfg.compact_alignment through chunk_simple_gla_fwd_varlen, where true selects the tight safe upper bound for the BT-aligned buffer and grid extent instead of rounding that bound up by another tile.",
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_compact_alignment.json"
+ ],
+ "status": "kept",
+ "delta_pct": 17.18,
+ "measured_geomean_s": 0.0005567414222019853
+}

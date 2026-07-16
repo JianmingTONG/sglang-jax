@@ -1,13 +1,14 @@
 """GLA (simple gated linear attention) — chunked prefill kernel (EDITABLE runner).
 
-Tuned entry: `chunk_simple_gla_fwd_varlen(..., chunk_size)` (Pallas).
+Tuned entry: `chunk_simple_gla_fwd_varlen(..., chunk_size, compact_alignment)`
+(Pallas).
 The correctness contract (reference, tolerance, canonical inputs, native test) is
 FROZEN in `akt/benchmark/refs/gla.py` — this runner only owns the DesignSpace and
 the config->kernel run mapping.
 
-Design space (base): `chunk_size` — the BT chunk tile. BK/BV are pinned to the
-head dim (128) inside the kernel; elevating independent BK/BV tiling is a natural
-CAPABILITY (see akt/core/evolve/capabilities/README.md).
+Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
+which selects a tight static bound for the number of BT-aligned grid tiles
+instead of the generic varlen layout's extra conservative tile.
 """
 from __future__ import annotations
 
@@ -27,18 +28,25 @@ from akt.benchmark.refs.gla import (
 from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 
 
+_CAPABILITY = "gla_compact_alignment"
+
+
 @functools.lru_cache(maxsize=None)
-def _jit_chunk(chunk_size: int):
+def _jit_chunk(chunk_size: int, compact_alignment: bool):
     def f(q, k, v, g_gamma, cu):
         o, _ht = chunk_simple_gla_fwd_varlen(
             q, k, v, g_gamma=g_gamma, scale=None,
-            cu_seqlens_dev=cu, chunk_size=chunk_size)
+            cu_seqlens_dev=cu, chunk_size=chunk_size,
+            compact_alignment=compact_alignment)
         return o
     return jax.jit(f)
 
 
 def _run(inp, cfg):
-    return _jit_chunk(int(cfg["chunk_size"]))(
+    return _jit_chunk(
+        int(cfg["chunk_size"]),
+        bool(cfg.get("compact_alignment", False)),
+    )(
         inp["q"], inp["k"], inp["v"], inp["g_gamma"], inp["cu"])
 
 
@@ -65,7 +73,15 @@ def _space(seqlen: int):
         )
 
     return DesignSpace(
-        knobs=[Knob("chunk_size", _CHUNK_CANDIDATES, default=64)],
+        knobs=[
+            Knob("chunk_size", _CHUNK_CANDIDATES, default=64),
+            Knob(
+                "compact_alignment",
+                [False, True],
+                default=False,
+                elevated_by=_CAPABILITY,
+            ),
+        ],
         valid=_valid,
     )
 
