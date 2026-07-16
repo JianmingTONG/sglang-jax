@@ -449,8 +449,7 @@ def gate_capability(st, m, mpath, args):
         write_board()
         sh("git add -A", timeout=60)
         msg = f"akt evolve R{rnd} KEEP capability={m['name']}: {reason[:60]}"
-        sh(f"git commit -q -m {json.dumps(msg)} "
-           f"-m 'Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>'", timeout=120)
+        sh(f"git commit -q -m {json.dumps(msg)}", timeout=120)
         st["incumbent_commit"] = git_head()
         save(st)
     else:
