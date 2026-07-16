@@ -2,15 +2,17 @@
 
 Tuned entry: `chunk_simple_gla_fwd_varlen(..., chunk_size,
 compact_alignment, single_chunk_state_elision,
-zero_state_output_elision)` (Pallas).
+zero_state_output_elision, output_value_tiles)` (Pallas).
 The correctness contract (reference, tolerance, canonical inputs, native test) is
 FROZEN in `akt/benchmark/refs/gla.py` — this runner only owns the DesignSpace and
 the config->kernel run mapping.
 
 Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
-`single_chunk_state_elision`, and `zero_state_output_elision`.  State elision
-removes an unobserved terminal update when the aligned input is exactly one
-logical chunk; output elision removes the matching zero state load and matmul.
+`single_chunk_state_elision`, `zero_state_output_elision`, and
+`output_value_tiles`. State elision removes an unobserved terminal update when
+the aligned input is exactly one logical chunk; output elision removes the
+matching zero state load and matmul; value-tile grouping lets one output program
+own multiple independent full-BV tiles.
 """
 from __future__ import annotations
 
@@ -33,6 +35,7 @@ from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 _COMPACT_ALIGNMENT_CAPABILITY = "gla_compact_alignment"
 _STATE_ELISION_CAPABILITY = "gla_single_chunk_state_elision"
 _OUTPUT_ELISION_CAPABILITY = "gla_zero_state_output_elision"
+_VALUE_TILE_GROUPING_CAPABILITY = "gla_value_tile_grouping"
 
 
 @functools.lru_cache(maxsize=None)
@@ -41,6 +44,7 @@ def _jit_chunk(
     compact_alignment: bool,
     single_chunk_state_elision: bool,
     zero_state_output_elision: bool,
+    output_value_tiles: int,
 ):
     def f(q, k, v, g_gamma, cu):
         o, _ht = chunk_simple_gla_fwd_varlen(
@@ -48,7 +52,8 @@ def _jit_chunk(
             cu_seqlens_dev=cu, chunk_size=chunk_size,
             compact_alignment=compact_alignment,
             single_chunk_state_elision=single_chunk_state_elision,
-            zero_state_output_elision=zero_state_output_elision)
+            zero_state_output_elision=zero_state_output_elision,
+            output_value_tiles=output_value_tiles)
         return o
     return jax.jit(f)
 
@@ -59,6 +64,7 @@ def _run(inp, cfg):
         bool(cfg.get("compact_alignment", False)),
         bool(cfg.get("single_chunk_state_elision", False)),
         bool(cfg.get("zero_state_output_elision", False)),
+        int(cfg.get("output_value_tiles", 1)),
     )(
         inp["q"], inp["k"], inp["v"], inp["g_gamma"], inp["cu"])
 
@@ -75,11 +81,12 @@ _CHUNK_CANDIDATES = [16, 32, 64, 128, 256, 512, 1024, 2048]
 _SCORE_TILE_BYTES_CAP = 16 * 1024 * 1024  # -> chunk_size <= 2048
 
 
-def _space(seqlen: int):
+def _space(seqlen: int, heads: int):
     def _valid(c):
         cs = c["chunk_size"]
         state_elision = c.get("single_chunk_state_elision", False)
         output_elision = c.get("zero_state_output_elision", False)
+        output_value_tiles = c.get("output_value_tiles", 1)
         return (
             cs > 0
             and (cs & (cs - 1)) == 0          # power of two (maintainer convention)
@@ -90,6 +97,9 @@ def _space(seqlen: int):
                 or (c.get("compact_alignment", False) and cs == seqlen)
             )
             and (not output_elision or state_elision)
+            and output_value_tiles > 0
+            and (output_value_tiles & (output_value_tiles - 1)) == 0
+            and heads % output_value_tiles == 0
         )
 
     return DesignSpace(
@@ -113,6 +123,12 @@ def _space(seqlen: int):
                 default=False,
                 elevated_by=_OUTPUT_ELISION_CAPABILITY,
             ),
+            Knob(
+                "output_value_tiles",
+                [1, 2, 4, 8],
+                default=1,
+                elevated_by=_VALUE_TILE_GROUPING_CAPABILITY,
+            ),
         ],
         valid=_valid,
     )
@@ -122,7 +138,7 @@ CASES = [
     KernelCase(
         kernel_id="gla", shape_id=f"seq{sl}_h{h}",
         make_inputs=functools.partial(make_inputs, sl, h),
-        run=_run, reference=reference, space=_space(sl),
+        run=_run, reference=reference, space=_space(sl, h),
         atol=ATOL, rtol=RTOL, native_test=NATIVE_TEST,
         note="chunked prefill GLA; ref=fused_recurrent (pure JAX), tol=repo 1e-3",
     )

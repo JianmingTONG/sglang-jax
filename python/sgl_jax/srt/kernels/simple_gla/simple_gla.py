@@ -573,78 +573,84 @@ def _chunk_fwd_o_kernel(
     *,
     BT: int,
     ZERO_STATE_OUTPUT: bool,
+    OUTPUT_VALUE_TILES: int,
 ):
     """Pallas kernel for chunk_fwd_o.
 
-    Grid: (H, total_NT, num_v_tiles)
+    Grid: (ceil((H * num_v_tiles) / OUTPUT_VALUE_TILES), total_NT)
     Refs (after block spec indexing):
-      q_ref/k_ref: (1, 1, BT, K)
-      v_ref: (1, 1, BT, BV)
-      h_ref: (1, 1, K, BV), or None when its zero term is elided
-      g_ref: (1, 1, BT, 128) or None  (broadcast to 4D for TPU alignment)
-      g_gamma_ref: [H] via SMEM or ANY
+      q_ref/k_ref: (OUTPUT_VALUE_TILES, 1, BT, K)
+      v_ref: (OUTPUT_VALUE_TILES, 1, BT, BV)
+      h_ref: (OUTPUT_VALUE_TILES, 1, K, BV), or None when elided
+      g_ref: (OUTPUT_VALUE_TILES, 1, BT, 128) or None
+      g_gamma_ref: [H * num_v_tiles] via SMEM or ANY
       scale_ref: (1,) via SMEM or ANY
-      o_ref: (1, 1, BT, BV)
+      o_ref: (OUTPUT_VALUE_TILES, 1, BT, BV)
+
+    Each local tile retains its own q/k/v/gamma arithmetic. Grouping adjacent
+    head-value tiles changes only program ownership, amortizing grid/program
+    overhead without mixing heads or value slices.
     """
-    b_q = q_ref[0, 0]  # (BT, K)
-    b_k = k_ref[0, 0]  # (BT, K)
-    b_v = v_ref[0, 0]  # (BT, BV)
-
-    if not ZERO_STATE_OUTPUT:
-        b_h = h_ref[0, 0]  # (K, BV)
-        b_o = jnp.dot(
-            b_q,
-            b_h,
-            preferred_element_type=jnp.float32,
-        )
-    b_A = jnp.dot(
-        b_q,
-        b_k.T,
-        preferred_element_type=jnp.float32,
-    )
-
-    if g_ref is not None:
-        b_g = g_ref[0, 0, :, 0].astype(jnp.float32)  # (BT,)
-        if not ZERO_STATE_OUTPUT:
-            b_o = b_o * exp(b_g)[:, None]
-        g_diff = b_g[:, None] - b_g[None, :]
-        fwd_mask = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
-        safe_g_diff = jnp.where(fwd_mask, g_diff, 0.0)
-        b_A = b_A * exp(safe_g_diff)
-
-    if g_gamma_ref is not None:
-        head_idx = pl.program_id(0)
-        b_gamma = g_gamma_ref[head_idx].astype(jnp.float32)
-        b_g_gamma = b_gamma * (jnp.arange(BT) + 1).astype(jnp.float32)
-        if not ZERO_STATE_OUTPUT:
-            b_o = b_o * exp(b_g_gamma)[:, None]
-        g_gamma_diff = b_g_gamma[:, None] - b_g_gamma[None, :]
-        fwd_mask = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
-        safe_g_gamma_diff = jnp.where(fwd_mask, g_gamma_diff, 0.0)
-        b_A = b_A * exp(safe_g_gamma_diff)
-
+    first_value_tile = pl.program_id(0) * OUTPUT_VALUE_TILES
     mask = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
-    b_A = jnp.where(mask, b_A, 0.0)
     scale = scale_ref[0].astype(jnp.float32)
 
-    # Keep b_A in fp32 for precision; upcast b_v instead. When the state
-    # contribution is zero, do not materialize or decay/scale that zero term.
-    b_intra = jnp.dot(
-        b_A,
-        b_v.astype(jnp.float32),
-        precision=jax.lax.Precision.HIGHEST,
-        preferred_element_type=jnp.float32,
-    )
-    if ZERO_STATE_OUTPUT:
-        b_o = b_intra * scale
-    else:
-        b_o = b_o * scale + b_intra * scale
-    o_ref[0, 0] = b_o.astype(o_ref.dtype)
+    for local_value_tile in range(OUTPUT_VALUE_TILES):
+        b_q = q_ref[local_value_tile, 0]  # (BT, K)
+        b_k = k_ref[local_value_tile, 0]  # (BT, K)
+        b_v = v_ref[local_value_tile, 0]  # (BT, BV)
+
+        if not ZERO_STATE_OUTPUT:
+            b_h = h_ref[local_value_tile, 0]  # (K, BV)
+            b_o = jnp.dot(
+                b_q,
+                b_h,
+                preferred_element_type=jnp.float32,
+            )
+        b_A = jnp.dot(
+            b_q,
+            b_k.T,
+            preferred_element_type=jnp.float32,
+        )
+
+        if g_ref is not None:
+            b_g = g_ref[local_value_tile, 0, :, 0].astype(jnp.float32)  # (BT,)
+            if not ZERO_STATE_OUTPUT:
+                b_o = b_o * exp(b_g)[:, None]
+            g_diff = b_g[:, None] - b_g[None, :]
+            safe_g_diff = jnp.where(mask, g_diff, 0.0)
+            b_A = b_A * exp(safe_g_diff)
+
+        if g_gamma_ref is not None:
+            value_tile_idx = first_value_tile + local_value_tile
+            b_gamma = g_gamma_ref[value_tile_idx].astype(jnp.float32)
+            b_g_gamma = b_gamma * (jnp.arange(BT) + 1).astype(jnp.float32)
+            if not ZERO_STATE_OUTPUT:
+                b_o = b_o * exp(b_g_gamma)[:, None]
+            g_gamma_diff = b_g_gamma[:, None] - b_g_gamma[None, :]
+            safe_g_gamma_diff = jnp.where(mask, g_gamma_diff, 0.0)
+            b_A = b_A * exp(safe_g_gamma_diff)
+
+        b_A = jnp.where(mask, b_A, 0.0)
+
+        # Keep b_A in fp32 for precision; upcast b_v instead. When the state
+        # contribution is zero, do not materialize or decay/scale that zero term.
+        b_intra = jnp.dot(
+            b_A,
+            b_v.astype(jnp.float32),
+            precision=jax.lax.Precision.HIGHEST,
+            preferred_element_type=jnp.float32,
+        )
+        if ZERO_STATE_OUTPUT:
+            b_o = b_intra * scale
+        else:
+            b_o = b_o * scale + b_intra * scale
+        o_ref[local_value_tile, 0] = b_o.astype(o_ref.dtype)
 
 
 @functools.partial(
     jax.jit,
-    static_argnames=("chunk_size", "zero_state_output_elision"),
+    static_argnames=("chunk_size", "zero_state_output_elision", "output_value_tiles"),
 )
 def _chunk_fwd_o_pl(
     q: jax.Array,
@@ -657,6 +663,7 @@ def _chunk_fwd_o_pl(
     scale: float,
     chunk_size: int = 64,
     zero_state_output_elision: bool = False,
+    output_value_tiles: int = 1,
 ) -> jax.Array:
     """Pallas launcher for chunk_fwd_o on the uniform-length path."""
     B, T, H, K = q.shape
@@ -701,24 +708,47 @@ def _chunk_fwd_o_pl(
             g_gamma = jnp.repeat(g_gamma, num_v_tiles)  # (H * num_v_tiles,)
 
     H_VT = H * num_v_tiles
-    grid = (H_VT, total_NT)
-
-    # q/k/g index by head = hv_idx // num_v_tiles; v/h index by hv_idx directly
-    spec_qk = pl.BlockSpec(
-        (1, 1, BT, K), index_map=lambda hv_idx, nt_idx: (hv_idx // num_v_tiles, nt_idx, 0, 0)
+    assert output_value_tiles > 0, "output_value_tiles must be positive"
+    assert H_VT % output_value_tiles == 0, (
+        f"H*num_v_tiles={H_VT} must be divisible by output_value_tiles="
+        f"{output_value_tiles}"
     )
-    spec_v = pl.BlockSpec((1, 1, BT, BV), index_map=lambda hv_idx, nt_idx: (hv_idx, nt_idx, 0, 0))
+
+    # Present q/k/g in the same flattened head-value-tile order as v/h. This
+    # lets one physical Pallas program own several independent full-BV tiles.
+    # The common V=128 path has num_v_tiles=1 and needs no replication.
+    if num_v_tiles > 1:
+        _q = jnp.repeat(_q, num_v_tiles, axis=0)
+        _k = jnp.repeat(_k, num_v_tiles, axis=0)
+        if _g is not None:
+            _g = jnp.repeat(_g, num_v_tiles, axis=0)
+
+    grid = (H_VT // output_value_tiles, total_NT)
+
+    # Every block owns output_value_tiles adjacent flattened head-value tiles.
+    spec_qk = pl.BlockSpec(
+        (output_value_tiles, 1, BT, K),
+        index_map=lambda value_tile_block, nt_idx: (value_tile_block, nt_idx, 0, 0),
+    )
+    spec_v = pl.BlockSpec(
+        (output_value_tiles, 1, BT, BV),
+        index_map=lambda value_tile_block, nt_idx: (value_tile_block, nt_idx, 0, 0),
+    )
     spec_h = (
         None
         if zero_state_output_elision
-        else pl.BlockSpec((1, 1, K, BV), index_map=lambda hv_idx, nt_idx: (hv_idx, nt_idx, 0, 0))
+        else pl.BlockSpec(
+            (output_value_tiles, 1, K, BV),
+            index_map=lambda value_tile_block, nt_idx: (value_tile_block, nt_idx, 0, 0),
+        )
     )
     interpret = get_interpret()
     spec_g = (
         None
         if _g is None
         else pl.BlockSpec(
-            (1, 1, BT, 128), index_map=lambda hv_idx, nt_idx: (hv_idx // num_v_tiles, nt_idx, 0, 0)
+            (output_value_tiles, 1, BT, 128),
+            index_map=lambda value_tile_block, nt_idx: (value_tile_block, nt_idx, 0, 0),
         )
     )
     spec_gamma = (
@@ -733,13 +763,15 @@ def _chunk_fwd_o_pl(
             _chunk_fwd_o_kernel,
             BT=BT,
             ZERO_STATE_OUTPUT=zero_state_output_elision,
+            OUTPUT_VALUE_TILES=output_value_tiles,
         ),
         grid_spec=pltpu.PrefetchScalarGridSpec(
             num_scalar_prefetch=0,
             grid=grid,
             in_specs=[spec_qk, spec_qk, spec_v, spec_h, spec_g, spec_gamma, spec_scale],
             out_specs=pl.BlockSpec(
-                (1, 1, BT, BV), index_map=lambda hv_idx, nt_idx: (hv_idx, nt_idx, 0, 0)
+                (output_value_tiles, 1, BT, BV),
+                index_map=lambda value_tile_block, nt_idx: (value_tile_block, nt_idx, 0, 0),
             ),
         ),
         out_shape=jax.ShapeDtypeStruct((H_VT, total_NT, BT, BV), v.dtype),
@@ -777,11 +809,16 @@ def chunk_fwd_o(
     cu_seqlens_dev: jax.Array | None = None,
     chunk_size: int = 64,
     zero_state_output_elision: bool = False,
+    output_value_tiles: int = 1,
 ) -> jax.Array:
     """Chunk forward output computation.
 
     ``zero_state_output_elision`` omits the state input and its identically-zero
     contribution for an output stage whose sole chunk entrance is zero.
+
+    ``output_value_tiles`` groups that many independent full-width BV tiles in
+    one Pallas program. It changes program ownership only; no head or value
+    arithmetic is shared.
     """
     B, T, H, K = q.shape
     V = v.shape[-1]
@@ -816,6 +853,7 @@ def chunk_fwd_o(
         scale=scale,
         chunk_size=chunk_size,
         zero_state_output_elision=zero_state_output_elision,
+        output_value_tiles=output_value_tiles,
     )
 
 
@@ -898,6 +936,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
         "compact_alignment",
         "single_chunk_state_elision",
         "zero_state_output_elision",
+        "output_value_tiles",
     ],
 )
 def chunk_simple_gla_fwd_varlen(
@@ -916,6 +955,7 @@ def chunk_simple_gla_fwd_varlen(
     compact_alignment: bool = False,
     single_chunk_state_elision: bool = False,
     zero_state_output_elision: bool = False,
+    output_value_tiles: int = 1,
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
@@ -932,6 +972,9 @@ def chunk_simple_gla_fwd_varlen(
     ``zero_state_output_elision`` removes the matching state load and ``q @ h``
     term from the output stage when single-chunk state elision proves that
     ``h`` is exactly zero.
+
+    ``output_value_tiles`` controls how many independent full-BV output tiles
+    each Pallas program computes, exposing the program tile grouping to callers.
     """
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
     N = cu_seqlens_dev.shape[0] - 1 if cu_seqlens_dev is not None else B
@@ -1021,6 +1064,7 @@ def chunk_simple_gla_fwd_varlen(
         cu_seqlens_dev=aligned_cu,
         chunk_size=chunk_size,
         zero_state_output_elision=zero_state_output_elision,
+        output_value_tiles=output_value_tiles,
     )
 
     o = _unalign_output(o, cu_seqlens_dev, aligned_cu, T_orig)
@@ -1050,6 +1094,7 @@ def simple_gla_fwd(
     compact_alignment: bool = False,
     single_chunk_state_elision: bool = False,
     zero_state_output_elision: bool = False,
+    output_value_tiles: int = 1,
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is not None:
@@ -1074,4 +1119,5 @@ def simple_gla_fwd(
         compact_alignment=compact_alignment,
         single_chunk_state_elision=single_chunk_state_elision,
         zero_state_output_elision=zero_state_output_elision,
+        output_value_tiles=output_value_tiles,
     )

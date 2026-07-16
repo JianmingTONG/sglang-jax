@@ -1,0 +1,16 @@
+{
+ "name": "gla_value_tile_grouping",
+ "gap": "[simple_gla:BV] (compute-tile-pinned) defaults to load tile `V` when unset  <python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:674>",
+ "hypothesis": "Naming how many independent full-BV tiles one output program owns lets search widen per-program value work and amortize Pallas grid and program overhead without mixing heads or changing arithmetic.",
+ "estimated_relief_pct": 5.0,
+ "search_dimension": "Knob output_value_tiles=[1,2,4,8] (default 1); the GLA runner passes cfg.output_value_tiles through chunk_simple_gla_fwd_varlen and chunk_fwd_o into _chunk_fwd_o_pl, where it groups that many adjacent flattened head-value tiles in each Pallas program and executes every tile's original q/k/v/gamma computation independently.",
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_value_tile_grouping.json"
+ ],
+ "status": "kept",
+ "delta_pct": 6.75,
+ "measured_geomean_s": 0.00028541345306016896
+}
