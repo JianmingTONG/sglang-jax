@@ -1,14 +1,14 @@
 """GLA (simple gated linear attention) — chunked prefill kernel (EDITABLE runner).
 
-Tuned entry: `chunk_simple_gla_fwd_varlen(..., chunk_size, compact_alignment)`
-(Pallas).
+Tuned entry: `chunk_simple_gla_fwd_varlen(..., chunk_size,
+compact_alignment, single_chunk_state_elision)` (Pallas).
 The correctness contract (reference, tolerance, canonical inputs, native test) is
 FROZEN in `akt/benchmark/refs/gla.py` — this runner only owns the DesignSpace and
 the config->kernel run mapping.
 
-Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
-which selects a tight static bound for the number of BT-aligned grid tiles
-instead of the generic varlen layout's extra conservative tile.
+Design space: base `chunk_size` plus capability-elevated `compact_alignment`
+and `single_chunk_state_elision`.  The latter removes an unobserved terminal
+state update when the aligned input is exactly one logical chunk.
 """
 from __future__ import annotations
 
@@ -28,16 +28,22 @@ from akt.benchmark.refs.gla import (
 from akt.benchmark.runners.base import DesignSpace, KernelCase, Knob
 
 
-_CAPABILITY = "gla_compact_alignment"
+_COMPACT_ALIGNMENT_CAPABILITY = "gla_compact_alignment"
+_STATE_ELISION_CAPABILITY = "gla_single_chunk_state_elision"
 
 
 @functools.lru_cache(maxsize=None)
-def _jit_chunk(chunk_size: int, compact_alignment: bool):
+def _jit_chunk(
+    chunk_size: int,
+    compact_alignment: bool,
+    single_chunk_state_elision: bool,
+):
     def f(q, k, v, g_gamma, cu):
         o, _ht = chunk_simple_gla_fwd_varlen(
             q, k, v, g_gamma=g_gamma, scale=None,
             cu_seqlens_dev=cu, chunk_size=chunk_size,
-            compact_alignment=compact_alignment)
+            compact_alignment=compact_alignment,
+            single_chunk_state_elision=single_chunk_state_elision)
         return o
     return jax.jit(f)
 
@@ -46,6 +52,7 @@ def _run(inp, cfg):
     return _jit_chunk(
         int(cfg["chunk_size"]),
         bool(cfg.get("compact_alignment", False)),
+        bool(cfg.get("single_chunk_state_elision", False)),
     )(
         inp["q"], inp["k"], inp["v"], inp["g_gamma"], inp["cu"])
 
@@ -65,11 +72,16 @@ _SCORE_TILE_BYTES_CAP = 16 * 1024 * 1024  # -> chunk_size <= 2048
 def _space(seqlen: int):
     def _valid(c):
         cs = c["chunk_size"]
+        state_elision = c.get("single_chunk_state_elision", False)
         return (
             cs > 0
             and (cs & (cs - 1)) == 0          # power of two (maintainer convention)
             and seqlen % cs == 0               # kernel asserts T % chunk_size == 0
             and cs * cs * 4 <= _SCORE_TILE_BYTES_CAP  # VMEM-sane BT×BT score tile
+            and (
+                not state_elision
+                or (c.get("compact_alignment", False) and cs == seqlen)
+            )
         )
 
     return DesignSpace(
@@ -79,7 +91,13 @@ def _space(seqlen: int):
                 "compact_alignment",
                 [False, True],
                 default=False,
-                elevated_by=_CAPABILITY,
+                elevated_by=_COMPACT_ALIGNMENT_CAPABILITY,
+            ),
+            Knob(
+                "single_chunk_state_elision",
+                [False, True],
+                default=False,
+                elevated_by=_STATE_ELISION_CAPABILITY,
             ),
         ],
         valid=_valid,

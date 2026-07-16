@@ -864,7 +864,13 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
 
 @functools.partial(
     jax.jit,
-    static_argnames=["scale", "use_ht", "chunk_size", "compact_alignment"],
+    static_argnames=[
+        "scale",
+        "use_ht",
+        "chunk_size",
+        "compact_alignment",
+        "single_chunk_state_elision",
+    ],
 )
 def chunk_simple_gla_fwd_varlen(
     q: jax.Array,
@@ -880,12 +886,19 @@ def chunk_simple_gla_fwd_varlen(
     cu_seqlens_dev: jax.Array | None = None,
     chunk_size: int = 64,
     compact_alignment: bool = False,
+    single_chunk_state_elision: bool = False,
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
     ``compact_alignment`` selects the tight static upper bound for the number
     of aligned ``chunk_size`` tiles.  It changes only padding/grid extent; the
     gather, masking, recurrence order, and output unalignment remain exact.
+
+    ``single_chunk_state_elision`` skips the state-update launch when the
+    aligned input is exactly one logical chunk, no initial state is supplied,
+    and no final state is requested.  In that case the output stage consumes
+    only the all-zero state at the sole chunk boundary; the state produced
+    after the chunk is terminal and otherwise unused.
     """
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
     N = cu_seqlens_dev.shape[0] - 1 if cu_seqlens_dev is not None else B
@@ -916,20 +929,34 @@ def chunk_simple_gla_fwd_varlen(
         T_aligned,
     )
 
-    h, ht = chunk_fwd_h_kernel_varlen(
-        k=k_a,
-        v=v_a,
-        g=g,
-        g_gamma=g_gamma,
-        gk=None,
-        gv=None,
-        h0=h0,
-        output_final_state=use_ht,
-        states_in_fp32=False,
-        cu_seqlens_dev=aligned_cu,
-        chunk_size=chunk_size,
-        seq_real_lens=real_seq_lens,
-    )
+    if single_chunk_state_elision:
+        assert N == 1, "single-chunk state elision requires exactly one sequence"
+        assert T_aligned == chunk_size, (
+            "single-chunk state elision requires one aligned chunk; "
+            f"got T_aligned={T_aligned}, chunk_size={chunk_size}"
+        )
+        assert h0 is None, "single-chunk state elision requires h0=None"
+        assert not use_ht, "single-chunk state elision cannot return a final state"
+        # chunk_fwd_h stores the state at each chunk's *entrance*.  The sole
+        # entrance state is exactly zero; its post-update state is terminal and
+        # unobserved when use_ht=False, so no state Pallas launch is necessary.
+        h = jnp.zeros((1, H, K, V), dtype=k_a.dtype)
+        ht = None
+    else:
+        h, ht = chunk_fwd_h_kernel_varlen(
+            k=k_a,
+            v=v_a,
+            g=g,
+            g_gamma=g_gamma,
+            gk=None,
+            gv=None,
+            h0=h0,
+            output_final_state=use_ht,
+            states_in_fp32=False,
+            cu_seqlens_dev=aligned_cu,
+            chunk_size=chunk_size,
+            seq_real_lens=real_seq_lens,
+        )
     # Pallas output buffers are NOT zero-initialized on TPU. Zero-length
     # sequences are skipped by @pl.when(bos != eos), leaving their ht
     # entries undefined. Replace with h0 (or zeros) so downstream scatter
@@ -978,6 +1005,7 @@ def simple_gla_fwd(
     cu_seqlens_dev: jax.Array | None = None,
     chunk_size: int = 64,
     compact_alignment: bool = False,
+    single_chunk_state_elision: bool = False,
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is not None:
@@ -1000,4 +1028,5 @@ def simple_gla_fwd(
         cu_seqlens_dev=cu_seqlens_dev,
         chunk_size=chunk_size,
         compact_alignment=compact_alignment,
+        single_chunk_state_elision=single_chunk_state_elision,
     )

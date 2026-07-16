@@ -1,0 +1,16 @@
+{
+ "name": "gla_single_chunk_state_elision",
+ "gap": "[simple_gla:BT,chunk_size] (missing-tuned-table) simple_gla.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:0>",
+ "hypothesis": "When search selects one full-sequence GLA chunk, naming terminal-state elision lets the kernel skip a state update whose only produced value is unobserved while preserving the exact zero entrance state consumed by the output stage.",
+ "estimated_relief_pct": 22.0,
+ "search_dimension": "Knob single_chunk_state_elision=[false,true] (default false); the GLA runner passes cfg.single_chunk_state_elision through chunk_simple_gla_fwd_varlen, and validity admits true only with compact alignment and chunk_size equal to the sequence length. The kernel then skips chunk_fwd_h_kernel_varlen for the single packed sequence and supplies its exact zero chunk-entrance state to chunk_fwd_o.",
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_single_chunk_state_elision.json"
+ ],
+ "status": "kept",
+ "delta_pct": 21.87,
+ "measured_geomean_s": 0.0003900664956267027
+}
