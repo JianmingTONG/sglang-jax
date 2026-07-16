@@ -346,64 +346,71 @@ def _kda_fwd_intra_kernel(
     disable_recompute,
     safe_gate,
     intra_block_size,
+    COMPUTE_BLOCK_CHUNKS,
 ):
     dtype = q_ref.dtype
-    q = q_ref[0, 0, 0]
-    k = k_ref[0, 0, 0]
-    g = g_ref[0, 0, 0]
-    beta = beta_ref[0, 0, 0]
-    v = v_ref[0, 0, 0]
-
     BT = chunk_size
-
-    g_f32 = g.astype(jnp.float32)
-    q_f32 = q.astype(jnp.float32)
-    k_f32 = k.astype(jnp.float32)
-    beta_f32 = beta.astype(jnp.float32)
-
-    # Build Aqk and L directly using exp2(g[i] - g[j]).
-    # For causal (i >= j): g_cumsum[i] <= g_cumsum[j], so g[i]-g[j] <= 0,
-    # giving exp2 in (0, 1].  This avoids the split-normalization overflow
-    # that occurs with exp2(g-gn) when per-step gate changes exceed ~127.
     causal_bt = jnp.tril(jnp.ones((BT, BT), dtype=jnp.float32))
     strict_bt = jnp.tril(jnp.ones((BT, BT), dtype=jnp.float32), k=-1)
-
-    # g_diff[i, j, k] = g[i, k] - g[j, k];  shape [BT, BT, K]
-    g_diff = g_f32[:, None, :] - g_f32[None, :, :]
-    # Mask anti-causal entries to -126 before exp2 to prevent overflow;
-    # they will be zeroed by causal_bt / strict_bt anyway.
-    g_diff = jnp.where(causal_bt[:, :, None] > 0, g_diff, -126.0)
-    decay = exp2(jnp.maximum(g_diff, -126.0))  # [BT, BT, K]
-
-    # Aqk[i, j] = scale * sum_k q[i,k] * k[j,k] * decay[i,j,k]
-    Aqk = scale * jnp.sum(q_f32[:, None, :] * decay * k_f32[None, :, :], axis=-1)
-    Aqk = (Aqk * causal_bt).astype(dtype)
-
-    # L[i, j] = beta[i] * sum_k k[i,k] * k[j,k] * decay[i,j,k]   (i > j)
-    L = jnp.sum(k_f32[:, None, :] * decay * k_f32[None, :, :], axis=-1) * beta_f32 * strict_bt
-
-    v_beta = v.astype(jnp.float32) * beta_f32
-    k_eg_beta = k_f32 * exp2(g_f32) * beta_f32
     identity = jnp.eye(BT, dtype=jnp.float32)
 
-    combined_b = jnp.concatenate([v_beta, k_eg_beta, identity], axis=-1)
-    combined_x = _solve_unit_lower_triangular(L, combined_b, block_size=intra_block_size)
+    # Adjacent logical chunks are independent in the intra stage.  Loading a
+    # small group into one program amortizes the program/grid overhead while
+    # preserving the exact per-chunk triangular solve and arithmetic order.
+    for i_chunk in range(COMPUTE_BLOCK_CHUNKS):
+        q = q_ref[0, 0, i_chunk]
+        k = k_ref[0, 0, i_chunk]
+        g = g_ref[0, 0, i_chunk]
+        beta = beta_ref[0, 0, i_chunk]
+        v = v_ref[0, 0, i_chunk]
 
-    u = combined_x[:, :value_dim]
-    w = combined_x[:, value_dim : value_dim + head_dim]
-    A_inv = combined_x[:, value_dim + head_dim :]
+        g_f32 = g.astype(jnp.float32)
+        q_f32 = q.astype(jnp.float32)
+        k_f32 = k.astype(jnp.float32)
+        beta_f32 = beta.astype(jnp.float32)
 
-    g_last = g_f32[BT - 1 : BT, :]
-    kg = k_f32 * exp2(g_last - g_f32)
+        # Build Aqk and L directly using exp2(g[i] - g[j]).
+        # For causal (i >= j): g_cumsum[i] <= g_cumsum[j], so g[i]-g[j] <= 0,
+        # giving exp2 in (0, 1].  This avoids the split-normalization overflow
+        # that occurs with exp2(g-gn) when per-step gate changes exceed ~127.
+        # g_diff[i, j, k] = g[i, k] - g[j, k];  shape [BT, BT, K]
+        g_diff = g_f32[:, None, :] - g_f32[None, :, :]
+        # Mask anti-causal entries to -126 before exp2 to prevent overflow;
+        # they will be zeroed by causal_bt / strict_bt anyway.
+        g_diff = jnp.where(causal_bt[:, :, None] > 0, g_diff, -126.0)
+        decay = exp2(jnp.maximum(g_diff, -126.0))  # [BT, BT, K]
 
-    qg = q_f32 * exp2(g_f32) if disable_recompute else jnp.zeros_like(q_f32)
+        # Aqk[i, j] = scale * sum_k q[i,k] * k[j,k] * decay[i,j,k]
+        Aqk = scale * jnp.sum(q_f32[:, None, :] * decay * k_f32[None, :, :], axis=-1)
+        Aqk = (Aqk * causal_bt).astype(dtype)
 
-    u_out_ref[0, 0, 0] = u.astype(u_out_ref.dtype)
-    w_out_ref[0, 0, 0] = w.astype(w_out_ref.dtype)
-    qg_out_ref[0, 0, 0] = qg.astype(qg_out_ref.dtype)
-    kg_out_ref[0, 0, 0] = kg.astype(kg_out_ref.dtype)
-    Aqk_out_ref[0, 0, 0] = Aqk.astype(Aqk_out_ref.dtype)
-    Akk_inv_out_ref[0, 0, 0] = A_inv.astype(Akk_inv_out_ref.dtype)
+        # L[i, j] = beta[i] * sum_k k[i,k] * k[j,k] * decay[i,j,k]   (i > j)
+        L = (
+            jnp.sum(k_f32[:, None, :] * decay * k_f32[None, :, :], axis=-1)
+            * beta_f32
+            * strict_bt
+        )
+
+        v_beta = v.astype(jnp.float32) * beta_f32
+        k_eg_beta = k_f32 * exp2(g_f32) * beta_f32
+        combined_b = jnp.concatenate([v_beta, k_eg_beta, identity], axis=-1)
+        combined_x = _solve_unit_lower_triangular(L, combined_b, block_size=intra_block_size)
+
+        u = combined_x[:, :value_dim]
+        w = combined_x[:, value_dim : value_dim + head_dim]
+        A_inv = combined_x[:, value_dim + head_dim :]
+
+        g_last = g_f32[BT - 1 : BT, :]
+        kg = k_f32 * exp2(g_last - g_f32)
+
+        qg = q_f32 * exp2(g_f32) if disable_recompute else jnp.zeros_like(q_f32)
+
+        u_out_ref[0, 0, i_chunk] = u.astype(u_out_ref.dtype)
+        w_out_ref[0, 0, i_chunk] = w.astype(w_out_ref.dtype)
+        qg_out_ref[0, 0, i_chunk] = qg.astype(qg_out_ref.dtype)
+        kg_out_ref[0, 0, i_chunk] = kg.astype(kg_out_ref.dtype)
+        Aqk_out_ref[0, 0, i_chunk] = Aqk.astype(Aqk_out_ref.dtype)
+        Akk_inv_out_ref[0, 0, i_chunk] = A_inv.astype(Akk_inv_out_ref.dtype)
 
 
 @functools.partial(
@@ -412,6 +419,7 @@ def _kda_fwd_intra_kernel(
         "chunk_size",
         "intra_block_size",
         "scalar_intra_solve",
+        "compute_block_chunks",
         "scale",
         "safe_gate",
         "disable_recompute",
@@ -431,15 +439,18 @@ def kda_fwd_intra(
     safe_gate=True,
     disable_recompute=False,
     scalar_intra_solve=False,
+    compute_block_chunks=1,
 ):
     assert cu_seqlens is not None, "cu_seqlens must be provided for varlen"
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = chunk_size
     solve_block_size = 1 if scalar_intra_solve else intra_block_size
+    COMPUTE_BLOCK_CHUNKS = compute_block_chunks
     assert B == 1, f"varlen requires B=1 (packed layout), got B={B}"
     assert BT >= 16 and BT % 16 == 0
     assert solve_block_size > 0 and BT % solve_block_size == 0
+    assert COMPUTE_BLOCK_CHUNKS >= 1, "compute_block_chunks must be positive"
 
     assert_shape(q, (B, T, H, K), "q")
     assert_shape(k, (B, T, H, K), "k")
@@ -460,7 +471,11 @@ def kda_fwd_intra(
     cum_chunks = jnp.pad(jnp.cumsum(chunks_per_seq), (1, 0))
     total_chunks = cum_chunks[-1]
 
-    NC_max = len(chunk_indices) if chunk_indices is not None else T // BT + N
+    NC_real = len(chunk_indices) if chunk_indices is not None else T // BT + N
+    # Pad only the packed chunk axis.  Invalid tail chunks gather a harmless
+    # duplicate tile and scatter it to the extra sentinel slot, so grouping
+    # remains exact even when a varlen workload has an odd chunk count.
+    NC_max = int(align_up(NC_real, COMPUTE_BLOCK_CHUNKS))
     flat_idx = jnp.arange(NC_max, dtype=jnp.int32)
     is_valid = flat_idx < total_chunks
 
@@ -496,11 +511,12 @@ def kda_fwd_intra(
         _to_bhnd(v_c),
     )
 
-    grid = (B, H, NC_max)
+    grid = (B, H, NC_max // COMPUTE_BLOCK_CHUNKS)
 
     def _make_spec(last_dim):
         return pl.BlockSpec(
-            index_map=lambda i, j, n: (i, j, n, 0, 0), block_shape=(1, 1, 1, BT, last_dim)
+            index_map=lambda i, j, n: (i, j, n, 0, 0),
+            block_shape=(1, 1, COMPUTE_BLOCK_CHUNKS, BT, last_dim),
         )
 
     u_r, w_r, qg_r, kg_r, Aqk_r, Akk_inv_r = pl.pallas_call(
@@ -513,6 +529,7 @@ def kda_fwd_intra(
             disable_recompute=disable_recompute,
             safe_gate=safe_gate,
             intra_block_size=solve_block_size,
+            COMPUTE_BLOCK_CHUNKS=COMPUTE_BLOCK_CHUNKS,
         ),
         interpret=get_interpret(),
         out_shape=[
@@ -875,42 +892,53 @@ def _chunk_kda_fwd_o_gk_pl_kernel(
     o_ref,
     *,
     BT,
+    COMPUTE_BLOCK_CHUNKS,
     scale,
     USE_EXP2,
 ):
-    b_q = q_ref[0, 0]
-    b_g = g_ref[0, 0]
-    b_v = v_ref[0, 0]
-    b_h = h_ref[0, 0]
-    b_A = A_ref[0, 0]
-
-    b_g_f32 = b_g.astype(jnp.float32)
-    b_q_f32 = b_q.astype(jnp.float32)
-    # Compute inter-chunk output: o = scale * q * exp2(g) @ h.
-    # Use g[0] (first position, largest cumsum) as reference to avoid overflow/underflow:
-    #   exp2(g[t]) = exp2(g[t] - g[0]) * exp2(g[0])
-    # g[t] - g[0] ≤ 0 for all t (cumsum is monotonically decreasing), so exp2 is safe.
-    # Factor exp2(g[0]) into h to preserve the matmul structure.
-    _exp_fn = exp2 if USE_EXP2 else exp
-    b_g_ref = b_g_f32[0:1, :]  # [1, K] — reference point
-    b_qg = b_q_f32 * _exp_fn(jnp.maximum(b_g_f32 - b_g_ref, -126.0))
-    # Scale h rows: h_scaled[k, v] = h[k, v] * exp2(g_ref[k])
-    b_h_scaled = b_h.astype(jnp.float32) * _exp_fn(jnp.maximum(b_g_ref[0], -126.0))[:, None]
-    b_o = jnp.dot(
-        b_qg, b_h_scaled, precision=jax.lax.Precision.HIGHEST, preferred_element_type=jnp.float32
-    )
-    b_o *= scale
-
     m_s = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
-    b_A_f32 = jnp.where(m_s, b_A, 0.0).astype(jnp.float32)
-    b_o += jnp.dot(
-        b_A_f32,
-        b_v.astype(jnp.float32),
-        precision=jax.lax.Precision.HIGHEST,
-        preferred_element_type=jnp.float32,
-    )
 
-    o_ref[0, 0] = b_o.astype(o_ref.dtype)
+    # Like the intra stage, output chunks have no cross-chunk dependence once
+    # their boundary states are materialized.  Grouping them changes only the
+    # Pallas load/program tile; each chunk retains its original arithmetic.
+    for i_chunk in range(COMPUTE_BLOCK_CHUNKS):
+        b_q = q_ref[0, i_chunk]
+        b_g = g_ref[0, i_chunk]
+        b_v = v_ref[0, i_chunk]
+        b_h = h_ref[0, i_chunk]
+        b_A = A_ref[0, i_chunk]
+
+        b_g_f32 = b_g.astype(jnp.float32)
+        b_q_f32 = b_q.astype(jnp.float32)
+        # Compute inter-chunk output: o = scale * q * exp2(g) @ h.
+        # Use g[0] (first position, largest cumsum) as reference to avoid overflow/underflow:
+        #   exp2(g[t]) = exp2(g[t] - g[0]) * exp2(g[0])
+        # g[t] - g[0] ≤ 0 for all t (cumsum is monotonically decreasing), so exp2 is safe.
+        # Factor exp2(g[0]) into h to preserve the matmul structure.
+        _exp_fn = exp2 if USE_EXP2 else exp
+        b_g_ref = b_g_f32[0:1, :]  # [1, K] — reference point
+        b_qg = b_q_f32 * _exp_fn(jnp.maximum(b_g_f32 - b_g_ref, -126.0))
+        # Scale h rows: h_scaled[k, v] = h[k, v] * exp2(g_ref[k])
+        b_h_scaled = b_h.astype(jnp.float32) * _exp_fn(
+            jnp.maximum(b_g_ref[0], -126.0)
+        )[:, None]
+        b_o = jnp.dot(
+            b_qg,
+            b_h_scaled,
+            precision=jax.lax.Precision.HIGHEST,
+            preferred_element_type=jnp.float32,
+        )
+        b_o *= scale
+
+        b_A_f32 = jnp.where(m_s, b_A, 0.0).astype(jnp.float32)
+        b_o += jnp.dot(
+            b_A_f32,
+            b_v.astype(jnp.float32),
+            precision=jax.lax.Precision.HIGHEST,
+            preferred_element_type=jnp.float32,
+        )
+
+        o_ref[0, i_chunk] = b_o.astype(o_ref.dtype)
 
 
 def chunk_kda_fwd_o_gk(
@@ -924,15 +952,18 @@ def chunk_kda_fwd_o_gk(
     cu_seqlens,
     chunk_indices=None,
     chunk_size=64,
+    compute_block_chunks=1,
     use_exp2=False,
 ):
     assert cu_seqlens is not None, "This varlen-only module requires cu_seqlens"
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = chunk_size
+    COMPUTE_BLOCK_CHUNKS = compute_block_chunks
     NT_h = h.shape[1]
     assert B == 1
     assert T % BT == 0
+    assert COMPUTE_BLOCK_CHUNKS >= 1, "compute_block_chunks must be positive"
 
     N = cu_seqlens.shape[0] - 1
     T_alloc = T + BT
@@ -946,7 +977,8 @@ def chunk_kda_fwd_o_gk(
     cum_chunks = jnp.pad(jnp.cumsum(chunks_per_seq), (1, 0))
     total_chunks = cum_chunks[-1]
 
-    NC_max = len(chunk_indices) if chunk_indices is not None else T // BT + N
+    NC_real = len(chunk_indices) if chunk_indices is not None else T // BT + N
+    NC_max = int(align_up(NC_real, COMPUTE_BLOCK_CHUNKS))
     flat_idx = jnp.arange(NC_max, dtype=jnp.int32)
     is_valid = flat_idx < total_chunks
 
@@ -975,17 +1007,35 @@ def chunk_kda_fwd_o_gk(
     elif NC_max < NT_h:
         _h = _h[:, :NC_max]
 
-    q_spec = pl.BlockSpec([1, 1, BT, K], index_map=lambda h, nt: (h, nt, 0, 0))
-    g_spec = pl.BlockSpec([1, 1, BT, K], index_map=lambda h, nt: (h, nt, 0, 0))
-    v_spec = pl.BlockSpec([1, 1, BT, V], index_map=lambda h, nt: (h, nt, 0, 0))
-    A_spec = pl.BlockSpec([1, 1, BT, BT], index_map=lambda h, nt: (h, nt, 0, 0))
-    h_spec = pl.BlockSpec([1, 1, K, V], index_map=lambda h, nt: (h, nt, 0, 0))
+    q_spec = pl.BlockSpec(
+        [1, COMPUTE_BLOCK_CHUNKS, BT, K], index_map=lambda h, nt: (h, nt, 0, 0)
+    )
+    g_spec = pl.BlockSpec(
+        [1, COMPUTE_BLOCK_CHUNKS, BT, K], index_map=lambda h, nt: (h, nt, 0, 0)
+    )
+    v_spec = pl.BlockSpec(
+        [1, COMPUTE_BLOCK_CHUNKS, BT, V], index_map=lambda h, nt: (h, nt, 0, 0)
+    )
+    A_spec = pl.BlockSpec(
+        [1, COMPUTE_BLOCK_CHUNKS, BT, BT], index_map=lambda h, nt: (h, nt, 0, 0)
+    )
+    h_spec = pl.BlockSpec(
+        [1, COMPUTE_BLOCK_CHUNKS, K, V], index_map=lambda h, nt: (h, nt, 0, 0)
+    )
     o_shape = jax.ShapeDtypeStruct([H, NC_max, BT, V], v.dtype)
-    o_spec = pl.BlockSpec([1, 1, BT, V], index_map=lambda h, nt: (h, nt, 0, 0))
+    o_spec = pl.BlockSpec(
+        [1, COMPUTE_BLOCK_CHUNKS, BT, V], index_map=lambda h, nt: (h, nt, 0, 0)
+    )
 
     o_r = pl.pallas_call(
-        functools.partial(_chunk_kda_fwd_o_gk_pl_kernel, BT=BT, scale=scale, USE_EXP2=use_exp2),
-        grid=(H, NC_max),
+        functools.partial(
+            _chunk_kda_fwd_o_gk_pl_kernel,
+            BT=BT,
+            COMPUTE_BLOCK_CHUNKS=COMPUTE_BLOCK_CHUNKS,
+            scale=scale,
+            USE_EXP2=use_exp2,
+        ),
+        grid=(H, NC_max // COMPUTE_BLOCK_CHUNKS),
         out_shape=o_shape,
         in_specs=[q_spec, v_spec, g_spec, h_spec, A_spec],
         out_specs=o_spec,
@@ -1143,6 +1193,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "chunk_size",
         "intra_block_size",
         "scalar_intra_solve",
+        "compute_block_chunks",
         "state_block_chunks",
         "state_dim_alignment",
         "safe_gate",
@@ -1179,6 +1230,7 @@ def chunk_kda_fwd(
     transpose_state_layout: bool = False,
     state_block_chunks: int = 1,
     scalar_intra_solve: bool = False,
+    compute_block_chunks: int = 1,
     state_dim_alignment: int = 128,
 ):
     """KDA chunked forward pass for variable-length sequences (varlen).
@@ -1189,6 +1241,8 @@ def chunk_kda_fwd(
       1. Gate activation + chunk-local cumsum
       2. Exact intra-chunk delta-rule triangular solve. ``scalar_intra_solve``
          selects one row per solve block; otherwise ``intra_block_size`` is used.
+         ``compute_block_chunks`` groups independent logical chunks in this
+         stage and the output stage under one physical Pallas program tile.
       3. Inter-chunk hidden state propagation via delta-rule recurrence
          using ``state_dim_alignment`` for its physical K/V state tile.
       4. Output computation (inter-chunk state + intra-chunk attention)
@@ -1207,6 +1261,7 @@ def chunk_kda_fwd(
     assert not return_intermediate_states
     assert not disable_recompute
     assert state_block_chunks >= 1, "state_block_chunks must be positive"
+    assert compute_block_chunks >= 1, "compute_block_chunks must be positive"
 
     assert_shape(q, (B, T, H, K), "q")
     assert_shape(k, (B, T, H, K), "k")
@@ -1286,6 +1341,7 @@ def chunk_kda_fwd(
         chunk_size=BT,
         intra_block_size=intra_block_size,
         scalar_intra_solve=scalar_intra_solve,
+        compute_block_chunks=compute_block_chunks,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,
     )
@@ -1315,6 +1371,7 @@ def chunk_kda_fwd(
         h=h,
         scale=scale,
         chunk_size=BT,
+        compute_block_chunks=compute_block_chunks,
         use_exp2=True,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,

@@ -1,13 +1,13 @@
 {
  "start_ts": 1784173754.8023207,
  "deadline_ts": 1784216954.8023212,
- "round": 5,
+ "round": 6,
  "target_improvement": 0.02,
- "incumbent_geomean": 0.0005254656610605136,
- "incumbent_choices": 4064,
+ "incumbent_geomean": 0.0005144261770009846,
+ "incumbent_choices": 4244,
  "shipped_default_geomean": 0.002029167789791331,
  "base_search_geomean": 0.0008010976398431896,
- "incumbent_commit": "8f6a55cfe13a7bd86a8dd051bbf08a9e1b950f81",
+ "incumbent_commit": "f75541d5e9e1370153399c6a11fb2a5db8394c03",
  "expected_cases": [
   "fused_mlp:s128_h256_i512",
   "fused_mlp:s256_h512_i512",

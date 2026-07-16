@@ -1,0 +1,16 @@
+{
+ "name": "kda_compute_block_chunks",
+ "gap": "[kda:BT,chunk_size] (missing-tuned-table) kda.py constructs tiles but references no tuned table  <python/sgl_jax/srt/kernels/kda/kda.py:0>",
+ "hypothesis": "Grouping adjacent logical chunks in the independent intra-solve and output Pallas programs lets search amortize grid and block-transfer overhead without changing chunk-local arithmetic or the recurrent state update order.",
+ "estimated_relief_pct": 6.5,
+ "search_dimension": "Knob compute_block_chunks=[1,2] (default 1); the KDA runner passes cfg.compute_block_chunks through chunk_kda_fwd into the Stage-2 and Stage-4 launchers, where it multiplies their physical BT block extent and each grouped program executes the original logical chunks independently in order.",
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_compute_block_chunks.json"
+ ],
+ "status": "kept",
+ "delta_pct": 2.94,
+ "measured_geomean_s": 0.0004992820388546243
+}

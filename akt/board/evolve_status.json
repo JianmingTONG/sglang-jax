@@ -1,18 +1,18 @@
 {
  "state": "running",
- "updated_ts": 1784189672.3688118,
+ "updated_ts": 1784193338.962585,
  "init_ts": 1784175936.7558303,
- "round": 6,
- "capability": "kda_state_dim_alignment",
+ "round": 7,
+ "capability": "kda_compute_block_chunks",
  "phase": "HW eval (kernel suite)",
- "started_ts": 1784187664.4902263,
+ "started_ts": 1784190356.2619636,
  "last": {
-  "round": 5,
-  "capability": "gla_full_sequence_chunk",
+  "round": 6,
+  "capability": "kda_state_dim_alignment",
   "decision": "keep",
-  "reason": "new optimum 0.0005 beats incumbent 0.0006 by 5.62% (> 2%)",
-  "geomean_s": 0.0005254656610605136,
-  "delta_pct": -5.62,
-  "finished_ts": 1784187664.4200628
+  "reason": "new optimum 0.0005 beats incumbent 0.0005 by 2.10% (> 2%)",
+  "geomean_s": 0.0005144261770009846,
+  "delta_pct": -2.1,
+  "finished_ts": 1784190356.1944811
  }
 }
