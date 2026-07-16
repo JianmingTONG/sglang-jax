@@ -21,8 +21,13 @@ from flax import nnx
 from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 
+from sgl_jax.srt.configs.kernel_control import (
+    KernelControlContext,
+    KernelControlPolicy,
+)
 from sgl_jax.srt.layers.attention.hybrid_linear_attn_backend import (
     LinearRecurrentAttnBackend,
+    get_current_device_kind,
 )
 from sgl_jax.srt.model_executor.forward_batch_info import ForwardMode
 from sgl_jax.srt.utils.profiling_utils import named_scope
@@ -98,6 +103,7 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
         linear_recurrent_layer_ids: list[int] | None = None,
         num_hidden_layers: int | None = None,
         num_heads: int | None = None,
+        kernel_control: KernelControlPolicy | dict | str | None = None,
     ):
         """Construct a LightningAttnBackend.
 
@@ -111,9 +117,11 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
                 ``linear_recurrent_layer_ids`` is provided.
             num_heads: Per-layer head count, used to size the slope vector.
                 Required iff ``linear_recurrent_layer_ids`` is provided.
+            kernel_control: Programmer-supplied shape-aware low-level controls.
         """
         super().__init__(mesh=mesh)
         self.chunk_size = chunk_size
+        self.kernel_control = KernelControlPolicy.from_config(kernel_control)
         if (
             linear_recurrent_layer_ids is not None
             and num_hidden_layers is not None
@@ -254,6 +262,19 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
         def _prefill_fn(q_l, k_l, v_l, gamma, buf_l, idx_l, has_l, cu_l):
             h0 = buf_l[idx_l]
             h0 = jnp.where(has_l[:, None, None, None], h0, 0.0)
+            controls = self.kernel_control.resolve_gla(
+                KernelControlContext(
+                    sequence_length=q_l.shape[0],
+                    num_sequences=cu_l.shape[0] - 1,
+                    num_heads=q_l.shape[-2],
+                    head_dim=q_l.shape[-1],
+                    value_dim=v_l.shape[-1],
+                    has_initial_state=h0 is not None,
+                    output_final_state=True,
+                    device_kind=get_current_device_kind(),
+                ),
+                chunk_size=chunk_size,
+            )
 
             output, ht = simple_gla_fwd(
                 q_l[None],
@@ -264,7 +285,11 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
                 cu_seqlens_dev=cu_l,
                 scale=None,
                 use_ht=True,
-                chunk_size=chunk_size,
+                chunk_size=controls.chunk_size,
+                compact_alignment=controls.compact_alignment,
+                single_chunk_state_elision=controls.single_chunk_state_elision,
+                zero_state_output_elision=controls.zero_state_output_elision,
+                output_value_tiles=controls.output_value_tiles,
             )
 
             # Skip writing back to dummy slot 0.

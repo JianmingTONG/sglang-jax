@@ -1,45 +1,21 @@
-"""akt CAPABILITY-ELEVATION loop — the deterministic scaffold around this Claude
-Code session, whose job is to GROW the programmer's design space, not tune it.
+"""AKT capability-elevation loop for the sglang-jax serving stack.
 
-WHY THIS EXISTS (vs the retired parameter-sweep loop)
-  The parameter-sweep loop (tag: akt-paramsweep-v1) toggles flags/params that
-  already exist and converged vn_go to its *executable* optimum. But the campaign
-  diagram keeps showing the same bottleneck (FC giant-step rotations) because the
-  thing that would relieve it is a low-level flexibility the LOWERING can execute
-  yet the top-level programming model cannot NAME — a flexibility gap. Tuning
-  can't reach it; only ELEVATING it into the design space can.
+The loop grows programmer control over performance-critical Pallas/Mosaic
+capabilities. A capability is not merely another benchmark parameter: it must form
+an end-to-end path from a low-level kernel argument, through a production
+layer/backend, into the stable ``KernelControlPolicy`` API, and into an AKT runner
+dimension used to measure its value.
 
-  This loop drives exactly that. Each round the agent:
+Each round:
+  1. selects one source-derived flexibility gap;
+  2. implements and exposes it through the full production call path;
+  3. exhaustively searches the enlarged per-case space;
+  4. requires programmer-exposure evidence and functional correctness; and
+  5. keeps the change only when it beats the incumbent by the configured target.
 
-    (1) ESTIMATE  — read the QUERY (bottleneck + ranked flexibility-gap frontier)
-                    and pick ONE gap whose elevation should relieve the bottleneck,
-                    with a quantified estimate of the relief.
-    (2) IMPLEMENT — build the WHOLE STACK that exposes this gap as a new design
-                    choice (backend / FFI / evaluator / optimizer / nn as needed),
-                    and REGISTER its new dimension in the vn_go layout enumerator
-                    (taxonomy/flags) so the search can pick it.
-    (3) SEARCH    — the loop brute-forces the ENLARGED space to the new global
-                    optimum (DP-accelerated; the exact==B&B EXACTNESS REPORT proves
-                    the new dimension was searched, not sampled).
-    (4) GATE      — real-HW evaluation of the 3 small MNIST models; KEEP the whole
-                    add-on IFF the new optimum beats the incumbent by > target
-                    (default 2%) AND stays correct; else RESTORE (revert every file
-                    the capability touched, back to the incumbent commit).
-
-  The script owns (3) and (4) and the keep/restore bookkeeping. The agent owns the
-  intelligence of (1) and (2) and the search-dimension wiring inside (2). A
-  capability is described by a small MANIFEST the agent writes
-  (akt/core/evolve/capabilities/<name>.json) so the loop can search it, gate it,
-  and cleanly revert it.
-
-FROZEN (the capability may touch anything EXCEPT these — they define the
-measurement, so letting a capability edit them would let it game its own gate):
-  - akt/benchmark/**      (adapter, suites, gates/eval.py + its ORION reference
-                           MAEs/latencies — the frozen HW gate)
-  - akt/core/evolve/loop.py  (this file)
-Everything else is fair game — orion/backend/** (Go/FFI), orion/core/packing.py,
-orion/core/vn_go/**, orion/nn/** — because "implement the whole stack" is the point.
-(Contrast the param-sweep loop, which froze backend/packing.)
+The frozen harness defines the workload, references, measurement, and exposure
+contract. Production kernels, programmer controls, serving consumers, and editable
+runners are the implementation surface.
 
 USAGE — two modes, same gate
   python akt/core/evolve/loop.py init   [--hours H] [--target 0.02] [--runs 3]
@@ -65,6 +41,13 @@ HIST = ROOT / "akt/optimization_history/evolve_history.jsonl"
 CAPS = Path(__file__).resolve().parent / "capabilities"
 EVOLVE_JSON = ROOT / "akt/board/evolve.json"
 STATUS = ROOT / "akt/board/evolve_status.json"   # live heartbeat -> board WIP time bar
+BOOKKEEPING_PATHS = frozenset(
+    {
+        "akt/optimization_history/evolve_state.json",
+        "akt/optimization_history/evolve_history.jsonl",
+        "akt/board/evolve_status.json",
+    }
+)
 # All harness subprocesses run under the project venv with the kernel import path
 # (python/ for sgl_jax, repo root for akt) and Pallas interpret so the TPU kernels
 # that support it run on this non-TPU box.
@@ -72,9 +55,40 @@ PY = os.environ.get("AKT_PY", ".venv/bin/python")
 PYENV = f'PALLAS_INTERPRET=1 PYTHONPATH="python:." {PY}'
 ADAPTER = f"{PYENV} akt/benchmark/adapter.py"
 EVAL = f"{PYENV} akt/benchmark/gates/eval.py"
+OBJECTIVE_SCOPE = "stateful-serving-deployable-v1"
 
-# The capability may edit anything except the measurement harness + this loop.
-FROZEN = ("akt/benchmark/", "akt/core/evolve/loop.py")
+# The capability may edit production kernels and runners, but never the gate,
+# workload/reference contracts, or maintainer-authored native tests.
+FROZEN = (
+    "akt/benchmark/",
+    "akt/board/build.py",
+    "akt/board/index.html",
+    "akt/board/chart.umd.min.js",
+    "akt/board/test_build.py",
+    "akt/core/analysis/flexgraph_extract.py",
+    "akt/core/evolve/loop.py",
+    "akt/core/evolve/exposure.py",
+    "python/sgl_jax/test/",
+)
+
+# Some TPU-only references currently share a source file with the editable kernel.
+# Freeze only their reference AST (plus imports) so the oracle can tune the kernel
+# without being able to move the correctness goalpost in the same file.
+FROZEN_REFERENCE_SYMBOLS = {
+    "python/sgl_jax/srt/kernels/fused_moe/v1/kernel.py": (
+        "activation_fn",
+        "ref_moe",
+    ),
+    "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py": (
+        "swigluoai",
+        "activation_fn",
+        "ref_moe",
+    ),
+    "python/sgl_jax/srt/kernels/ragged_paged_attention/ragged_paged_attention_v3.py": (
+        "DEFAULT_MASK_VALUE",
+        "ref_ragged_paged_attention",
+    ),
+}
 
 # ---- Oracle seam: the loop DRIVES an LLM oracle to implement each round -------
 # `run` hands the QUERY to an oracle, which edits the repo + writes a manifest; the
@@ -96,29 +110,34 @@ round, then STOP — do NOT run the evolve loop or `submit`; the harness gates y
 {query}
 
 DOMAIN: each kernel is wrapped as a KernelCase (akt/core/runners/<kernel>.py) with a
-DesignSpace of tunable tiling/config Knobs. The loop's SEARCH autotunes that space
-(enumerate -> check-correct-vs-reference -> time -> argmin). A CAPABILITY elevates a NEW
-low-level flexibility that the Mosaic/Pallas lowering can execute but the kernel's config
-schema does not currently NAME, into a new Knob (or a new value range) the search can pick.
+DesignSpace of tunable tiling/config Knobs. SEARCH enumerates, checks, times, and selects
+that space. A CAPABILITY must expose a NEW low-level flexibility through all four levels:
+kernel implementation -> production layer/backend consumer -> stable programmer-facing
+KernelControlPolicy API -> runner Knob. Widening values of an existing control is tuning,
+not capability elevation, and does not qualify as a round.
 
 YOUR TASK:
  1. From the FRONTIER above pick ONE flexibility gap whose elevation can beat the incumbent \
 by >{target_pct:.0f}% on the kernel suite. State a one-line relief estimate first.
- 2. IMPLEMENT it end-to-end: expose the knob in the kernel (python/sgl_jax/srt/kernels/**) \
-so the tiling/pipeline/fusion/dtype choice is actually plumbed through, then REGISTER its \
-new Knob (or widened value set) in the kernel's runner DesignSpace so the search enumerates \
-it. Keep the run() mapping in lock-step with what the kernel executes (cost == execution).
+ 2. IMPLEMENT it end-to-end: expose it in the kernel, register a validated control under \
+python/sgl_jax/srt/configs/kernel_control.py, and forward that control from a production \
+layer/backend (python/sgl_jax/srt/layers/** or model_executor/**) to the kernel. Then add \
+a NEW runner Knob with programmer_control="<family>.<key>". Keep run() in lock-step with \
+what the kernel executes (cost == execution).
  3. Verify correctness: the searched-best config must still match the pure-JAX reference \
 within the case's atol/rtol (PALLAS_INTERPRET=1 PYTHONPATH=python:. .venv/bin/python \
 akt/benchmark/gates/eval.py --suite fast must stay all_correct=True). Prefer exact/structural \
 retiling over lossy approximations — a config that is fast but wrong is rejected.
  4. Write akt/core/evolve/capabilities/<name>.json (schema: that dir's README) with gap, \
-hypothesis, estimated_relief_pct, search_dimension, audit_case, and files_touched listing \
-EVERY file you changed or created. Set "status":"pending".
+hypothesis, estimated_relief_pct, search_dimension, audit_case, programmer_controls, and \
+files_touched listing EVERY file you changed or created. Set "status":"pending".
 
 HARD CONSTRAINTS:
- - NEVER edit anything under akt/benchmark/ or akt/core/evolve/loop.py (FROZEN — the \
-measurement/harness; touching them VOIDS the round and your work is reverted).
+ - NEVER edit anything under akt/benchmark/, python/sgl_jax/test/, or the frozen \
+flexgraph extractor, akt/core/evolve/loop.py, or exposure.py (measurement/tests/gates). Pure-JAX \
+reference symbols in shared kernel files are fingerprinted too. Changing any VOIDS the round.
+ - A runner-only knob, a new default, or a wider candidate list is NOT capability elevation. \
+The programmer-exposure gate requires a registered API control and production consumer.
  - Do NOT git commit; leave changes in the working tree + the manifest.
  - Your FINAL line must be exactly:  CAPABILITY: <name>
 """
@@ -199,7 +218,7 @@ def frontier_block():
     picks the one whose elevation best matches the current bottleneck."""
     d = _adapter_json("gaps", "GAPS")
     if not d:
-        return "== FRONTIER unavailable (no gaps subcommand / flexgap.json missing)"
+        return "== FRONTIER unavailable (no gaps subcommand / generated graph missing)"
     if d.get("missing"):
         return f"== FRONTIER: {d['missing']}"
     lines = d.get("lines", [])
@@ -223,24 +242,48 @@ def _cap_summaries():
 
 def query(st):
     unit = st.get("objective_unit", "s")
-    cond = ("CONTINUE" if time.time() < st["deadline_ts"] else "FINISH(DEADLINE)")
+    scope_ok = st.get("objective_scope") == OBJECTIVE_SCOPE
+    cond = (
+        "REBASELINE_REQUIRED"
+        if not scope_ok
+        else "CONTINUE" if time.time() < st["deadline_ts"] else "FINISH(DEADLINE)"
+    )
     kept, rejected = _cap_summaries()
-    kepts = "; ".join(f"{m['name']}(+{m.get('delta_pct', '?')}%)" for m in kept) or "(none yet)"
-    rejs = "; ".join(f"{m['name']}[{m.get('reject_reason', 'rejected')[:32]}]"
-                     for m in rejected) or "(none)"
+    # Scope-less historical state and scope-less manifests must not match each other:
+    # evidence is current only when it explicitly names the required objective.
+    evidence_scope = OBJECTIVE_SCOPE
+    active_kept = [m for m in kept if m.get("objective_scope") == evidence_scope]
+    legacy_kept = [m for m in kept if m.get("objective_scope") != evidence_scope]
+    active_rejected = [m for m in rejected if m.get("objective_scope") == evidence_scope]
+    kepts = "; ".join(
+        f"{m['name']}(+{m.get('delta_pct', '?')}%)" for m in active_kept
+    ) or "(none yet)"
+    legacies = "; ".join(m["name"] for m in legacy_kept) or "(none)"
+    rejs = "; ".join(
+        f"{m['name']}[{m.get('reject_reason', 'rejected')[:32]}]"
+        for m in active_rejected
+    ) or "(none)"
     tgt = st["target_improvement"] * 100
+    scope_line = f"   objective_scope={st.get('objective_scope', 'legacy-output-only-v0')}"
+    scope_line += (
+        f" (required={OBJECTIVE_SCOPE}; run `loop.py rebaseline`)\n"
+        if not scope_ok
+        else "\n"
+    )
     return (
         f"== CAPABILITY QUERY round={st['round'] + 1} -> {cond}\n"
+        f"{scope_line}"
         f"   incumbent {st['objective_name']}={st['incumbent_geomean']:.4f}{unit} "
         f"(choices={st['incumbent_choices']}); KEEP bar = beat it by > {tgt:.0f}% on the kernel suite\n"
-        f"   KEPT capabilities: {kepts}\n"
-        f"   REJECTED (do not re-attempt unmodified): {rejs}\n"
+        f"   KEPT under active objective: {kepts}\n"
+        f"   LEGACY kept (code is in baseline; old deltas are not evidence): {legacies}\n"
+        f"   REJECTED under active objective (do not re-attempt unmodified): {rejs}\n"
         f"{bottleneck_block()}\n"
         f"{frontier_block()}\n"
         f"== DECIDE ONE gap to elevate. Then, off-loop:\n"
-        f"   (1) ESTIMATE the bottleneck relief; (2) IMPLEMENT it end-to-end (plumb the\n"
-        f"   knob through python/sgl_jax/srt/kernels/**) AND register its Knob in the\n"
-        f"   kernel's runner DesignSpace (akt/core/runners/) so the search picks it;\n"
+        f"   (1) ESTIMATE the bottleneck relief; (2) IMPLEMENT it end-to-end across\n"
+        f"   kernel -> production consumer -> KernelControlPolicy programmer API ->\n"
+        f"   runner Knob(programmer_control='<family>.<key>') so the search picks it;\n"
         f"   write the manifest akt/core/evolve/capabilities/<name>.json (schema in README);\n"
         f"   then: python akt/core/evolve/loop.py submit --capability <name>")
 
@@ -249,8 +292,8 @@ def query(st):
 
 def hw_eval(runs, suite="full"):
     """Real-HW evaluation of the suite through the FROZEN gate (eval.py). Returns
-    (all_correct, geomean_s, per_case, results, n_choices) — results carry per-case
-    search_note (the enlarged-search evidence produced during compile)."""
+    correctness, geomean, per-case timings, full results, choice count, default
+    geomean, and objective scope. Results carry per-case search evidence."""
     out_path = ROOT / "akt/optimization_history/.evolve_eval.json"
     # Delete any prior-round result FIRST: if this eval crashes before writing, the
     # missing file is detected below instead of the stale previous result being read
@@ -259,12 +302,13 @@ def hw_eval(runs, suite="full"):
     rc, log = sh(f"{EVAL} --suite {suite} --runs {runs} --out {out_path}", timeout=3600)
     if not out_path.exists():
         print(f"[evolve] eval produced no output (rc={rc}):\n{log[-800:]}")
-        return False, float("nan"), {}, [], None, float("nan")
+        return False, float("nan"), {}, [], None, float("nan"), None
     s = json.loads(out_path.read_text())
     per = {r["case"]: r.get("forward_s") for r in s.get("results", [])}
     return (bool(s.get("all_correct")), float(s.get("geomean_s", float("nan"))),
             per, s.get("results", []), s.get("n_choices"),
-            float(s.get("geomean_default_s", float("nan"))))
+            float(s.get("geomean_default_s", float("nan"))),
+            s.get("objective_scope"))
 
 
 def search_audit(case, exact=False):
@@ -277,13 +321,24 @@ def search_audit(case, exact=False):
     return rc, tail
 
 
-def load_manifest(name):
+def load_manifest(name, require_pending=False):
     p = CAPS / f"{name}.json"
     if not p.exists():
         raise FileNotFoundError(
             f"no manifest at {p.relative_to(ROOT)} — write it first "
             f"(schema: akt/core/evolve/capabilities/README.md)")
     m = json.loads(p.read_text())
+    if m.get("name") != name or (require_pending and m.get("status") != "pending"):
+        raise ValueError(
+            f"manifest identity/status mismatch: name={m.get('name')!r}, "
+            f"status={m.get('status')!r}"
+        )
+    if not isinstance(m.get("files_touched"), list) or not m["files_touched"]:
+        raise ValueError("manifest files_touched must be a non-empty list")
+    for rel in m["files_touched"]:
+        path = Path(rel)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"manifest path must stay repo-relative: {rel!r}")
     bad = [f for f in m.get("files_touched", [])
            if any(f.startswith(x) or x in f for x in FROZEN)]
     if bad:
@@ -292,12 +347,28 @@ def load_manifest(name):
     return m, p
 
 
+def validate_manifest_scope(m, changed_before=()):
+    """Require the manifest to name every non-bookkeeping oracle edit, exactly."""
+    before = set(changed_before)
+    actual = {
+        path
+        for path in _worktree_changed()
+        if path not in before
+        and not _is_bookkeeping(path)
+    }
+    declared = set(m["files_touched"])
+    undeclared = sorted(actual - declared)
+    untouched = sorted(declared - actual)
+    if undeclared or untouched:
+        raise ValueError(
+            f"files_touched mismatch: undeclared={undeclared}, unchanged={untouched}"
+        )
+
+
 def restore_capability(m, incumbent_commit):
     """Revert ONLY the files the capability touched back to the incumbent commit.
     A file tracked at the incumbent is checked out; a NEW file the capability
-    created (untracked at incumbent) is removed. The gitignored Lattigo .so is
-    never rm'd here — if the capability rebuilt the backend, revert the .go source
-    then REBUILD the .so back to the incumbent (build_lattigo)."""
+    created (untracked at incumbent) is removed."""
     files = list(m.get("files_touched", []))
     for f in files:
         rc, _ = sh(f"git cat-file -e {incumbent_commit}:{f}", timeout=30)
@@ -316,20 +387,50 @@ def write_board():
     sh("python3 akt/board/build.py", timeout=300)
 
 
+def refresh_frontier():
+    """Re-mine the committed serving stack after a successful elevation.
+
+    This closes the feedback loop: the next oracle sees programmer-exposed controls
+    removed from the open frontier without requiring a manual extractor run.
+    """
+    rc, output = sh(
+        f"{PYENV} akt/core/analysis/flexgraph_extract.py",
+        timeout=300,
+    )
+    if rc:
+        print(f"[evolve] WARNING: flexibility frontier refresh failed:\n{output[-800:]}")
+        return False
+    print("[evolve] refreshed programmer-exposure frontier")
+    return True
+
+
 # ---------------------------------------------------------------- commands
 
 def cmd_init(args):
-    correct, geo, _per, _res, n_choices, geo_def = hw_eval(args.runs)
-    if not correct or geo != geo:
-        print(f"[evolve] init ABORTED: incumbent gate failed (correct={correct}, geo={geo}).")
+    dirty = _implementation_changes()
+    if dirty:
+        print("[evolve] init needs a clean implementation tree.")
+        print(f"         commit or stash these first ({len(dirty)}): {dirty[:8]}"
+              + (" ..." if len(dirty) > 8 else ""))
+        return
+    correct, geo, _per, _res, n_choices, geo_def, objective_scope = hw_eval(args.runs)
+    truncated = [r.get("case") for r in _res if r.get("truncated")]
+    if not correct or geo != geo or objective_scope != OBJECTIVE_SCOPE or truncated:
+        print(
+            "[evolve] init ABORTED: incumbent gate failed "
+            f"(correct={correct}, geo={geo}, truncated={truncated})."
+        )
         return
     # Snapshot the FULL set of suite cases the incumbent eval produced. Every later round
     # must reproduce this set; a capability that breaks a runner import (silently dropping
     # a kernel from the eval, and thus from the geomean) then fails the missing-case guard.
     expected_cases = sorted(r.get("case") for r in _res if r.get("case"))
+    expected_runnable_cases = sorted(
+        r.get("case") for r in _res if r.get("case") and r.get("correct") is True
+    )
     CAPS.mkdir(exist_ok=True)
-    # Incumbent = the BEST performance achievable with the EXISTING knobs (the
-    # base-space autotuning optimum), NOT the shipped default (a suboptimal config).
+    # Incumbent = the BEST performance achievable with DEPLOYABLE knobs (the
+    # deployment-space autotuning optimum), NOT the shipped default (a suboptimal config).
     # A capability must therefore beat the best you can already do by tuning the
     # current design space — so a KEEP reflects a genuinely NEW flexibility, not mere
     # autotuning of knobs the kernel already exposes. The shipped default is kept only
@@ -340,10 +441,14 @@ def cmd_init(args):
           "incumbent_geomean": incumbent, "incumbent_choices": n_choices,
           "shipped_default_geomean": geo_def, "base_search_geomean": geo,
           "incumbent_commit": git_head(), "expected_cases": expected_cases,
-          "objective_name": "geomean_s", "objective_unit": "s"}
+          "expected_runnable_cases": expected_runnable_cases,
+          "objective_name": "geomean_s", "objective_unit": "s",
+          "objective_scope": objective_scope,
+          "objective_baseline_geomean": geo,
+          "objective_baseline_round": 0}
     save(st)
     write_status("idle", round=0, reset=True)   # start a fresh campaign clock
-    print(f"[evolve] initialized: incumbent (best of EXISTING knobs) geomean={incumbent*1e3:.2f}ms "
+    print(f"[evolve] initialized: incumbent (best DEPLOYABLE config) geomean={incumbent*1e3:.2f}ms "
           f"| shipped default={geo_def*1e3:.2f}ms (context only) | choices={n_choices} "
           f"commit={str(st['incumbent_commit'])[:8]}, KEEP bar > {args.target*100:.0f}%.")
     print(query(st))
@@ -353,30 +458,90 @@ def cmd_status(_):
     print(query(load()))
 
 
+def cmd_rebaseline(args):
+    """Migrate an existing campaign to the current deployment objective."""
+    dirty = _implementation_changes()
+    if dirty:
+        print(
+            "[evolve] rebaseline needs a CLEAN code tree so rollback points at the "
+            f"measured revision; commit or stash these first ({len(dirty)}): {dirty[:8]}"
+        )
+        return
+    st = load()
+    correct, geo, _per, results, n_choices, geo_def, objective_scope = hw_eval(args.runs)
+    truncated = [r.get("case") for r in results if r.get("truncated")]
+    if not correct or geo != geo or objective_scope != OBJECTIVE_SCOPE or truncated:
+        print(
+            "[evolve] rebaseline ABORTED: deployment gate failed "
+            f"(correct={correct}, geo={geo}, scope={objective_scope!r}, "
+            f"truncated={truncated})."
+        )
+        return
+    expected_cases = sorted(r.get("case") for r in results if r.get("case"))
+    expected_runnable = sorted(
+        r.get("case")
+        for r in results
+        if r.get("case") and r.get("correct") is True
+    )
+    st.update(
+        incumbent_geomean=geo,
+        incumbent_choices=n_choices,
+        shipped_default_geomean=geo_def,
+        expected_cases=expected_cases,
+        expected_runnable_cases=expected_runnable,
+        objective_scope=objective_scope,
+        objective_baseline_geomean=geo,
+        objective_baseline_round=st.get("round", 0),
+        deadline_ts=time.time() + args.hours * 3600,
+        incumbent_commit=git_head(),
+    )
+    save(st)
+    write_status("idle", round=st.get("round", 0))
+    write_board()
+    print(
+        f"[evolve] rebaselined round {st.get('round', 0)} to {objective_scope}: "
+        f"geomean={geo * 1e3:.2f}ms, choices={n_choices}. "
+        "Earlier measurements remain visible as legacy output-only evidence."
+    )
+
+
 def gate_capability(st, m, mpath, args):
-    """Steps (3)+(4): DP-search the enlarged space (optional audit), real-HW gate the
-    3 MNIST models, KEEP iff >target else RESTORE. Advances the round; used by both the
-    manual `submit` and the autonomous `run`. Returns the decision string."""
+    """Search, programmer-exposure, correctness, and performance gates for one round."""
     st["round"] += 1
     rnd = st["round"]
     incumbent = st["incumbent_geomean"]
     write_status("running", round=rnd, capability=m["name"], phase="starting")
     print(f"== ROUND {rnd} SUBMIT capability='{m['name']}' gap='{m.get('gap','?')[:60]}'")
 
-    # (3) enlarged-space search evidence for the target model (optional heavy audit)
+    # (3) enlarged-space enumeration evidence for the affected kernel family
     audit_tail = ""
     if args.audit and m.get("audit_case"):
         write_status("running", round=rnd, capability=m["name"], phase="enlarged-search audit")
         _rc, audit_tail = search_audit(m["audit_case"], exact=args.audit_exact)
-        print("== ENLARGED-SEARCH EXACTNESS (target model):")
+        print("== ENLARGED-SPACE ENUMERATION (affected kernel family):")
         print("\n".join("   " + l for l in audit_tail.splitlines()))
 
     # (4) HW gate on the kernel suite (interpret proxy here; TPU when attached)
     write_status("running", round=rnd, capability=m["name"], phase="HW eval (kernel suite)")
-    correct, geo, per, results, n_choices, _geo_def = hw_eval(args.runs)
+    correct, geo, per, results, n_choices, _geo_def, objective_scope = hw_eval(args.runs)
     notes = {r["case"]: (r.get("search_note") or "")[:100] for r in results}
     tgt = st["target_improvement"]
     delta_pct = round((geo / incumbent - 1) * 100, 2) if geo == geo else None
+
+    # --- PROGRAMMER-EXPOSURE GUARD ---------------------------------------------
+    # A benchmark runner dimension is not itself a capability elevation. Require
+    # the same control to exist in the stable API registry and to be forwarded by
+    # a production layer/backend into the low-level kernel argument.
+    write_status(
+        "running",
+        round=rnd,
+        capability=m["name"],
+        phase="programmer exposure gate",
+    )
+    from akt.core.evolve.exposure import validate_programmer_exposure
+
+    exposure = validate_programmer_exposure(m, results, ROOT)
+    exposure_ok = bool(exposure.get("ok"))
 
     # --- FUNCTIONAL-CORRECTNESS GUARD ------------------------------------------
     # eval.py's per-case `correct` is allclose(searched-best output, pure-JAX
@@ -403,11 +568,45 @@ def gate_capability(st, m, mpath, args):
     # (and from the geomean) — that must fail, not pass on a smaller suite.
     present = {r.get("case") for r in results if r.get("case")}
     missing = sorted(c for c in (st.get("expected_cases") or []) if c not in present)
+    # A capability must not turn a baseline-runnable case into "tpu-deferred"
+    # and thereby remove its latency from the objective. Migrate old campaigns
+    # from their last committed KEEP evidence before evaluating this guard.
+    expected_runnable = st.get("expected_runnable_cases")
+    if expected_runnable is None and HIST.exists():
+        for line in reversed(HIST.read_text().splitlines()):
+            try:
+                prior = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if prior.get("decision") == "keep" and prior.get("accuracy"):
+                expected_runnable = sorted(
+                    case_id
+                    for case_id, evidence in prior["accuracy"].items()
+                    if evidence.get("correct") is True
+                )
+                st["expected_runnable_cases"] = expected_runnable
+                save(st)
+                break
+    expected_runnable = set(expected_runnable or [])
+    current_runnable = {r.get("case") for r in results if r.get("correct") is True}
+    lost_runnable = sorted(expected_runnable - current_runnable)
+    added_runnable = sorted(current_runnable - expected_runnable)
+    runnable_set_unknown = not expected_runnable
     # TRUNCATION GUARD: a search that hit the enumeration cap did NOT prove its optimum,
     # so a KEEP built on it is unsound.
     truncated = [r.get("case") for r in results if r.get("truncated")]
-    guard_ok = (bool(correct) and not failing and not missing and not truncated
-                and geo == geo)
+    guard_ok = (
+        bool(correct)
+        and not failing
+        and not missing
+        and not lost_runnable
+        and not added_runnable
+        and not runnable_set_unknown
+        and not truncated
+        and exposure_ok
+        and objective_scope == st.get("objective_scope") == OBJECTIVE_SCOPE
+        and geo == geo
+    )
 
     if not guard_ok:
         decision = "reject"
@@ -416,9 +615,29 @@ def gate_capability(st, m, mpath, args):
         elif missing:
             reason = ("MISSING-CASE GUARD FAILED: eval dropped " + ", ".join(missing)
                       + " (a runner likely failed to import) — geomean is over a partial suite")
+        elif runnable_set_unknown:
+            reason = "RUNNABLE-SET GUARD FAILED: no trusted incumbent runnable-case set"
+        elif lost_runnable or added_runnable:
+            reason = (
+                "RUNNABLE-SET GUARD FAILED: lost="
+                + repr(lost_runnable)
+                + " added="
+                + repr(added_runnable)
+                + " — objective case set changed"
+            )
         elif truncated:
             reason = ("SEARCH-TRUNCATION GUARD FAILED: search hit the cap for "
                       + ", ".join(truncated) + " — optimum not proven within the space")
+        elif not exposure_ok:
+            reason = (
+                "PROGRAMMER-EXPOSURE GUARD FAILED: "
+                + "; ".join(exposure.get("errors") or ["missing exposure evidence"])
+            )
+        elif objective_scope != st.get("objective_scope") or objective_scope != OBJECTIVE_SCOPE:
+            reason = (
+                "OBJECTIVE-SCOPE GUARD FAILED: state="
+                f"{st.get('objective_scope')!r}, eval={objective_scope!r}; run rebaseline"
+            )
         else:
             reason = "correctness gate FAILED (eval error / NaN)"
     elif geo < incumbent * (1 - tgt):
@@ -435,6 +654,10 @@ def gate_capability(st, m, mpath, args):
            "incumbent_geomean": incumbent, "delta_pct": delta_pct,
            "n_verified": n_verified, "n_deferred": n_deferred,
            "missing_cases": missing, "truncated_cases": truncated,
+           "lost_runnable_cases": lost_runnable,
+           "added_runnable_cases": added_runnable,
+           "programmer_exposure": exposure,
+           "objective_scope": objective_scope,
            "target_pct": tgt * 100, "decision": decision, "reason": reason,
            "per_case": per, "search_notes": notes, "audit": bool(args.audit),
            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -443,22 +666,27 @@ def gate_capability(st, m, mpath, args):
     if decision == "keep":
         m["status"] = "kept"; m["delta_pct"] = -delta_pct if delta_pct else None
         m["measured_geomean_s"] = geo
+        m["objective_scope"] = objective_scope
         mpath.write_text(json.dumps(m, indent=1))
         st["incumbent_geomean"] = geo
         st["incumbent_choices"] = n_choices
+        save(st)
+        refresh_frontier()
         write_board()
         sh("git add -A", timeout=60)
         msg = f"akt evolve R{rnd} KEEP capability={m['name']}: {reason[:60]}"
         sh(f"git commit -q -m {json.dumps(msg)}", timeout=120)
         st["incumbent_commit"] = git_head()
         save(st)
+        write_board()
     else:
         m["status"] = "rejected"; m["reject_reason"] = reason
+        m["objective_scope"] = objective_scope
         # revert code before recording the rejection in the manifest/board
         restore_capability(m, st["incumbent_commit"])
         mpath.write_text(json.dumps(m, indent=1))   # keep the rejected record
-        write_board()
         save(st)
+        write_board()
 
     write_status("idle", round=rnd, capability=m["name"], last={
         "round": rnd, "capability": m["name"], "decision": decision, "reason": reason,
@@ -474,7 +702,10 @@ def gate_capability(st, m, mpath, args):
 def cmd_submit(args):
     """Manual round: the capability is already implemented in the tree + its manifest."""
     st = load()
-    m, mpath = load_manifest(args.capability)
+    if st.get("objective_scope") != OBJECTIVE_SCOPE:
+        raise RuntimeError("campaign objective is stale; run loop.py rebaseline first")
+    m, mpath = load_manifest(args.capability, require_pending=True)
+    validate_manifest_scope(m)
     gate_capability(st, m, mpath, args)
 
 
@@ -511,43 +742,109 @@ def _worktree_changed():
     return paths
 
 
+def _is_bookkeeping(path):
+    return path in BOOKKEEPING_PATHS
+
+
+def _implementation_changes():
+    return [path for path in _worktree_changed() if not _is_bookkeeping(path)]
+
+
 def touched_frozen():
     return [p for p in _worktree_changed()
             if any(p.startswith(x) or x in p for x in FROZEN)]
 
 
 def _frozen_fingerprint():
-    """md5 of every FROZEN file — snapshot before/after the oracle so the guard
-    catches ONLY the oracle's edits to the measurement harness, independent of any
-    other uncommitted changes in the tree."""
+    """Hash frozen files and shared-file reference AST before/after the oracle."""
+    import ast
     import hashlib
+
     fp = {}
     files = []
+
+    def fingerprintable(path):
+        return (
+            "__pycache__" not in path.parts
+            and ".pytest_cache" not in path.parts
+            and path.suffix not in {".pyc", ".pyo"}
+        )
+
     for x in FROZEN:
         p = ROOT / x
         if p.is_dir():
-            files += [q for q in p.rglob("*") if q.is_file()]
+            files += [q for q in p.rglob("*") if q.is_file() and fingerprintable(q)]
         elif p.is_file():
             files.append(p)
+    # The loop owns these mutable records, but the oracle must not rewrite them
+    # while it is running between this function's pre/post snapshots.
+    files += [p for p in (STATE, HIST) if p.is_file()]
     for q in files:
         try:
-            fp[str(q)] = hashlib.md5(q.read_bytes()).hexdigest()
+            fp[str(q)] = hashlib.sha256(q.read_bytes()).hexdigest()
         except Exception:
             pass
+    for rel, names in FROZEN_REFERENCE_SYMBOLS.items():
+        q = ROOT / rel
+        key = f"{q}::frozen-reference-ast"
+        try:
+            tree = ast.parse(q.read_text())
+
+            def import_names(node):
+                if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                    return set()
+                return {
+                    alias.asname or alias.name.split(".")[0]
+                    for alias in node.names
+                }
+
+            imports = [
+                node
+                for node in tree.body
+                if import_names(node).intersection({"jax", "jnp", "lax"})
+            ]
+
+            def declared_names(node):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    return {node.name}
+                if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    return {t.id for t in targets if isinstance(t, ast.Name)}
+                return set()
+
+            selected = [
+                node for node in tree.body if declared_names(node).intersection(names)
+            ]
+            found = set().union(*(declared_names(node) for node in selected))
+            missing = sorted(set(names) - found)
+            if missing:
+                raise ValueError(f"missing frozen symbols: {missing}")
+            payload = ast.dump(
+                ast.Module(body=imports + selected, type_ignores=[]),
+                include_attributes=False,
+            ).encode()
+            fp[key] = hashlib.sha256(payload).hexdigest()
+        except Exception as exc:  # a missing/unparseable reference must also trip the diff
+            fp[key] = f"ERROR:{type(exc).__name__}:{exc}"
     return fp
 
 
 def _frozen_diff(pre):
     post = _frozen_fingerprint()
-    return sorted(str(Path(k).relative_to(ROOT))
-                  for k in set(pre) | set(post) if pre.get(k) != post.get(k))
+
+    def display(key):
+        path, sep, suffix = key.partition("::")
+        rel = str(Path(path).relative_to(ROOT))
+        return f"{rel}::{suffix}" if sep else rel
+
+    return sorted(display(k) for k in set(pre) | set(post) if pre.get(k) != post.get(k))
 
 
 def revert_worktree(incumbent):
     """Discard a void round's uncommitted edits back to the incumbent commit, EXCEPT
     the loop's own bookkeeping (optimization_history / board), so history survives."""
     for f in _worktree_changed():
-        if f.startswith("akt/optimization_history") or f.startswith("akt/board"):
+        if _is_bookkeeping(f):
             continue
         rc, _ = sh(f"git cat-file -e {incumbent}:{f}", timeout=30)
         if rc == 0:
@@ -706,8 +1003,11 @@ def cmd_run(args):
     Precondition: a CLEAN incumbent tree — `run` reverts void/rejected rounds to the
     incumbent commit, so any pre-existing uncommitted work (outside the loop's own
     bookkeeping) would be lost. Commit or stash first."""
-    dirty = [p for p in _worktree_changed()
-             if not (p.startswith("akt/optimization_history") or p.startswith("akt/board"))]
+    current = load()
+    if current.get("objective_scope") != OBJECTIVE_SCOPE:
+        print("[evolve] campaign objective is stale; run `loop.py rebaseline` first.")
+        return
+    dirty = _implementation_changes()
     if dirty:
         print("[evolve] `run` needs a CLEAN incumbent tree (it reverts void/rejected rounds).")
         print(f"         commit or stash these first ({len(dirty)}): {dirty[:8]}"
@@ -723,28 +1023,44 @@ def cmd_run(args):
         nxt = st["round"] + 1
         print(f"\n{'#'*70}\n# AUTONOMOUS ROUND {nxt} — oracle={args.oracle_cmd or args.oracle}\n{'#'*70}")
         write_status("running", round=nxt, phase=f"oracle ({args.oracle}) implementing")
+        changed_before = set(_worktree_changed())
         pre_fp = _frozen_fingerprint()
         name, rate_reset = invoke_oracle(st, args)
+        frozen_changed = _frozen_diff(pre_fp)        # ONLY the oracle's frozen edits
         if rate_reset and not name:
+            # A rate-limited oracle may already have made partial edits. Never
+            # carry unmanifested work into the retry or bypass frozen integrity.
+            revert_worktree(st["incumbent_commit"])
+            rate_reason = (
+                f"oracle modified FROZEN harness {frozen_changed[:2]} before rate limit"
+                if frozen_changed
+                else "oracle rate-limited; partial edits reverted"
+            )
             # ORACLE RATE-LIMITED (e.g. the 5h window): don't burn rounds hammering the
             # API — sleep until the reset (+2 min slack), capped at the campaign deadline.
             wake = rate_reset + 120
             if wake >= st["deadline_ts"]:
                 print(f"[evolve] rate-limit reset ({time.strftime('%H:%M', time.localtime(rate_reset))}) "
                       f"is at/after the deadline — stopping.")
+                write_status("idle", round=st["round"], last={
+                    "round": nxt, "capability": None, "decision": "rate-limited",
+                    "reason": rate_reason, "finished_ts": time.time()})
                 break
             wait = max(0, wake - time.time())
             if not wait:                              # reset already passed -> retry now
+                write_status("idle", round=st["round"], last={
+                    "round": nxt, "capability": None, "decision": "rate-limited",
+                    "reason": rate_reason, "finished_ts": time.time()})
                 continue
             print(f"[evolve] oracle RATE-LIMITED; sleeping {int(wait/60)} min until "
                   f"{time.strftime('%H:%M:%S', time.localtime(wake))}.")
             write_status("idle", round=st["round"], last={
                 "round": nxt, "capability": None, "decision": "rate-limited",
-                "reason": f"oracle 429; sleeping until {time.strftime('%H:%M', time.localtime(wake))}",
+                "reason": rate_reason + "; sleeping until "
+                + time.strftime('%H:%M', time.localtime(wake)),
                 "finished_ts": time.time()})
             time.sleep(wait)
             continue                                  # retry the round after the reset
-        frozen_changed = _frozen_diff(pre_fp)        # ONLY the oracle's frozen edits
         void = (f"oracle modified FROZEN harness {frozen_changed[:2]}" if frozen_changed
                 else "oracle produced no manifest" if not name else None)
         if void:
@@ -760,12 +1076,17 @@ def cmd_run(args):
                 break
             continue
         try:
-            m, mpath = load_manifest(name)
+            m, mpath = load_manifest(name, require_pending=True)
+            validate_manifest_scope(m, changed_before)
         except Exception as e:
             consec_void += 1
-            print(f"[evolve] VOID round: bad manifest '{name}': {e} — reverting "
+            reason = f"bad manifest '{name}': {e}"
+            print(f"[evolve] VOID round: {reason} — reverting "
                   f"({consec_void}/{MAX_CONSEC_VOID} consecutive).")
             revert_worktree(st["incumbent_commit"])
+            write_status("idle", round=st["round"], last={
+                "round": nxt, "capability": name, "decision": "void",
+                "reason": reason, "finished_ts": time.time()})
             if consec_void >= MAX_CONSEC_VOID:
                 print(f"[evolve] {MAX_CONSEC_VOID} consecutive VOID rounds — stopping.")
                 break
@@ -783,12 +1104,15 @@ def main():
     p0.add_argument("--hours", type=float, default=6.0)
     p0.add_argument("--target", type=float, default=0.02, help="KEEP improvement bar (fraction)")
     p0.add_argument("--runs", type=int, default=3)
+    pb = sub.add_parser("rebaseline", help="preserve history and adopt the current objective")
+    pb.add_argument("--runs", type=int, default=3)
+    pb.add_argument("--hours", type=float, default=6.0)
     sub.add_parser("status")
     p2 = sub.add_parser("submit")
     p2.add_argument("--capability", required=True)
     p2.add_argument("--runs", type=int, default=3)
-    p2.add_argument("--audit", action="store_true", help="run dp_audit EXACTNESS REPORT on manifest.audit_case")
-    p2.add_argument("--audit-exact", action="store_true", help="force exact==B&B in the audit")
+    p2.add_argument("--audit", action="store_true", help="print enlarged-space enumeration evidence")
+    p2.add_argument("--audit-exact", action="store_true", help="reserved for exact audit backends")
     p3 = sub.add_parser("restore"); p3.add_argument("--capability", required=True)
     # autonomous: the loop DRIVES an LLM oracle to implement each round, then gates it
     pr = sub.add_parser("run", help="autonomously drive an LLM oracle for N rounds")
@@ -802,7 +1126,7 @@ def main():
     pr.add_argument("--audit", action="store_true")
     pr.add_argument("--audit-exact", action="store_true")
     args = ap.parse_args()
-    {"init": cmd_init, "status": cmd_status, "submit": cmd_submit,
+    {"init": cmd_init, "rebaseline": cmd_rebaseline, "status": cmd_status, "submit": cmd_submit,
      "restore": cmd_restore, "run": cmd_run}[args.cmd](args)
 
 

@@ -490,27 +490,37 @@ def discover_kernel_families(kernels_dir: Path):
 
 
 def runner_named_axes(repo: Path):
-    """Parse akt/core/runners/*.py: {kernel_id: set(knob_names)} — the axes the AKT
-    suite ALREADY searches (i.e. gaps already elevated). Purely from Knob(\"name\",...)
-    and kernel_id=\"...\" literals, so it tracks the live runners with no hardcoding."""
-    out = defaultdict(set)
+    """Parse runner knobs and their stable programmer-control identifiers.
+
+    A searched runner axis and an end-to-end exposed capability are intentionally
+    distinct; this prevents benchmark-only tuning from closing a flexibility gap.
+    """
+    out = defaultdict(dict)
     rdir = repo / "akt/core/runners"
     for f in sorted(rdir.glob("*.py")) if rdir.is_dir() else []:
         try:
             tree = ast.parse(f.read_text())
         except Exception:  # noqa: BLE001
             continue
-        kids, knobs = set(), set()
+        kids, knobs = set(), {}
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and _callee(node.func) == "Knob" and node.args:
                 a0 = node.args[0]
                 if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
-                    knobs.add(a0.value)
+                    control = None
+                    for keyword in node.keywords:
+                        if (
+                            keyword.arg == "programmer_control"
+                            and isinstance(keyword.value, ast.Constant)
+                            and isinstance(keyword.value.value, str)
+                        ):
+                            control = keyword.value.value
+                    knobs[a0.value] = control
             if isinstance(node, ast.keyword) and node.arg == "kernel_id" \
                     and isinstance(node.value, ast.Constant):
                 kids.add(node.value.value)
         for kid in (kids or {f.stem}):
-            out[kid] |= knobs
+            out[kid].update(knobs)
     return dict(out)
 
 
@@ -523,12 +533,157 @@ def _const_repr(node):
     return None
 
 
+def _axis_dependencies(tree):
+    """Derive coarse name-flow edges for low-level axis aliases.
+
+    Kernel code commonly renames public arguments (``BT = chunk_size``) or forwards
+    them to helper parameters (``block_size=intra_block_size``). Following those AST
+    edges lets the miner relate implementation axes to runner/API names without a
+    hand-authored family alias table.
+    """
+    dependencies = defaultdict(set)
+    local_functions = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    def static_refs(node, scope):
+        """Names in a scalar/static expression, or None for runtime data flow."""
+        if node is None:
+            return set()
+        if isinstance(node, ast.Name):
+            return {(scope, node.id)}
+        if isinstance(node, ast.Constant):
+            return set()
+        if isinstance(
+            node,
+            (
+                ast.BinOp,
+                ast.BoolOp,
+                ast.UnaryOp,
+                ast.IfExp,
+                ast.Compare,
+            ),
+        ):
+            result = set()
+            for child in ast.iter_child_nodes(node):
+                if not isinstance(child, ast.expr):
+                    continue
+                child_refs = static_refs(child, scope)
+                if child_refs is None:
+                    return None
+                result.update(child_refs)
+            return result
+        return None
+
+    def target_names(node):
+        if isinstance(node, ast.Name):
+            return {node.id}
+        if isinstance(node, (ast.Tuple, ast.List)):
+            return set().union(*(target_names(item) for item in node.elts))
+        return set()
+
+    class DependencyVisitor(ast.NodeVisitor):
+        def __init__(self):
+            self.scope = "<module>"
+
+        def _visit_function(self, node):
+            previous = self.scope
+            self.scope = node.name
+            for statement in node.body:
+                self.visit(statement)
+            self.scope = previous
+
+        def visit_FunctionDef(self, node):  # noqa: N802
+            self._visit_function(node)
+
+        def visit_AsyncFunctionDef(self, node):  # noqa: N802
+            self._visit_function(node)
+
+        def visit_Assign(self, node):  # noqa: N802
+            sources = static_refs(node.value, self.scope)
+            if sources is None:
+                self.generic_visit(node)
+                return
+            for target in node.targets:
+                for name in target_names(target):
+                    dependencies[(self.scope, name)].update(
+                        source for source in sources if source[1] != name
+                    )
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node):  # noqa: N802
+            sources = static_refs(node.value, self.scope)
+            if sources is None:
+                self.generic_visit(node)
+                return
+            for name in target_names(node.target):
+                dependencies[(self.scope, name)].update(
+                    source for source in sources if source[1] != name
+                )
+            self.generic_visit(node)
+
+        def visit_Call(self, node):  # noqa: N802
+            callee = local_functions.get(_callee(node.func))
+            if callee is not None:
+                parameters = callee.args.posonlyargs + callee.args.args
+                for parameter, argument in zip(parameters, node.args):
+                    if not (_TILE_RE.search(parameter.arg) or _PIPE_RE.search(parameter.arg)):
+                        continue
+                    sources = static_refs(argument, self.scope)
+                    if sources is not None:
+                        dependencies[(callee.name, parameter.arg)].update(sources)
+                for keyword in node.keywords:
+                    if keyword.arg is None or not (
+                        _TILE_RE.search(keyword.arg) or _PIPE_RE.search(keyword.arg)
+                    ):
+                        continue
+                    sources = static_refs(keyword.value, self.scope)
+                    if sources is not None:
+                        dependencies[(callee.name, keyword.arg)].update(sources)
+            self.generic_visit(node)
+
+    DependencyVisitor().visit(tree)
+    return dependencies
+
+
+def _resolve_axis(axis, named_axes, dependencies, scope=None):
+    """Return runner axes that transitively determine one implementation axis."""
+    found = set()
+    pending = (
+        [(scope, axis)]
+        if scope
+        else [key for key in dependencies if key[1] == axis] or [("<module>", axis)]
+    )
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        current_scope, name = current
+        if name in named_axes:
+            found.add(name)
+        pending.extend(dependencies.get(current, ()))
+        module_key = ("<module>", name)
+        if current_scope != "<module>" and module_key in dependencies:
+            pending.append(module_key)
+    return found
+
+
 def _mine_file(path: Path, text: str):
     """AST-mine ONE kernel file for structural axes + fixed-value gap signatures."""
     try:
         tree = ast.parse(text)
     except Exception:  # noqa: BLE001
-        return {"axes": [], "findings": [], "tables": set(), "table_refs": set()}
+        return {
+            "axes": [],
+            "findings": [],
+            "tables": set(),
+            "table_refs": set(),
+            "dependencies": {},
+        }
     lines = text.splitlines()
     axes, findings = [], []
     tables, table_refs = set(), set()
@@ -634,7 +789,13 @@ def _mine_file(path: Path, text: str):
                     findings.append({"category": "pipeline-depth", "axis": kw.arg, "fn": fname,
                                      "line": node.lineno,
                                      "detail": f"{fname}({kw.arg}={kw.value.value}) — hardcoded literal"})
-    return {"axes": axes, "findings": findings, "tables": tables, "table_refs": table_refs}
+    return {
+        "axes": axes,
+        "findings": findings,
+        "tables": tables,
+        "table_refs": table_refs,
+        "dependencies": _axis_dependencies(tree),
+    }
 
 
 def mine_serving_stack(sources):
@@ -643,7 +804,8 @@ def mine_serving_stack(sources):
     axis that the shipped config path fixes without naming — a candidate capability."""
     kernels_dir, repo = sources["kernels"], sources["repo"]
     families = discover_kernel_families(kernels_dir)
-    named = runner_named_axes(repo)                 # kernel_id -> searched knob names
+    runner_axes = runner_named_axes(repo)           # kernel_id -> knob -> API control
+    named = {kernel_id: set(axes) for kernel_id, axes in runner_axes.items()}
     live = set(named)
     # family label -> the akt kernel_id(s) that tune it. Alias-first (exact), then a
     # STRICT stem/exact fallback — no loose substring matching (which cross-linked
@@ -661,7 +823,19 @@ def mine_serving_stack(sources):
             continue
         ids = _suite_ids(label)
         fam_named = set().union(*(named[k] for k in ids if k in named)) if ids else set()
-        merged = {"axes": [], "findings": [], "tables": set(), "table_refs": set()}
+        fam_controls = {
+            knob: control
+            for kernel_id in ids
+            for knob, control in runner_axes.get(kernel_id, {}).items()
+            if control
+        }
+        merged = {
+            "axes": [],
+            "findings": [],
+            "tables": set(),
+            "table_refs": set(),
+            "dependencies": defaultdict(set),
+        }
         per_file = []                          # (relpath, mine-result) for per-file checks
         for f in rec["files"]:
             try:
@@ -673,6 +847,8 @@ def mine_serving_stack(sources):
             merged["axes"] += [{**a, "file": rel} for a in m["axes"]]
             merged["findings"] += [{**g, "file": rel} for g in m["findings"]]
             merged["tables"] |= m["tables"]; merged["table_refs"] |= m["table_refs"]
+            for axis, dependencies in m["dependencies"].items():
+                merged["dependencies"][axis].update(dependencies)
         tile_axes = sorted({a["axis"] for a in merged["axes"] if a["kind"] == "tile"})
         has_table = bool(merged["tables"] or merged["table_refs"])
         stack.append({"family": label, "in_akt_suite": sorted(ids),
@@ -680,7 +856,7 @@ def mine_serving_stack(sources):
                       "n_files": len(rec["files"])})
 
         seen = set()
-        def _emit(cat, axis, detail, file, line):
+        def _emit(cat, axis, detail, file, line, fn=None):
             key = (label, cat, axis)
             if key in seen:
                 return
@@ -688,18 +864,44 @@ def mine_serving_stack(sources):
             # elevated iff THIS family's own runner already searches the axis — use
             # fam_named only (a global check cross-links same-named knobs, e.g. moe's
             # `bt` would falsely mark grouped_topk's `bt` as elevated).
-            parts = [p for p in re.split(r"[,\s]+", axis) if p]      # multi-axis findings
-            elevated = bool(parts) and all(p in fam_named for p in parts)
+            parts = [p for p in re.split(r"[,\s]+", axis) if p]
+            resolved = [
+                _resolve_axis(part, fam_named, merged["dependencies"], fn)
+                for part in parts
+            ]
+            elevated = bool(parts) and all(matches for matches in resolved)
+            programmer_exposed = elevated and all(
+                all(fam_controls.get(knob) for knob in matches)
+                for matches in resolved
+            )
+            matched_knobs = sorted(set().union(*resolved)) if resolved else []
+            controls = sorted(
+                {fam_controls[knob] for knob in matched_knobs if fam_controls.get(knob)}
+            )
             gaps.append({
                 "id": f"{label}:{axis}:{cat}", "family": label, "kernel_ids": sorted(ids),
                 "axis": axis, "category": cat, "status": cat,
                 "what": _GAP_CATEGORIES.get(cat, (cat, "", 0))[0],
                 "detail": detail, "evidence": f"{file}:{line}",
                 "reachable_prim": _GAP_CATEGORIES.get(cat, (None, None, 0))[1],
-                "elevated_in_akt": elevated, "in_akt_suite": bool(ids)})
+                "elevated_in_akt": elevated,
+                "programmer_exposed": programmer_exposed,
+                "runner_axes": matched_knobs,
+                "programmer_controls": controls,
+                "exposure_level": (
+                    "programmer" if programmer_exposed else "runner" if elevated else "none"
+                ),
+                "in_akt_suite": bool(ids)})
 
         for g in merged["findings"]:
-            _emit(g["category"], g["axis"], g["detail"], g["file"], g["line"])
+            _emit(
+                g["category"],
+                g["axis"],
+                g["detail"],
+                g["file"],
+                g["line"],
+                g.get("fn"),
+            )
         # missing-tuned-table: per FILE — an entry that constructs its own tiles
         # (TileSizes / calculate_tiling / >=2 tile axes) but references NO tuned table,
         # even when a sibling file in the same family ships one (the gmm_v2-vs-v1 case).
@@ -721,7 +923,11 @@ def mine_serving_stack(sources):
     # rank: gaps in the tuned suite first, then by category salience, then un-elevated
     def _rank(g):
         sal = _GAP_CATEGORIES.get(g["category"], (None, None, 0))[2]
-        return (0 if g["in_akt_suite"] else 1, 0 if not g["elevated_in_akt"] else 1, -sal)
+        return (
+            0 if g["in_akt_suite"] else 1,
+            0 if not g["programmer_exposed"] else 1,
+            -sal,
+        )
     gaps.sort(key=_rank)
     cats = {}
     for c, (lab, prim, sal) in _GAP_CATEGORIES.items():
@@ -884,7 +1090,11 @@ def build_graph(focus_active: bool = True):
         rp = g.get("reachable_prim")
         g["graph_node"] = f"pallas:{rp}" if rp and f"pallas:{rp}" in nodes else None
     coverage = frontier_coverage(mined)
-    n_open = sum(1 for g in mined["gaps"] if g["in_akt_suite"] and not g["elevated_in_akt"])
+    n_open = sum(
+        1
+        for g in mined["gaps"]
+        if g["in_akt_suite"] and not g["programmer_exposed"]
+    )
     return {
         "kind": "lowering-4layer", "generated_by": "flexgraph_extract.py (automated)",
         "categories": [{"id": c, "title": t} for c, t in cats],

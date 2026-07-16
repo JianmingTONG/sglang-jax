@@ -27,15 +27,30 @@ import jax
 import numpy as np
 
 
+OBJECTIVE_SCOPE = "stateful-serving-deployable-v1"
+
+
+def identity_check_out(output):
+    """Default correctness projection for kernels that return one output tree."""
+    return output
+
+
 # --------------------------------------------------------------- design space
 @dataclass
 class Knob:
     """One tunable axis. `elevated_by` names the capability that added it
-    (None = part of the kernel's base/shipped design space)."""
+    (None = part of the kernel's base/shipped design space).
+
+    `programmer_control` is the stable production control path (for example,
+    ``kda.state_block_chunks``). A runner-only knob has no such path and therefore
+    is not evidence that AKT elevated a capability to programmer level. Runner-only
+    elevated knobs are anchored at their default in the deployment objective.
+    """
     name: str
     values: list
     default: Any
     elevated_by: str | None = None
+    programmer_control: str | None = None
 
 
 @dataclass
@@ -65,6 +80,31 @@ class DesignSpace:
             if seen >= cap:
                 return
 
+    def deployment_space(self) -> "DesignSpace":
+        """Serving-safe acceptance space used by the AKT incumbent and gate.
+
+        Base knobs remain as the inherited pre-AKT benchmark/implementation contract;
+        this does not retroactively certify each one as a stable server API. A knob
+        added by an AKT capability participates only after it has a programmer control;
+        benchmark-only experiments stay visible but are fixed to their
+        semantics-preserving default.
+        """
+        knobs = [
+            Knob(
+                name=knob.name,
+                values=(
+                    knob.values
+                    if knob.elevated_by is None or knob.programmer_control
+                    else [knob.default]
+                ),
+                default=knob.default,
+                elevated_by=knob.elevated_by,
+                programmer_control=knob.programmer_control,
+            )
+            for knob in self.knobs
+        ]
+        return DesignSpace(knobs=knobs, valid=self.valid)
+
     def base_space(self) -> "DesignSpace":
         """The design space BEFORE any capability elevation (only base knobs).
         Used at init to report the autotuning-only optimum separately from the
@@ -84,7 +124,7 @@ class KernelCase:
     space: DesignSpace
     atol: float = 1e-2
     rtol: float = 2e-2
-    check_out: Callable[[Any], Any] = field(default=lambda o: o)  # tensors to compare
+    check_out: Callable[[Any], Any] = field(default=identity_check_out)  # tensors to compare
     regime_pref: tuple[str, ...] = ("gpu", "cpu-interpret")       # try in this order
     # sglang-jax's OWN correctness check: a pytest nodeid / -k expr for the repo's
     # kernel test that runs in interpret here (or None if TPU-only / no repo test).
@@ -158,11 +198,14 @@ def search_best(case: KernelCase, space: DesignSpace | None = None,
     default = case.space.default_config()
     best_cfg, best_t = None, math.inf
     n_valid = n_correct = n_eval = 0
+    incorrect = []
     default_t = None
     for cfg in space.enumerate(cap=cap):
         n_valid += 1
         ok, _why = check_correct(case, cfg)
         if not ok:
+            if len(incorrect) < 8:
+                incorrect.append({"config": cfg, "reason": _why})
             continue
         n_correct += 1
         n_eval += 1
@@ -178,6 +221,7 @@ def search_best(case: KernelCase, space: DesignSpace | None = None,
     return {"best_config": best_cfg, "best_median_s": best_t if best_cfg else None,
             "default_config": default, "default_median_s": default_t,
             "n_valid": n_valid, "n_correct": n_correct, "n_evaluated": n_eval,
+            "incorrect_configs": incorrect,
             "space_size": space.size(),
             # the enumeration hit the cap before exhausting the space -> the returned
             # config is the best of a PREFIX, not a proven optimum.

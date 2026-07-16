@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     from sgl_jax.srt.model_executor.model_runner import ModelRunner
 
 
+def get_current_device_kind() -> str:
+    """Return the concrete JAX device kind used by shape-aware kernel rules."""
+    devices = jax.devices()
+    return devices[0].device_kind if devices else jax.default_backend()
+
+
 # --- Linear (state-based) attention base classes ----------------------------
 
 
@@ -267,10 +273,19 @@ def attn_backend_wrapper(
     if cfg is None:
         return full_attn_backend
 
+    from sgl_jax.srt.configs.kernel_control import KernelControlPolicy
+
+    kernel_control = KernelControlPolicy.from_config(
+        getattr(getattr(runner, "server_args", None), "kernel_control_config", None)
+    )
+
     if runner.kimi_linear_config is not None:
         from sgl_jax.srt.layers.attention.linear.kda_backend import KDAAttnBackend
 
-        linear_attn_backend = KDAAttnBackend(mesh=runner.mesh)
+        linear_attn_backend = KDAAttnBackend(
+            mesh=runner.mesh,
+            kernel_control=kernel_control,
+        )
     elif runner.qwen3_5_hybrid_config is not None:
         from sgl_jax.srt.layers.attention.linear.gdn_backend import GDNAttnBackend
 
@@ -294,6 +309,7 @@ def attn_backend_wrapper(
             linear_recurrent_layer_ids=cfg_lightning.linear_layer_ids,
             num_hidden_layers=cfg_lightning.num_hidden_layers,
             num_heads=cfg_lightning.num_attention_heads,
+            kernel_control=kernel_control,
         )
     else:
         raise NotImplementedError(f"No linear backend wired for hybrid config {type(cfg).__name__}")

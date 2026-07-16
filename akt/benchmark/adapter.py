@@ -75,7 +75,8 @@ def cmd_bottleneck(_args):
 # The flexibility-gap frontier — the AI-domain analog of the FHE flexgap.json.
 # Each entry is a lowering-reachable capability (the Mosaic/Pallas backend CAN
 # execute it) that the kernel's config schema does NOT currently name/select. These
-# are the candidate capabilities the oracle elevates into a runner DesignSpace Knob.
+# are candidate capabilities to expose through production, the stable programmer
+# policy, and a runner DesignSpace Knob used for measurement.
 FRONTIER = [
     {"interface": "kv_cache: get_best_num_slices_per_block", "status": "unexposed",
      "what": "the shape-keyed tuned num_slices_per_block table is DEAD CODE — the "
@@ -115,8 +116,7 @@ _GENERATED = ROOT / "akt/core/analysis/flexgraph_generated.json"
 
 
 def _auto_gap_lines():
-    """The actionable auto-derived frontier: gaps in the akt suite that no runner has
-    elevated yet, ranked by the extractor. Returns (lines, note) or None to fall back."""
+    """Actionable suite gaps not yet exposed through the production programmer API."""
     try:
         g = json.loads(_GENERATED.read_text())
     except Exception:  # noqa: BLE001
@@ -124,19 +124,29 @@ def _auto_gap_lines():
     gaps = g.get("gaps")
     if not gaps:
         return None
-    actionable = [x for x in gaps if x.get("in_akt_suite") and not x.get("elevated_in_akt")]
+    actionable = [
+        x
+        for x in gaps
+        if x.get("in_akt_suite") and not x.get("programmer_exposed", False)
+    ]
     if not actionable:
         return None
     lines = [f"[{x['family']}:{x['axis']}] ({x['category']}) {x.get('detail', x.get('what', ''))[:150]}"
              f"  <{x.get('evidence', '')}>" for x in actionable]
     st = g.get("stats", {})
-    n_elev = sum(1 for x in gaps if x.get("elevated_in_akt"))
+    n_elev = sum(1 for x in gaps if x.get("programmer_exposed"))
+    n_runner_only = sum(
+        1
+        for x in gaps
+        if x.get("elevated_in_akt") and not x.get("programmer_exposed")
+    )
     n_other = sum(1 for x in gaps if not x.get("in_akt_suite"))
     note = (f"AUTO-DERIVED from the full serving stack ({st.get('pallas_families', '?')} Pallas "
             f"families scanned; hand-FRONTIER rediscovered {st.get('frontier_rediscovered', '?')}). "
             f"Each gap = a tiling/pipeline/schedule axis the Pallas/Mosaic lowering executes but no "
-            f"config names -> elevate ONE into a runner DesignSpace Knob. Shown = the OPEN suite "
-            f"frontier; {n_elev} already elevated, {n_other} more in non-suite kernels. "
+            f"config names -> expose ONE through production and a runner DesignSpace Knob. Shown = the OPEN suite "
+            f"frontier; {n_elev} exposed to programmers, {n_runner_only} runner-only, "
+            f"{n_other} more in non-suite kernels. "
             f"'backend-gated' = frozen for the loop (flag to user).")
     return lines, note
 
@@ -150,8 +160,8 @@ def cmd_gaps(_args):
         lines = [f"[{f['interface'][:52]}] ({f['status']}) {f['what'][:150]}" for f in FRONTIER]
         title = "flexibility gaps: lowering-reachable knobs the config schema can't name"
         note = ("each gap = a capability the Pallas/Mosaic lowering executes but no "
-                "config knob names/selects -> candidate to elevate into a runner "
-                "DesignSpace Knob; 'pinned' = the axis exists but is tied to another; "
+                "programmer config names/selects -> candidate to expose through a "
+                "production consumer plus runner Knob; 'pinned' = the axis exists but is tied to another; "
                 "'floor-only' = backend/config gating, frozen for the loop (flag to user).")
     print("AKT_GAPS " + json.dumps({"title": title, "lines": lines, "note": note},
                                    allow_nan=False))
@@ -168,9 +178,14 @@ def cmd_space(args):
         return
     print(f"design-space report ({len(cases)} case(s)):")
     for c in cases:
-        knobs = [(k.name, len(k.values), "+" + k.elevated_by if k.elevated_by else "base")
+        deploy = c.space.deployment_space()
+        knobs = [(k.name,
+                  len(k.values) if k.elevated_by is None or k.programmer_control else 1,
+                  "+" + k.elevated_by if k.elevated_by else "base",
+                  k.programmer_control or "runner-only")
                  for k in c.space.knobs]
-        print(f"  {c.case_id}: size={c.space.size()} knobs={knobs}")
+        print(f"  {c.case_id}: deployable_size={deploy.size()} "
+              f"research_size={c.space.size()} knobs={knobs}")
 
 
 def main():

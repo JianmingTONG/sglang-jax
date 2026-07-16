@@ -63,6 +63,28 @@ grep -n 'add_argument' python/sgl_jax/srt/server_args.py
 |---|---|---|---|
 | `--attention-backend` | `fa` | `native` / `fa` / `fa_mha` | `fa` = FlashAttention on Pallas (MHA / MLA). `fa_mha` forces MHA path for MLA models. |
 | `--moe-backend` | `epmoe` | `epmoe` / `fused` / `auto` | Scale-dependent. At EP≤8 (single host v7x-8) `epmoe` wins on MiMo-V2-Flash; at EP≥16 (multi-node) `fused` wins. See [MiMo-V2-Flash recipe](/autoregressive/Xiaomi/MiMo-V2-Flash) for measured numbers. |
+| `--kernel-control-config` | `None` | JSON object or JSON-file path | Validated, shape-aware low-level controls for supported recurrent kernel families (`kda` and `gla`). Unknown controls fail during startup. |
+
+`--kernel-control-config` exposes scheduling and layout choices without tying policy to a
+checkpoint name. Defaults apply to a kernel family; ordered `rules` may override them for
+per-device static shape context:
+
+```json
+{
+  "kda": {
+    "default": {"compute_block_chunks": 2},
+    "rules": [
+      {
+        "when": {"head_dim": 64, "max_sequence_length": 512},
+        "set": {"state_dim_alignment": 64}
+      }
+    ]
+  }
+}
+```
+
+The source of truth for supported controls and validation is
+`python/sgl_jax/srt/configs/kernel_control.py`. An empty policy preserves kernel defaults.
 
 ## 6. Networking & multi-node
 

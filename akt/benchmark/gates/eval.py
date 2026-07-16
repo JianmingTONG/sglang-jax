@@ -3,13 +3,12 @@
 Per kernel case: run the autotuning SEARCH over the (possibly capability-enlarged)
 design space — an exhaustive enumerate-correct-time-argmin, optimal within the
 space — then gate on numerical correctness vs the kernel's pure-JAX reference and
-report the searched-best latency. The incumbent baseline is the DEFAULT/shipped
-config's measured latency (the "current implementation profiled on this machine").
+report the searched-best latency.
 
-Objective = geomean of the searched-best latencies over the runnable cases.
-`geomean_default_s` = geomean of the default-config latencies (the incumbent set at
-init). Cases that don't execute here (tpu-deferred) are wired + reference-checked
-but excluded from the local geomean (they rejoin on TPU).
+Objective = geomean of the searched-best deployable latencies over the runnable
+cases. ``geomean_default_s`` is retained only as shipped-default context. Cases
+whose frozen contract is TPU-only are excluded off TPU; a failure in a case that
+advertises local execution fails closed instead of being mislabeled as deferred.
 
 This file is part of the frozen harness: the AKT loop must not edit it.
 
@@ -43,7 +42,10 @@ import subprocess  # noqa: E402
 import jax  # noqa: E402
 from akt.benchmark.suites import load_cases  # noqa: E402
 from akt.benchmark.runners.base import (  # noqa: E402
-    check_correct, search_best, time_config,
+    OBJECTIVE_SCOPE,
+    check_correct,
+    search_best,
+    time_config,
 )
 
 
@@ -76,11 +78,18 @@ def run_native_test(nodeid: str, timeout: int = 300) -> dict:
 
 
 def eval_case(case, runs: int, native: bool = True) -> dict:
+    deployment_space = case.space.deployment_space()
     out = {"case": case.case_id, "kernel": case.kernel_id, "shape": case.shape_id,
-           "space_size": case.space.size(), "note": case.note,
+           "space_size": deployment_space.size(),
+           "research_space_size": case.space.size(), "note": case.note,
            # the currently-EXPOSED tuning knobs (for the lowering/exposure graph):
            # elevated_by names the capability that added a knob (None = base/shipped).
-           "knobs": [{"name": k.name, "n": len(k.values), "elevated_by": k.elevated_by}
+           "knobs": [{"name": k.name, "n": len(k.values),
+                      "deployment_n": (len(k.values)
+                                       if k.elevated_by is None or k.programmer_control
+                                       else 1),
+                      "elevated_by": k.elevated_by,
+                      "programmer_control": k.programmer_control}
                      for k in case.space.knobs]}
     # sglang-jax's own pytest correctness check (independent of our per-config gate).
     if native and getattr(case, "native_test", None):
@@ -90,30 +99,57 @@ def eval_case(case, runs: int, native: bool = True) -> dict:
     # 1) does this case execute here? (probe the default config)
     ok, why = check_correct(case, default_cfg)
     if not ok:
-        out.update(regime="tpu-deferred", correct=None, forward_s=None,
-                   default_s=None, best_config=None, reason=why,
-                   search_note=f"tpu-deferred ({why[:60]})")
+        tpu_only = set(case.regime_pref).issubset({"tpu", "tpu-deferred"})
+        deferred = jax.default_backend() != "tpu" and tpu_only
+        regime = "tpu-deferred" if deferred else (
+            jax.default_backend()
+            + ("-interpret" if os.environ.get("PALLAS_INTERPRET") == "1" else "")
+        )
+        out.update(
+            regime=regime,
+            correct=None if deferred else False,
+            forward_s=None,
+            default_s=None,
+            best_config=None,
+            reason=why,
+            search_note=(
+                f"tpu-deferred ({why[:60]})"
+                if deferred
+                else f"default config failed ({why[:60]})"
+            ),
+        )
         return out
     regime = jax.default_backend() + ("-interpret" if os.environ.get("PALLAS_INTERPRET") == "1" else "")
     out["regime"] = regime
     # 2) search the (possibly enlarged) design space
     try:
-        r = search_best(case, iters=runs)
+        r = search_best(case, space=deployment_space, iters=runs)
     except Exception as e:  # noqa: BLE001
         out.update(correct=False, forward_s=None, default_s=None,
                    error=repr(e)[:200], search_note="search failed")
         return out
     best_cfg = r["best_config"]
-    correct = best_cfg is not None
+    # A DesignSpace advertises every config accepted by valid() as supported.
+    # Fail closed if any such config mismatches or errors; silently filtering it
+    # would overstate the functional design space even if another config wins.
+    correct = best_cfg is not None and r["n_correct"] == r["n_valid"]
     out.update(correct=correct, forward_s=r["best_median_s"],
                default_s=r["default_median_s"], best_config=best_cfg,
                default_config=default_cfg, n_correct=r["n_correct"],
-               n_valid=r["n_valid"], truncated=r.get("truncated", False))
+               n_valid=r["n_valid"], truncated=r.get("truncated", False),
+               incorrect_configs=r.get("incorrect_configs", []))
+    if not correct and r.get("incorrect_configs"):
+        first = r["incorrect_configs"][0]
+        out["reason"] = (
+            f"{r['n_valid'] - r['n_correct']} advertised config(s) incorrect; "
+            f"first={first['config']}: {first['reason']}"
+        )
     # search evidence (the "enlarged space was searched, not sampled" proof)
     speedup = (r["default_median_s"] / r["best_median_s"]
                if r["best_median_s"] and r["default_median_s"] else None)
     out["search_note"] = (
-        f"searched {r['n_correct']}/{r['space_size']} configs"
+        f"searched {r['n_correct']}/{r['n_valid']} deployable valid configs"
+        + (f"; {r['n_valid'] - r['n_correct']} incorrect" if not correct else "")
         + (" [TRUNCATED — cap hit, NOT exhaustive]" if r.get("truncated") else "")
         + f"; best={best_cfg} vs default={default_cfg}"
         + (f"; {speedup:.2f}x" if speedup else ""))
@@ -123,6 +159,11 @@ def eval_case(case, runs: int, native: bool = True) -> dict:
 def _geomean(xs):
     xs = [x for x in xs if isinstance(x, (int, float)) and x and x > 0 and math.isfinite(x)]
     return math.exp(sum(math.log(x) for x in xs) / len(xs)) if xs else float("nan")
+
+
+def native_verdict_ok(verdicts):
+    """A configured native check supplies evidence only when it passes."""
+    return all(verdict.get("status") == "passed" for verdict in verdicts)
 
 
 def main():
@@ -170,10 +211,12 @@ def main():
                       "passed": sum(1 for n in nats if n["status"] == "passed"),
                       "failed": sum(1 for n in nats if n["status"] == "failed"),
                       "other": sum(1 for n in nats if n["status"] not in ("passed", "failed"))}
-    # A native-test FAILURE is a hard correctness failure (the repo's own assertions).
-    native_ok = native_summary["failed"] == 0
+    # Every configured native test must positively pass. A timeout, collection
+    # error, or "no tests" result is not evidence of correctness and fails closed.
+    native_ok = native_verdict_ok(nats)
     truncated = [r["case"] for r in results if r.get("truncated")]
-    summary = {"suite": args.suite, "all_correct": all_ok and native_ok,
+    summary = {"suite": args.suite, "objective_scope": OBJECTIVE_SCOPE,
+               "all_correct": all_ok and native_ok,
                "allclose_correct": all_ok, "native_ok": native_ok,
                "geomean_s": geo, "geomean_default_s": geo_def,
                "n_runnable": len(runnable), "n_deferred": sum(1 for r in results if r.get("correct") is None),

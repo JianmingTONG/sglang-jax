@@ -6,9 +6,14 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as P
 
+from sgl_jax.srt.configs.kernel_control import (
+    KernelControlContext,
+    KernelControlPolicy,
+)
 from sgl_jax.srt.kernels.kda import chunk_kda, naive_recurrent_kda
 from sgl_jax.srt.layers.attention.hybrid_linear_attn_backend import (
     LinearRecurrentAttnBackend,
+    get_current_device_kind,
 )
 from sgl_jax.srt.layers.attention.linear.short_convolution import short_convolution
 from sgl_jax.srt.model_executor.forward_batch_info import ForwardMode
@@ -29,10 +34,15 @@ def l2_normalize(x: jax.Array, epsilon: float = 1e-6) -> jax.Array:
 class KDAAttnBackend(LinearRecurrentAttnBackend):
     """Attention backend for KDA (Kimi Delta Attention) linear attention."""
 
-    def __init__(self, mesh: jax.sharding.Mesh = None):
+    def __init__(
+        self,
+        mesh: jax.sharding.Mesh = None,
+        kernel_control: KernelControlPolicy | dict | str | None = None,
+    ):
         super().__init__(
             mesh=mesh,
         )
+        self.kernel_control = KernelControlPolicy.from_config(kernel_control)
 
     def __call__(
         self,
@@ -355,6 +365,18 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
         scale = scale if scale is not None else layer.scale
 
         def _chunk_kda_call(q, k, v, g, beta, initial_state, cu_seqlens, A_log, dt_bias):
+            controls = self.kernel_control.resolve_kda(
+                KernelControlContext(
+                    sequence_length=q.shape[1],
+                    num_sequences=cu_seqlens.shape[0] - 1,
+                    num_heads=q.shape[-2],
+                    head_dim=q.shape[-1],
+                    value_dim=v.shape[-1],
+                    has_initial_state=initial_state is not None,
+                    output_final_state=True,
+                    device_kind=get_current_device_kind(),
+                )
+            )
             o, final_state, *_ = chunk_kda(
                 q,
                 k,
@@ -368,6 +390,14 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
                 use_gate_in_kernel=True,
                 A_log=A_log,
                 dt_bias=dt_bias,
+                chunk_size=controls.chunk_size,
+                intra_block_size=controls.intra_block_size,
+                scalar_intra_solve=controls.scalar_intra_solve,
+                compute_block_chunks=controls.compute_block_chunks,
+                state_block_chunks=controls.state_block_chunks,
+                state_dim_alignment=controls.state_dim_alignment,
+                single_chunk_state_elision=controls.single_chunk_state_elision,
+                zero_state_output_elision=controls.zero_state_output_elision,
             )
             return o, final_state
 

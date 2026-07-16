@@ -9,10 +9,9 @@ stage-2 triangular solve, exact `scalar_intra_solve` scheduling, and kept
 `compute_block_chunks` for grouping the independent stage-2/stage-4 programs.
 `state_block_chunks` separately groups stage-3 propagation, while
 `state_dim_alignment` exposes its K/V state tile instead of always rounding
-both dimensions to 128. `single_chunk_state_elision` removes an unobserved
-terminal state update when the packed input is one full-sequence chunk, while
-`zero_state_output_elision` removes the matching zero inter-chunk term from the
-output stage.
+both dimensions to 128. Historical state/output-elision axes remain visible as
+runner-only experiments but are invalid in this serving objective because the
+nonzero initial state and final recurrent state are both observed.
 
 The authoritative correctness contract (reference impl, tolerances, canonical
 inputs, native-test wiring) lives in the FROZEN akt.benchmark.refs.kda module and
@@ -59,9 +58,9 @@ def _jit_chunk(
     zero_state_output_elision: bool,
     scale: float,
 ):
-    # chunk_kda_fwd is itself jitted with static chunk_size/output_final_state;
-    # initial_state=None, output_final_state=False → fresh state, output-only.
-    def f(q, k, v, g, beta, cu):
+    # Match the production prefill contract: an existing recurrent state enters
+    # and the updated state is observed by subsequent decode.
+    def f(q, k, v, g, beta, initial_state, cu):
         out = chunk_kda(
             q,
             k,
@@ -69,8 +68,8 @@ def _jit_chunk(
             g,
             beta,
             scale,
-            None,
-            False,
+            initial_state,
+            True,
             cu,
             chunk_size=chunk_size,
             intra_block_size=intra_block_size,
@@ -81,7 +80,7 @@ def _jit_chunk(
             single_chunk_state_elision=single_chunk_state_elision,
             zero_state_output_elision=zero_state_output_elision,
         )
-        return out[0]  # o
+        return out[0], out[1]
     return jax.jit(f)
 
 
@@ -97,7 +96,14 @@ def _run(inp, cfg):
         bool(cfg.get("zero_state_output_elision", False)),
         float(inp["scale"]),
     )(
-        inp["q"], inp["k"], inp["v"], inp["g"], inp["beta"], inp["cu"])
+        inp["q"],
+        inp["k"],
+        inp["v"],
+        inp["g"],
+        inp["beta"],
+        inp["initial_state"],
+        inp["cu"],
+    )
 
 
 def _space(seqlen: int, head_dim: int) -> DesignSpace:
@@ -142,52 +148,52 @@ def _space(seqlen: int, head_dim: int) -> DesignSpace:
             and (T // chunk_size) % state_block_chunks == 0
             and state_dim_alignment >= head_dim
             and (state_dim_alignment & (state_dim_alignment - 1)) == 0
-            # Elision is exact only for this runner's output-only, zero-state,
-            # single-sequence case with one full-sequence logical chunk. Anchor
-            # the now-unused state knobs so search does not time duplicates.
-            and (
-                not state_elision
-                or (
-                    chunk_size == T
-                    and state_block_chunks == 1
-                    and state_dim_alignment == 128
-                )
-            )
-            and (not output_elision or state_elision)
+            and not state_elision  # serving observes initial + final recurrent state
+            and not output_elision
         )
 
     return DesignSpace(
         knobs=[
-            Knob("chunk_size", [16, 32, 64, 128, 256], default=64),
+            Knob(
+                "chunk_size",
+                [16, 32, 64, 128, 256],
+                default=64,
+                programmer_control="kda.chunk_size",
+            ),
             Knob(
                 "intra_block_size",
                 [8, 16, 32],
                 default=16,
                 elevated_by=_INTRA_CAPABILITY,
+                programmer_control="kda.intra_block_size",
             ),
             Knob(
                 "scalar_intra_solve",
                 [False, True],
                 default=False,
                 elevated_by=_SCALAR_INTRA_CAPABILITY,
+                programmer_control="kda.scalar_intra_solve",
             ),
             Knob(
                 "compute_block_chunks",
                 [1, 2],
                 default=1,
                 elevated_by=_COMPUTE_CAPABILITY,
+                programmer_control="kda.compute_block_chunks",
             ),
             Knob(
                 "state_block_chunks",
                 [1, 2, 4],
                 default=1,
                 elevated_by=_STATE_CAPABILITY,
+                programmer_control="kda.state_block_chunks",
             ),
             Knob(
                 "state_dim_alignment",
                 [64, 128],
                 default=128,
                 elevated_by=_STATE_DIM_CAPABILITY,
+                programmer_control="kda.state_dim_alignment",
             ),
             Knob(
                 "single_chunk_state_elision",
@@ -212,7 +218,7 @@ CASES = [
         make_inputs=functools.partial(make_inputs, sl, h, d),
         run=_run, reference=reference, space=_space(sl, d),
         atol=ATOL, rtol=RTOL,
-        check_out=check_out,  # _run/reference already return o
+        check_out=check_out,
         native_test=NATIVE_TEST,
         regime_pref=("cpu-interpret",),
         note="chunked varlen KDA; ref=naive_recurrent (pure JAX); runs in CPU-interpret",

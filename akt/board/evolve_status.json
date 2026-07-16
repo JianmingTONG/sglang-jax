@@ -1,18 +1,18 @@
 {
- "state": "running",
- "updated_ts": 1784219129.7815223,
+ "state": "idle",
+ "updated_ts": 1784220806.460732,
  "init_ts": 1784175936.7558303,
  "round": 12,
  "capability": "gla_value_tile_grouping",
- "phase": "HW eval (kernel suite)",
- "started_ts": 1784215892.633168,
+ "phase": null,
+ "started_ts": null,
  "last": {
-  "round": 11,
-  "capability": "gla_zero_state_output_elision",
+  "round": 12,
+  "capability": "gla_value_tile_grouping",
   "decision": "keep",
-  "reason": "new optimum 0.0003 beats incumbent 0.0003 by 3.31% (> 2%)",
-  "geomean_s": 0.0003060663796914128,
-  "delta_pct": -3.31,
-  "finished_ts": 1784215892.561024
+  "reason": "new optimum 0.0003 beats incumbent 0.0003 by 6.75% (> 2%)",
+  "geomean_s": 0.00028541345306016896,
+  "delta_pct": -6.75,
+  "finished_ts": 1784220806.4607303
  }
 }

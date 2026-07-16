@@ -7,12 +7,10 @@ The correctness contract (reference, tolerance, canonical inputs, native test) i
 FROZEN in `akt/benchmark/refs/gla.py` — this runner only owns the DesignSpace and
 the config->kernel run mapping.
 
-Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
-`single_chunk_state_elision`, `zero_state_output_elision`, and
-`output_value_tiles`. State elision removes an unobserved terminal update when
-the aligned input is exactly one logical chunk; output elision removes the
-matching zero state load and matmul; value-tile grouping lets one output program
-own multiple independent full-BV tiles.
+Design space: base `chunk_size` plus capability-elevated `compact_alignment` and
+`output_value_tiles`. Historical state/output-elision axes remain visible as
+runner-only experiments but are invalid in this serving objective because the
+nonzero initial state and final recurrent state are both observed.
 """
 from __future__ import annotations
 
@@ -46,15 +44,16 @@ def _jit_chunk(
     zero_state_output_elision: bool,
     output_value_tiles: int,
 ):
-    def f(q, k, v, g_gamma, cu):
-        o, _ht = chunk_simple_gla_fwd_varlen(
+    def f(q, k, v, g_gamma, initial_state, cu):
+        o, ht = chunk_simple_gla_fwd_varlen(
             q, k, v, g_gamma=g_gamma, scale=None,
+            h0=initial_state, use_ht=True,
             cu_seqlens_dev=cu, chunk_size=chunk_size,
             compact_alignment=compact_alignment,
             single_chunk_state_elision=single_chunk_state_elision,
             zero_state_output_elision=zero_state_output_elision,
             output_value_tiles=output_value_tiles)
-        return o
+        return o, ht
     return jax.jit(f)
 
 
@@ -66,7 +65,13 @@ def _run(inp, cfg):
         bool(cfg.get("zero_state_output_elision", False)),
         int(cfg.get("output_value_tiles", 1)),
     )(
-        inp["q"], inp["k"], inp["v"], inp["g_gamma"], inp["cu"])
+        inp["q"],
+        inp["k"],
+        inp["v"],
+        inp["g_gamma"],
+        inp["initial_state"],
+        inp["cu"],
+    )
 
 
 # Real supported set for `chunk_size` (the BT chunk tile). The kernel imposes NO
@@ -92,11 +97,8 @@ def _space(seqlen: int, heads: int):
             and (cs & (cs - 1)) == 0          # power of two (maintainer convention)
             and seqlen % cs == 0               # kernel asserts T % chunk_size == 0
             and cs * cs * 4 <= _SCORE_TILE_BYTES_CAP  # VMEM-sane BT×BT score tile
-            and (
-                not state_elision
-                or (c.get("compact_alignment", False) and cs == seqlen)
-            )
-            and (not output_elision or state_elision)
+            and not state_elision  # serving observes initial + final recurrent state
+            and not output_elision
             and output_value_tiles > 0
             and (output_value_tiles & (output_value_tiles - 1)) == 0
             and heads % output_value_tiles == 0
@@ -104,12 +106,18 @@ def _space(seqlen: int, heads: int):
 
     return DesignSpace(
         knobs=[
-            Knob("chunk_size", _CHUNK_CANDIDATES, default=64),
+            Knob(
+                "chunk_size",
+                _CHUNK_CANDIDATES,
+                default=64,
+                programmer_control="gla.chunk_size",
+            ),
             Knob(
                 "compact_alignment",
                 [False, True],
                 default=False,
                 elevated_by=_COMPACT_ALIGNMENT_CAPABILITY,
+                programmer_control="gla.compact_alignment",
             ),
             Knob(
                 "single_chunk_state_elision",
@@ -128,6 +136,7 @@ def _space(seqlen: int, heads: int):
                 [1, 2, 4, 8],
                 default=1,
                 elevated_by=_VALUE_TILE_GROUPING_CAPABILITY,
+                programmer_control="gla.output_value_tiles",
             ),
         ],
         valid=_valid,

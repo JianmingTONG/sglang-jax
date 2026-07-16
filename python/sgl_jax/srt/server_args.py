@@ -180,6 +180,7 @@ class ServerArgs:
     # Kernel backend
     attention_backend: str | None = "fa"
     moe_backend: str = "epmoe"
+    kernel_control_config: str | dict | None = None
     disable_jax_allreduce_metadata: bool = False
     enable_grouped_topk_kernel: bool = False
 
@@ -369,6 +370,16 @@ class ServerArgs:
             else:
                 with open(self.dtype_config) as f:
                     self.dtype_config = json.load(f)
+
+        # Programmer-facing low-level kernel controls. Normalize once at startup so
+        # malformed families, rule predicates, or control values fail before model
+        # loading/JIT compilation. The normalized mapping remains serializable when
+        # ServerArgs is forwarded to worker processes.
+        from sgl_jax.srt.configs.kernel_control import normalize_kernel_control_config
+
+        self.kernel_control_config = normalize_kernel_control_config(
+            self.kernel_control_config
+        )
 
         # Normalize speculative_algorithm: treat empty string as None
         if isinstance(self.speculative_algorithm, str) and self.speculative_algorithm.strip() == "":
@@ -1372,6 +1383,16 @@ class ServerArgs:
             choices=["epmoe", "fused", "fused_v2", "auto"],
             default=ServerArgs.moe_backend,
             help="The backend to use for MoE models.",
+        )
+        parser.add_argument(
+            "--kernel-control-config",
+            type=str,
+            default=ServerArgs.kernel_control_config,
+            help=(
+                "JSON object or path to a JSON file containing validated, shape-aware "
+                "low-level kernel controls. Supported families currently include "
+                "'kda' and 'gla'; see sgl_jax.srt.configs.kernel_control."
+            ),
         )
 
         parser.add_argument(

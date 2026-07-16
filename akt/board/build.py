@@ -7,6 +7,7 @@ renders. Rebuilt by the loop after every submit (write_board), and runnable by h
 """
 from __future__ import annotations
 
+import ast
 import json
 import math
 import sys
@@ -25,6 +26,7 @@ STATE = ROOT / "optimization_history/evolve_state.json"
 EVAL = ROOT / "optimization_history/.evolve_eval.json"
 STATUS = BOARD / "evolve_status.json"
 CAPS = ROOT / "core/evolve/capabilities"
+CURRENT_OBJECTIVE_SCOPE = "stateful-serving-deployable-v1"
 
 
 def _load_jsonl(p):
@@ -71,6 +73,7 @@ def _kernels_from_eval():
             "default_s": d, "best_s": b,
             "speedup": (d / b) if (d and b) else None,
             "space_size": r.get("space_size"),
+            "research_space_size": r.get("research_space_size"),
             "best_config": r.get("best_config"),
             "correct": r.get("correct"),
             "native_test": nt.get("status"),          # sglang-jax's own pytest verdict
@@ -78,6 +81,46 @@ def _kernels_from_eval():
             "note": (r.get("search_note") or r.get("reason") or r.get("note") or "")[:160],
         })
     return out, s
+
+
+def _control_inventory():
+    """Read live runner metadata without importing JAX in the board builder."""
+    exposed = set()
+    runner_only = set()
+    for path in (ROOT / "core/runners").glob("*.py"):
+        try:
+            tree = ast.parse(path.read_text())
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if name != "Knob" or not node.args:
+                continue
+            try:
+                knob = ast.literal_eval(node.args[0])
+            except (ValueError, TypeError):
+                continue
+            keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+            control_node = keywords.get("programmer_control")
+            if control_node is not None:
+                try:
+                    control = ast.literal_eval(control_node)
+                except (ValueError, TypeError):
+                    control = None
+                if isinstance(control, str) and control:
+                    exposed.add(control)
+                    continue
+            elevated = keywords.get("elevated_by")
+            if elevated is not None and not (
+                isinstance(elevated, ast.Constant) and elevated.value is None
+            ):
+                runner_only.add(f"{path.stem}.{knob}")
+    return {
+        "programmer_controls": sorted(exposed),
+        "runner_only_knobs": sorted(runner_only),
+    }
 
 
 # ---- Flexibility graph: the TPU compiler LOWERING GRAPH ----------------------
@@ -121,6 +164,60 @@ def _clean(o):
     return o
 
 
+def _valid_latency(value):
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
+
+
+def _apply_incumbent_envelope(trail, state):
+    """Annotate rounds with the correctness-qualified best-so-far latency.
+
+    The envelope starts at the campaign's original searched baseline. Candidate
+    measurements remain visible, but only a correctness-qualified KEEP/baseline
+    may lower the incumbent, and noisy measurements can never make it rise.
+    """
+    ordered = sorted(trail, key=lambda row: row.get("round") or 0)
+    objective_scope = state.get("objective_scope")
+    baseline_candidates = [
+        state.get("objective_baseline_geomean"),
+        state.get("base_search_geomean"),
+        *(row.get("incumbent_geomean") for row in ordered),
+        state.get("incumbent_geomean"),
+    ]
+    baseline = next((value for value in baseline_candidates if _valid_latency(value)), None)
+    best = baseline
+
+    for row in ordered:
+        performance_status = row.get("performance_status") or ""
+        objective_compatible = (
+            objective_scope is None or row.get("objective_scope") == objective_scope
+        )
+        historical_timing_is_valid = (
+            performance_status != "post-run-invalid"
+            and not performance_status.startswith("superseded")
+        )
+        eligible = (
+            row.get("decision") in ("keep", "baseline")
+            and row.get("correct") is True
+            and historical_timing_is_valid
+            and objective_compatible
+        )
+        candidate = row.get("geomean_s")
+        previous = best
+        if eligible and _valid_latency(candidate):
+            best = candidate if best is None else min(best, candidate)
+        row["incumbent_eligible"] = eligible
+        row["objective_compatible"] = objective_compatible
+        row["advances_incumbent"] = best is not None and (previous is None or best < previous)
+        row["incumbent_after_s"] = best
+
+    return baseline, best
+
+
 def build():
     st = _load_json(STATE, {})
     manifests = _manifests()
@@ -150,13 +247,18 @@ def build():
             "search_dimension": r.get("search_dimension") or mm.get("search_dimension"),
             "files_touched": r.get("files_touched") or mm.get("files_touched"),
             "correct": r.get("correct"),
+            "performance_status": r.get("performance_status"),
+            "correctness_regime": r.get("correctness_regime"),
             "n_verified": r.get("n_verified"),
             "n_deferred": r.get("n_deferred"),
             "missing_cases": r.get("missing_cases") or [],
             "truncated_cases": r.get("truncated_cases") or [],
             "best_configs": best_configs,
+            "programmer_exposure": r.get("programmer_exposure"),
+            "objective_scope": r.get("objective_scope"),
             "timestamp": r.get("timestamp"),
         })
+    original_geomean, replayed_geomean = _apply_incumbent_envelope(trail, st)
     kept = [t for t in trail if t["decision"] in ("keep", "baseline")]
     rejected = [t for t in trail if t["decision"] not in ("keep", "baseline")]
 
@@ -169,23 +271,34 @@ def build():
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "objective": "geomean kernel latency (interpret proxy on this box; TPU when attached)",
         "incumbent": {
+            "original_geomean_s": original_geomean,
             "shipped_default_geomean_s": st.get("shipped_default_geomean"),
             "base_search_geomean_s": st.get("base_search_geomean"),
             "current_geomean_s": st.get("incumbent_geomean"),
+            "replayed_geomean_s": replayed_geomean,
             "choices": st.get("incumbent_choices"),
             "round": st.get("round"),
             "target_pct": round((st.get("target_improvement") or 0.02) * 100, 1),
+            "objective_scope": st.get("objective_scope"),
+            "objective_baseline_geomean_s": st.get("objective_baseline_geomean"),
+            "objective_baseline_round": st.get("objective_baseline_round"),
             "commit": (st.get("incumbent_commit") or "")[:8],
         },
         "eval": {"all_correct": eval_summary.get("all_correct"),
+                 "objective_scope": eval_summary.get("objective_scope"),
                  "allclose_correct": eval_summary.get("allclose_correct"),
                  "native_ok": eval_summary.get("native_ok"),
                  "native_summary": eval_summary.get("native_summary"),
                  "n_runnable": eval_summary.get("n_runnable"),
                  "n_deferred": eval_summary.get("n_deferred"),
+                 "n_choices": eval_summary.get("n_choices"),
                  "search_geomean_s": eval_summary.get("geomean_s"),
                  "default_geomean_s": eval_summary.get("geomean_default_s")},
+        "objective_scope": st.get("objective_scope"),
+        "required_objective_scope": CURRENT_OBJECTIVE_SCOPE,
+        "objective_stale": st.get("objective_scope") != CURRENT_OBJECTIVE_SCOPE,
         "kernels": kernels,
+        "controls": _control_inventory(),
         "frontier": FRONTIER,
         "trail": trail, "kept": kept, "rejected": rejected,
         "n_rounds": len(trail),
