@@ -1,13 +1,13 @@
 {
  "start_ts": 1784173754.8023207,
- "deadline_ts": 1784216954.8023212,
+ "deadline_ts": 1784269378.4474356,
  "round": 12,
  "target_improvement": 0.02,
- "incumbent_geomean": 0.00028541345306016896,
- "incumbent_choices": 7244,
- "shipped_default_geomean": 0.002029167789791331,
+ "incumbent_geomean": 0.0005252862513323501,
+ "incumbent_choices": 4700,
+ "shipped_default_geomean": 0.0021445558665979967,
  "base_search_geomean": 0.0008010976398431896,
- "incumbent_commit": "eecce8353a9042b66a7f42ca0e8cd4e3cfa8efb4",
+ "incumbent_commit": "fde5a9f90a41fef550bb536cac5b481243b3d6c3",
  "expected_cases": [
   "fused_mlp:s128_h256_i512",
   "fused_mlp:s256_h512_i512",
@@ -34,5 +34,8 @@
   "kda:seq256_h4_d128"
  ],
  "objective_name": "geomean_s",
- "objective_unit": "s"
+ "objective_unit": "s",
+ "objective_scope": "stateful-serving-deployable-v1",
+ "objective_baseline_geomean": 0.0005252862513323501,
+ "objective_baseline_round": 12
 }

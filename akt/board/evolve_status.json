@@ -1,9 +1,9 @@
 {
  "state": "idle",
- "updated_ts": 1784220806.460732,
+ "updated_ts": 1784247778.4679372,
  "init_ts": 1784175936.7558303,
  "round": 12,
- "capability": "gla_value_tile_grouping",
+ "capability": null,
  "phase": null,
  "started_ts": null,
  "last": {
