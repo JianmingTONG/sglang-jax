@@ -42,7 +42,7 @@ import subprocess  # noqa: E402
 import jax  # noqa: E402
 from akt.benchmark.suites import load_cases  # noqa: E402
 from akt.benchmark.runners.base import (  # noqa: E402
-    OBJECTIVE_SCOPE,
+    LEGACY_OBJECTIVE_SCOPE,
     check_correct,
     search_best,
     time_config,
@@ -86,7 +86,7 @@ def eval_case(case, runs: int, native: bool = True) -> dict:
            # elevated_by names the capability that added a knob (None = base/shipped).
            "knobs": [{"name": k.name, "n": len(k.values),
                       "deployment_n": (len(k.values)
-                                       if k.elevated_by is None or k.programmer_control
+                                       if k.programmer_control
                                        else 1),
                       "elevated_by": k.elevated_by,
                       "programmer_control": k.programmer_control}
@@ -215,7 +215,7 @@ def main():
     # error, or "no tests" result is not evidence of correctness and fails closed.
     native_ok = native_verdict_ok(nats)
     truncated = [r["case"] for r in results if r.get("truncated")]
-    summary = {"suite": args.suite, "objective_scope": OBJECTIVE_SCOPE,
+    summary = {"suite": args.suite, "objective_scope": LEGACY_OBJECTIVE_SCOPE,
                "all_correct": all_ok and native_ok,
                "allclose_correct": all_ok, "native_ok": native_ok,
                "geomean_s": geo, "geomean_default_s": geo_def,

@@ -27,7 +27,9 @@ import jax
 import numpy as np
 
 
-OBJECTIVE_SCOPE = "stateful-serving-deployable-v1"
+# Emitted only by the retained single-kernel evaluator in ``gates/eval.py``.
+# The accepting AKT loop uses ``model-serving-empirical-dp-v2`` from model_eval.
+LEGACY_OBJECTIVE_SCOPE = "stateful-serving-deployable-v1"
 
 
 def identity_check_out(output):
@@ -67,7 +69,7 @@ class DesignSpace:
             n *= max(1, len(k.values))
         return n
 
-    def enumerate(self, cap: int = 4096):
+    def enumerate(self, cap: int | None = 4096):
         names = [k.name for k in self.knobs]
         vals = [k.values for k in self.knobs]
         seen = 0
@@ -77,25 +79,24 @@ class DesignSpace:
                 continue
             yield cfg
             seen += 1
-            if seen >= cap:
+            if cap is not None and seen >= cap:
                 return
 
     def deployment_space(self) -> "DesignSpace":
         """Serving-safe acceptance space used by the AKT incumbent and gate.
 
-        Base knobs remain as the inherited pre-AKT benchmark/implementation contract;
-        this does not retroactively certify each one as a stable server API. A knob
-        added by an AKT capability participates only after it has a programmer control;
-        benchmark-only experiments stay visible but are fixed to their
-        semantics-preserving default.
+        A value may vary in the serving objective only when the stable programmer API
+        can name it.  Merely putting an axis in an AKT runner is benchmark coverage, not
+        deployment availability.  Consequently an existing runner-only knob is held at
+        its incumbent default; elevating that same knob by adding
+        ``programmer_control`` expands the deployment space to its already-declared
+        values without changing the default.
         """
         knobs = [
             Knob(
                 name=knob.name,
                 values=(
-                    knob.values
-                    if knob.elevated_by is None or knob.programmer_control
-                    else [knob.default]
+                    knob.values if knob.programmer_control else [knob.default]
                 ),
                 default=knob.default,
                 elevated_by=knob.elevated_by,
@@ -104,14 +105,6 @@ class DesignSpace:
             for knob in self.knobs
         ]
         return DesignSpace(knobs=knobs, valid=self.valid)
-
-    def base_space(self) -> "DesignSpace":
-        """The design space BEFORE any capability elevation (only base knobs).
-        Used at init to report the autotuning-only optimum separately from the
-        capability-elevation trajectory."""
-        base = [k for k in self.knobs if k.elevated_by is None]
-        return DesignSpace(knobs=base, valid=self.valid)
-
 
 # --------------------------------------------------------------- kernel case
 @dataclass

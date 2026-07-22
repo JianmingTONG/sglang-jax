@@ -1,84 +1,101 @@
 # Capability manifests
 
-One JSON file per elevated flexibility, `<name>.json`. The oracle (or a human)
-writes it after implementing the stack and registering the new search Knob, before
-`submit`. The loop reads it to gate, restore, and board the capability.
+One pending manifest proposes exposing one source-proven flexibility already present
+in the generated v2 action graph. The graph, not free text, owns the source path,
+axis, incumbent value, kernel family, affected model callsites, and action edge.
 
 ## Schema
 
 ```json
 {
-  "name": "kda_prefetch_distance",
-  "gap": "kda: prefetch distance is fixed in the state propagation stage",
-  "hypothesis": "one line: what elevating this gap should let the search do",
-  "estimated_relief_pct": 8.0,
-  "search_dimension": "one line: the new Knob now enumerated by the runner and how run() plumbs it to the kernel",
-  "audit_case": "kda",
-  "programmer_controls": [
+  "name": "moe_v2_interleave_bt",
+  "gap_id": "fused_moe/v2:interleave_bt:schedule-toggle",
+  "action_graph_fingerprint": "<current-64-hex-fingerprint>",
+  "hypothesis": "Shape-scoped BT interleaving reduces expert-v2 stalls.",
+  "estimate": {
+    "model": "tiny-moe-serving",
+    "callsite": "tiny-moe-serving/expert-v2",
+    "baseline_share_pct": 18.0,
+    "expected_relief_pct": 3.2,
+    "reasoning": "The call is 18% of aggregate time and the expected local reduction is 18%."
+  },
+  "search_dimensions": [
     {
-      "control": "kda.prefetch_distance",
-      "config_path": "python/sgl_jax/srt/configs/kernel_control.py",
-      "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
-      "kernel_argument": "prefetch_distance"
+      "control": "moe_v2.interleave_bt",
+      "kernel_function": "fused_ep_moe_v2",
+      "consumer": "python/sgl_jax/srt/layers/fused_moe.py"
     }
   ],
   "files_touched": [
-    "python/sgl_jax/srt/kernels/kda/kda.py",
     "python/sgl_jax/srt/configs/kernel_control.py",
-    "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
-    "akt/core/runners/kda.py"
+    "python/sgl_jax/srt/layers/fused_moe.py",
+    "akt/core/runners/moe_v2.py",
+    "akt/core/evolve/capabilities/moe_v2_interleave_bt.json"
   ],
   "status": "pending"
 }
 ```
 
-## Field notes
+The top-level fields shown above are exact. `audit_case` is the only optional field.
+`files_touched` must exactly equal every non-bookkeeping edit and must include the
+manifest itself. Oracle-frozen harness files are forbidden.
 
-- **`gap`** — copy the frontier line you chose from `evolve status` (the `[i] [...]` entry).
-- **`estimated_relief_pct`** — your step-(1) estimate of bottleneck relief; the board
-  compares estimate vs measured.
-- **`search_dimension`** — the contract: the new choice MUST be a new `Knob` axis in
-  the kernel's runner `DesignSpace` (`akt/core/runners/<kernel>.py`), and
-  `run(inputs, cfg)` must actually plumb that knob into the kernel. The Knob must set
-  `programmer_control="<family>.<key>"`. Widening an existing control's values is
-  parameter tuning, not a capability-elevation round.
-- **`audit_case`** — the kernel this targets; `submit --audit` runs
-  `adapter.py space --kernel <it>` to print the enlarged design-space size as evidence
-  the new axis is enumerated (searched, not sampled).
-- **`programmer_controls`** — the end-to-end exposure proof. Each new runner control
-  declares its stable `<family>.<key>` API identifier, the central config definition,
-  the production layer/backend that consumes it, and the low-level kernel keyword it
-  forwards. The frozen exposure gate verifies all four against source and eval metadata.
-- **`files_touched`** — EVERY file the capability changed or created, so `restore` can
-  revert the whole add-on on a reject. Kernels are pure Python/Pallas — there is NO
-  compiled artifact to list. Do NOT list anything under `akt/benchmark/`, the board
-  implementation, `flexgraph_extract.py` miner, `akt/core/evolve/loop.py`, or
-  `akt/core/evolve/exposure.py` (FROZEN).
-- **`status`** — start `"pending"`; the loop sets `"kept"`/`"rejected"` and adds
-  `objective_scope` plus `delta_pct` / `measured_geomean_s` / `reject_reason`. Manifests
-  from an older objective remain audit history but are not presented as active KEEP or
-  REJECT evidence to the oracle.
+Each search dimension contains exactly three fields:
 
-## What a capability may / may not touch
+- `control`: `<kernel-family>.<axis>`. The family must be one of the selected
+  action's `kernel_ids`; the key becomes both the runner knob and backend argument.
+- `kernel_function`: the backend entry in the graph-derived kernel source. It must
+  forward the argument to the graph-derived `source_function` and, for a hardcoded
+  literal, to its exact mined sink.
+- `consumer`: a production path under `layers/`, `models/`, or `model_executor/`
+  that resolves the stable control and forwards it to `kernel_function`.
 
-- **Editable**: `python/sgl_jax/srt/kernels/**`, the stable programmer API at
-  `python/sgl_jax/srt/configs/kernel_control.py`, a production consumer under
-  `python/sgl_jax/srt/layers/**` or `model_executor/**`, and
-  `akt/core/runners/<kernel>.py`.
-- **FROZEN** (voids the round): `akt/benchmark/**` — the suite registry, the gate
-  (`gates/eval.py`), the adapter, and `runners/base.py` (the contract + timer +
-  correctness-check + search). Also `flexgraph_extract.py`, `akt/core/evolve/loop.py`,
-  `exposure.py`, and board source (`build.py`, `index.html`, tests, and vendored chart).
-- **Reviewable invariant** (do not game the gate): a capability may add a genuinely new
-  control and extend the run mapping and kernel — it must NOT weaken a case's
-  `make_inputs` / `reference` / `atol` / `rtol` (the correctness contract).
+Do not copy graph-owned fields into the manifest. The validator derives
+`source_evidence`, callsites, source axis, default, kernel path/family/argument, and
+the complete finite candidate domain. The runner must expose that exact domain. This
+avoids two authorities for the same action and prevents a proposal from inventing a
+new value or mode.
 
-The loop keeps iff the programmer-exposure gate passes, every runnable case remains
-correct, and the measured suite geomean beats the incumbent by more than
-`target_improvement` (default 2%). Otherwise it reverts every `files_touched` entry.
+## Required implementation route
 
-The measured objective is `stateful-serving-deployable-v1`: recurrent cases use a
-nonzero incoming state and compare both token output and final state. Capability-added
-runner knobs without a registered production control are anchored at their default in
-this deployment search. They remain useful as research experiments, but cannot select
-the incumbent or justify a KEEP.
+The implementation must create one inspectable path:
+
+`KernelControlPolicy` typed field and registry → production consumer → backend entry
+argument → selected source function/sink → runner knob with the same
+`programmer_control`.
+
+If the backend argument already existed, the round only exposes it. If the action was
+a hardcoded literal, the round may lift that exact literal into an argument whose
+default preserves the mined incumbent value. There is no authorization to add a new
+kernel algorithm, schedule behavior, path, or unrelated abstraction.
+
+The frozen evaluator instruments the derived backend entry and accepts only an
+observed non-default argument at the exact affected model callsite. Self-reported
+runtime events are not evidence.
+
+## Acceptance
+
+A round can be kept only when:
+
+1. The fingerprint and `gap_id` identify one current executable red action.
+2. The incumbent lacked the stable programmer control, while the selected low-level
+   behavior already existed.
+3. Typed control, consumer, backend, source function/sink, runner, and every affected
+   callsite form one verified route.
+4. The deployment space is a pure extension: every incumbent configuration remains
+   at the new dimension's default, and every advertised value is exercised.
+5. Regeneration closes only the selected action; unrelated action semantics remain
+   unchanged.
+6. Every deployable local configuration is correct and measured on the target TPU.
+7. Exact additive DP agrees with the bounded Cartesian solver check, and the bounded
+   empirical whole-trace panel supports its selection.
+8. The selected non-default value is observed by the frozen backend probe.
+9. Both same-round paired and stored-baseline absolute synthetic geomean improve by
+   more than the campaign threshold (at least 2%).
+10. When the action changes Kimi-Linear's GMM-v2 route, the same-round live quality,
+    completion, policy-attestation, and throughput guards pass. Other actions are
+    explicitly `not_applicable`; incompatible hardware is a no-attempt topology skip.
+
+The DP optimum is only for the finite fingerprinted additive graph. The empirical
+panel is bounded, and the conditional Kimi result is end-to-end policy/request
+evidence rather than a machine-observed per-kernel route or a global SOTA claim.

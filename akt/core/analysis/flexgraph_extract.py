@@ -403,8 +403,8 @@ _SKIP_PRIMS = {
 
 
 # ============================ SERVING-STACK GAP MINING ============================
-# Auto-derive the flexibility-gap frontier the AKT loop evolves against — WITHOUT a
-# hand-authored gap list (cf. the frozen adapter.FRONTIER). Investigate the FULL
+# Auto-derive the flexibility action space the AKT loop evolves against, without a
+# hand-authored action list. Investigate the FULL
 # serving stack (every Pallas kernel under python/sgl_jax/srt/kernels/**), find each
 # kernel's structural tiling / pipeline / schedule axes, and classify every axis as
 # NAMED (a live tuned table or config selector chooses it) or a GAP (fixed in the
@@ -437,6 +437,23 @@ _GAP_CATEGORIES = {
     "backend-gated":        ("tuned table gated to one TPU generation", "dot_general", 2),
     "shape-pinned-tile":    ("tile derived from input shape (not a knob)", "dot_general", 3),
 }
+
+# Only findings that prove a pre-existing selector/value reaches a low-level API may
+# authorize an oracle round.  Other findings remain useful graph observations, but an
+# absence (notably ``missing-tuned-table``) is not permission to invent a new kernel
+# behavior. A dead table is likewise only an opportunity until the graph can bind its
+# selector to an exact live backend sink/argument.
+_EXISTING_ACTION_CATEGORIES = frozenset(
+    {
+        "pipeline-depth",
+        "schedule-toggle",
+    }
+)
+
+# These are real backend switches, but they change numeric representation or model
+# semantics rather than scheduling an otherwise identical low-level operation.  They
+# stay visible in the investigation graph and are deliberately not oracle actions.
+_SEMANTIC_AXES = frozenset({"enable_act_quant"})
 
 # family label -> the akt runner kernel_id(s) that tune it (the labels whose kernel_id
 # doesn't string-match the source directory). Kept explicit so `mla/v2` etc. don't get
@@ -672,6 +689,44 @@ def _resolve_axis(axis, named_axes, dependencies, scope=None):
     return found
 
 
+def _self_if_not_none_fallback(value, target):
+    """Match exactly ``target if target is not None else other_name``.
+
+    A generic IfExp is not evidence that a tile has an independently selectable
+    low-level fallback.  The previous loose matcher, for example, interpreted an RPA
+    sliding-window branch as a pinned tile even though the true branch was a computed
+    expression unrelated to an optional tile argument.
+    """
+
+    if not isinstance(value, ast.IfExp):
+        return None
+    if not isinstance(value.body, ast.Name) or value.body.id != target:
+        return None
+    if not isinstance(value.orelse, ast.Name) or value.orelse.id == target:
+        return None
+    test = value.test
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.IsNot)
+        or len(test.comparators) != 1
+    ):
+        return None
+    left, right = test.left, test.comparators[0]
+    matches = (
+        isinstance(left, ast.Name)
+        and left.id == target
+        and isinstance(right, ast.Constant)
+        and right.value is None
+    ) or (
+        isinstance(right, ast.Name)
+        and right.id == target
+        and isinstance(left, ast.Constant)
+        and left.value is None
+    )
+    return value.orelse.id if matches else None
+
+
 def _mine_file(path: Path, text: str):
     """AST-mine ONE kernel file for structural axes + fixed-value gap signatures."""
     try:
@@ -688,6 +743,122 @@ def _mine_file(path: Path, text: str):
     axes, findings = [], []
     tables, table_refs = set(), set()
 
+    # Attribute a hardcoded call-site value to the narrowest enclosing production
+    # function, not to the callee (``Buffered``/``emit_pipeline``).  The enclosing
+    # function is the backend entry that a capability manifest must extend, so this
+    # source-derived binding prevents an oracle from naming some other function in
+    # the same file.
+    functions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    function_by_name = {node.name: node for node in functions}
+
+    def _scope_nodes(fn):
+        """Walk one function body without leaking into nested function scopes."""
+
+        stack = list(reversed(fn.body))
+        while stack:
+            node = stack.pop()
+            yield node
+            if isinstance(
+                node,
+                (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda),
+            ):
+                continue
+            stack.extend(reversed(list(ast.iter_child_nodes(node))))
+
+    def _parameter_names(fn):
+        args = fn.args
+        return {
+            item.arg
+            for item in (
+                args.posonlyargs + args.args + args.kwonlyargs
+            )
+        }
+
+    def _assignment_targets(assignment):
+        targets = (
+            assignment.targets
+            if isinstance(assignment, ast.Assign)
+            else [assignment.target]
+        )
+        return [item.id for item in targets if isinstance(item, ast.Name)]
+
+    def _identity_aliases(fn, parameter):
+        aliases = {parameter}
+        changed = True
+        while changed:
+            changed = False
+            for assignment in _scope_nodes(fn):
+                if not isinstance(assignment, (ast.Assign, ast.AnnAssign)):
+                    continue
+                if not isinstance(assignment.value, ast.Name):
+                    continue
+                if assignment.value.id not in aliases:
+                    continue
+                for target in _assignment_targets(assignment):
+                    if target not in aliases:
+                        aliases.add(target)
+                        changed = True
+        return aliases
+
+    # Connect only statically proven, identity-preserving keyword forwarding between
+    # functions in this file. This lets a low-level sink inherit the complete domain
+    # validated by its public wrapper without mixing in unrelated same-named axes.
+    parameter_flow = defaultdict(set)
+    for caller in functions:
+        for parameter in _parameter_names(caller):
+            aliases = _identity_aliases(caller, parameter)
+            for call in (
+                node for node in _scope_nodes(caller) if isinstance(node, ast.Call)
+            ):
+                callee_node = call.func
+                if _callee(call.func) == "partial" and call.args:
+                    callee_node = call.args[0]
+                callee = _callee(callee_node)
+                target = function_by_name.get(callee)
+                if target is None:
+                    continue
+                target_parameters = _parameter_names(target)
+                for keyword in call.keywords:
+                    if (
+                        keyword.arg in target_parameters
+                        and isinstance(keyword.value, ast.Name)
+                        and keyword.value.id in aliases
+                    ):
+                        left = (caller.name, parameter)
+                        right = (callee, keyword.arg)
+                        parameter_flow[left].add(right)
+                        parameter_flow[right].add(left)
+
+    def _parameter_component(fn, parameter):
+        start = (fn.name, parameter)
+        seen = set()
+        pending = [start]
+        while pending:
+            state = pending.pop()
+            if state in seen:
+                continue
+            seen.add(state)
+            pending.extend(parameter_flow.get(state, set()) - seen)
+        return seen
+
+    def _enclosing_function(node):
+        line = getattr(node, "lineno", 0)
+        candidates = [
+            fn
+            for fn in functions
+            if fn.lineno <= line <= getattr(fn, "end_lineno", fn.lineno)
+        ]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda fn: (getattr(fn, "end_lineno", fn.lineno) - fn.lineno, -fn.lineno),
+        ).name
+
     # module-level tuned tables (dict literals whose name looks like a tuned table)
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
@@ -698,6 +869,86 @@ def _mine_file(path: Path, text: str):
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and _TABLE_RE.search(node.id):
             table_refs.add(node.id)
+
+    def _schedule_sink(fn, parameter):
+        """Bind a schedule parameter to every direct semantic assignment sink."""
+
+        aliases = _identity_aliases(fn, parameter)
+        targets = []
+        expression_asts = {}
+        assignments = sorted(
+            (
+                node
+                for node in _scope_nodes(fn)
+                if isinstance(node, (ast.Assign, ast.AnnAssign))
+            ),
+            key=lambda node: node.lineno,
+        )
+        for assignment in assignments:
+            value = assignment.value
+            if isinstance(value, ast.Name) and value.id in aliases:
+                continue
+            if not any(
+                isinstance(child, ast.Name)
+                and isinstance(child.ctx, ast.Load)
+                and child.id in aliases
+                for child in ast.walk(value)
+            ):
+                continue
+            assignment_targets = _assignment_targets(assignment)
+            targets.extend(assignment_targets)
+            expression = ast.dump(value, include_attributes=False)
+            expression_asts.update(
+                (target, expression) for target in assignment_targets
+            )
+        unique_targets = list(dict.fromkeys(targets))
+        return (
+            {
+                "assignments": unique_targets,
+                "expression_asts": {
+                    target: expression_asts[target] for target in unique_targets
+                },
+            }
+            if unique_targets
+            else None
+        )
+
+    def _schedule_values(fn, parameter, default_node):
+        """Mine the finite values already represented by an existing schedule axis."""
+
+        try:
+            default = ast.literal_eval(default_node)
+        except Exception:  # noqa: BLE001 - non-literal domains are analysis-only
+            return []
+        if type(default) is bool:
+            return [default, not default]
+        if isinstance(default, str):
+            discovered = set()
+            for function_name, connected_parameter in _parameter_component(
+                fn, parameter
+            ):
+                connected = function_by_name[function_name]
+                aliases = _identity_aliases(connected, connected_parameter)
+                for comparison in (
+                    node
+                    for node in _scope_nodes(connected)
+                    if isinstance(node, ast.Compare)
+                ):
+                    if not any(
+                        isinstance(child, ast.Name)
+                        and isinstance(child.ctx, ast.Load)
+                        and child.id in aliases
+                        for child in ast.walk(comparison)
+                    ):
+                        continue
+                    discovered.update(
+                        child.value
+                        for child in ast.walk(comparison)
+                        if isinstance(child, ast.Constant)
+                        and type(child.value) is type(default)
+                    )
+            return [default, *sorted(discovered - {default})]
+        return []
 
     def _param_axis(fn, arg, default_node):
         nm = arg.arg
@@ -713,8 +964,19 @@ def _mine_file(path: Path, text: str):
                      "line": arg.lineno, "default": _const_repr(default_node) if default_node else None})
         # schedule toggle with a literal default = a never-searched schedule knob
         if cat == "schedule-toggle" and default_node is not None and _const_repr(default_node):
+            try:
+                incumbent_value = ast.literal_eval(default_node)
+            except Exception:  # noqa: BLE001 - non-literals are observations only
+                incumbent_known = False
+                incumbent_value = None
+            else:
+                incumbent_known = True
             findings.append({"category": "schedule-toggle", "axis": nm, "fn": fn.name,
-                             "line": arg.lineno, "detail": f"default={_const_repr(default_node)}"})
+                             "line": arg.lineno, "detail": f"default={_const_repr(default_node)}",
+                             "incumbent_value": incumbent_value,
+                             "incumbent_value_known": incumbent_known,
+                             "candidate_values": _schedule_values(fn, nm, default_node),
+                             "source_sink": _schedule_sink(fn, nm)})
 
     for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
         a = fn.args
@@ -765,12 +1027,11 @@ def _mine_file(path: Path, text: str):
                     if not _TILE_RE.search(tn):
                         continue
                     v = node.value
-                    if isinstance(v, ast.IfExp):     # A if A is not None else B
-                        els = v.orelse
-                        if isinstance(els, ast.Name):
-                            findings.append({"category": "compute-tile-pinned", "axis": tn,
-                                             "fn": fn.name, "line": node.lineno,
-                                             "detail": f"defaults to load tile `{els.id}` when unset"})
+                    fallback = _self_if_not_none_fallback(v, tn)
+                    if fallback is not None:
+                        findings.append({"category": "compute-tile-pinned", "axis": tn,
+                                         "fn": fn.name, "line": node.lineno,
+                                         "detail": f"defaults to load tile `{fallback}` when unset"})
                     elif isinstance(v, ast.Subscript) and isinstance(v.value, ast.Attribute) \
                             and v.value.attr == "shape":
                         base = getattr(v.value.value, "id", "input")
@@ -783,11 +1044,27 @@ def _mine_file(path: Path, text: str):
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             fname = _callee(node.func)
+            source_function = _enclosing_function(node)
             for kw in node.keywords:
                 if kw.arg and (_PIPE_RE.search(kw.arg)) and isinstance(kw.value, ast.Constant) \
-                        and isinstance(kw.value.value, (int, float)):
-                    findings.append({"category": "pipeline-depth", "axis": kw.arg, "fn": fname,
+                        and type(kw.value.value) is int and kw.value.value > 0:
+                    candidate_values = sorted(
+                        {
+                            max(1, kw.value.value - 1),
+                            kw.value.value,
+                            kw.value.value + 1,
+                        }
+                    )
+                    findings.append({"category": "pipeline-depth", "axis": kw.arg,
+                                     "fn": source_function,
                                      "line": node.lineno,
+                                     "incumbent_value": kw.value.value,
+                                     "incumbent_value_known": True,
+                                     "candidate_values": candidate_values,
+                                     "source_sink": {
+                                         "callee": fname,
+                                         "argument": kw.arg,
+                                     },
                                      "detail": f"{fname}({kw.arg}={kw.value.value}) — hardcoded literal"})
     return {
         "axes": axes,
@@ -799,10 +1076,14 @@ def _mine_file(path: Path, text: str):
 
 
 def mine_serving_stack(sources):
-    """Investigate the full serving stack and emit the auto gap frontier + categories.
+    """Investigate the full serving stack and emit source findings + categories.
     Returns {serving_stack, gaps, gap_categories}. Each gap is a reachable structural
     axis that the shipped config path fixes without naming — a candidate capability."""
     kernels_dir, repo = sources["kernels"], sources["repo"]
+    if str(repo) not in sys.path:
+        sys.path.insert(0, str(repo))
+    from akt.benchmark.model_workloads import callsites_for_kernel_ids
+
     families = discover_kernel_families(kernels_dir)
     runner_axes = runner_named_axes(repo)           # kernel_id -> knob -> API control
     named = {kernel_id: set(axes) for kernel_id, axes in runner_axes.items()}
@@ -856,7 +1137,18 @@ def mine_serving_stack(sources):
                       "n_files": len(rec["files"])})
 
         seen = set()
-        def _emit(cat, axis, detail, file, line, fn=None):
+        def _emit(
+            cat,
+            axis,
+            detail,
+            file,
+            line,
+            fn=None,
+            incumbent_value=None,
+            incumbent_value_known=False,
+            candidate_values=None,
+            source_sink=None,
+        ):
             key = (label, cat, axis)
             if key in seen:
                 return
@@ -878,11 +1170,36 @@ def mine_serving_stack(sources):
             controls = sorted(
                 {fam_controls[knob] for knob in matched_knobs if fam_controls.get(knob)}
             )
+            gap_id = f"{label}:{axis}:{cat}"
+            # A directory family may back multiple runner variants.  When the source
+            # filename itself identifies one of those variants (for example
+            # gmm_v2.py), do not authorize unrelated sibling callsites.
+            source_stem = Path(file).stem
+            source_ids = {kernel_id for kernel_id in ids if kernel_id == source_stem}
+            action_kernel_ids = source_ids or ids
+            model_callsites = callsites_for_kernel_ids(action_kernel_ids)
+            existing_low_level_proven = (
+                cat in _EXISTING_ACTION_CATEGORIES
+                and axis not in _SEMANTIC_AXES
+                and incumbent_value_known
+                and isinstance(candidate_values, list)
+                and len(candidate_values) >= 2
+                and source_sink is not None
+            )
             gaps.append({
-                "id": f"{label}:{axis}:{cat}", "family": label, "kernel_ids": sorted(ids),
-                "axis": axis, "category": cat, "status": cat,
+                # This identifier is the proposal foreign key. It is derived only
+                # from stable source concepts, never rank or line number.
+                "gap_id": gap_id, "id": gap_id,
+                "family": label, "kernel_ids": sorted(action_kernel_ids),
+                "axis": axis, "source_axis": axis,
+                "source_function": fn,
+                "category": cat, "status": cat,
                 "what": _GAP_CATEGORIES.get(cat, (cat, "", 0))[0],
                 "detail": detail, "evidence": f"{file}:{line}",
+                "incumbent_value": incumbent_value,
+                "incumbent_value_known": incumbent_value_known,
+                "candidate_values": candidate_values or [],
+                "source_sink": source_sink,
                 "reachable_prim": _GAP_CATEGORIES.get(cat, (None, None, 0))[1],
                 "elevated_in_akt": elevated,
                 "programmer_exposed": programmer_exposed,
@@ -891,7 +1208,15 @@ def mine_serving_stack(sources):
                 "exposure_level": (
                     "programmer" if programmer_exposed else "runner" if elevated else "none"
                 ),
-                "in_akt_suite": bool(ids)})
+                "in_akt_suite": bool(ids),
+                "model_callsites": model_callsites,
+                "open": not programmer_exposed,
+                "existing_low_level_proven": existing_low_level_proven,
+                "eligible_for_current_gate": (
+                    bool(model_callsites)
+                    and not programmer_exposed
+                    and existing_low_level_proven
+                )})
 
         for g in merged["findings"]:
             _emit(
@@ -901,6 +1226,10 @@ def mine_serving_stack(sources):
                 g["file"],
                 g["line"],
                 g.get("fn"),
+                g.get("incumbent_value"),
+                g.get("incumbent_value_known", False),
+                g.get("candidate_values"),
+                g.get("source_sink"),
             )
         # missing-tuned-table: per FILE — an entry that constructs its own tiles
         # (TileSizes / calculate_tiling / >=2 tile axes) but references NO tuned table,
@@ -937,24 +1266,23 @@ def mine_serving_stack(sources):
     return {"serving_stack": stack, "gaps": gaps, "gap_categories": cats}
 
 
-# validation: the auto-miner should REDISCOVER the frozen hand-authored FRONTIER
+# Regression seeds: the auto-miner should continue rediscovering these known patterns.
 # (proof it is really investigating the stack, not re-encoding a list). Maps each
 # hand gap to an (family-substr, category) the miner must have produced.
-_FRONTIER_EXPECT = [
+_SEED_EXPECT = [
     ("update_kv_cache", "dead-tuned-table"),      # num_slices_per_block dead selector
     ("megablox_gmm_kernel", "missing-tuned-table"),  # gmm_v2 no table
     ("fused_mlp", "pipeline-depth"),              # buffer_count=3 hardcoded
-    ("ragged_paged_attention", "compute-tile-pinned"),  # bkv_csz pinned
     ("fused_moe/v2", "schedule-toggle"),          # moe_v2 toggles
     ("simple_gla", "shape-pinned-tile"),          # BK/BV from ref.shape
     ("ragged_paged_attention", "backend-gated"),  # TUNED_BLOCK_SIZES_V3 gen-gated
 ]
 
 
-def frontier_coverage(mined):
+def seed_coverage(mined):
     got = {(g["family"], g["category"]) for g in mined["gaps"]}
     rows = []
-    for famsub, cat in _FRONTIER_EXPECT:
+    for famsub, cat in _SEED_EXPECT:
         hit = any(famsub in f and c == cat for (f, c) in got)
         rows.append((famsub, cat, hit))
     return rows
@@ -982,7 +1310,7 @@ def build_graph(focus_active: bool = True):
             nodes[i]["active"] = sorted(set(nodes[i]["active"]) | set(activek))
         return i
 
-    low_edges, gap_edges = [], []
+    low_edges, hidden_lowering_edges = [], []
     hw_seen = set()
     # exact API/ISA "handles" per node, surfaced in the board's click detail panel.
     api_for = {}                          # jax primitive short -> Pallas/JAX API tokens
@@ -998,8 +1326,8 @@ def build_graph(focus_active: bool = True):
         # BINARY nameability: a capability is either NAMEABLE/reschedulable at the top
         # or HIDDEN (reachable in the lowering but not nameable). A "grouped" op like
         # lax.dot is itself nameable; the internals it fuses that you cannot reschedule
-        # are separate HIDDEN nodes it lowers into (the red gap edges) — so there is no
-        # third tier. `fanout` is kept only as a tooltip hint, not a class.
+        # are separate HIDDEN nodes it lowers into (neutral compiler boundaries), so
+        # there is no third tier. `fanout` is kept only as a tooltip hint, not a class.
         fanout = (pl != prim or len({o.split(".")[0] for o in ops}) > 1 or len(ops) > 2)
         p_id = node("pallas", pl, categorize(pl), "nameable", active.get(prim))
         _ph = prim_handle.setdefault(p_id, {"prim": set(), "usage": []})
@@ -1019,7 +1347,7 @@ def build_graph(focus_active: bool = True):
             # onto its hardware unit(s):  mosaic op -> llo stage (hidden) -> hw unit.
             lname, lcat = _LLO_FOR_CAT.get(ocat, _LLO_FOR_CAT["compute"])
             l_id = node("llo", lname, lcat, "hidden", active.get(prim))
-            low_edges.append([m_id, l_id]); gap_edges.append([m_id, l_id])
+            low_edges.append([m_id, l_id]); hidden_lowering_edges.append([m_id, l_id])
             for u in hw_units(op):     # classify HW from the ORIGINAL (specific) op
                 h_id = node("hw", u, categorize(u), "nameable", active.get(prim))
                 hw_seen.add(u)
@@ -1036,24 +1364,30 @@ def build_graph(focus_active: bool = True):
                 # inherit the parent unit's ACTIVE set — a micro-behaviour is exercised
                 # whenever its unit is (else it would look falsely "unused by the suite").
                 x_id = node("hw", mname, nodes[u_id]["category"], "hidden", nodes[u_id]["active"])
-                low_edges.append([u_id, x_id]); gap_edges.append([u_id, x_id])
+                low_edges.append([u_id, x_id]); hidden_lowering_edges.append([u_id, x_id])
 
     # de-dup edges
     low_edges = [list(e) for e in dict.fromkeys(map(tuple, low_edges))]
-    gap_edges = [list(e) for e in dict.fromkeys(map(tuple, gap_edges))]
+    hidden_lowering_edges = [
+        list(edge) for edge in dict.fromkeys(map(tuple, hidden_lowering_edges))
+    ]
     # FOCUS: restrict to the subgraph the serving stack actually exercises — active
     # primitives + everything they lower into + the hidden gaps under those HW units.
     if focus_active:
         keep = {i for i, n in nodes.items() if n["active"]}
-        # keep only the hidden gaps that hang off an ACTIVE node, so the shown floor is
+        # Keep only hidden boundaries that hang off an ACTIVE node, so the shown floor is
         # exactly the part the serving stack reaches — not ops/gaps the suite never triggers
         # (those belong to the --full view). This keeps the focused view fully-exercised.
-        for a, b in gap_edges:
+        for a, b in hidden_lowering_edges:
             if a in keep:
                 keep.add(b)
         nodes = {i: n for i, n in nodes.items() if i in keep}
         low_edges = [e for e in low_edges if e[0] in nodes and e[1] in nodes]
-        gap_edges = [e for e in gap_edges if e[0] in nodes and e[1] in nodes]
+        hidden_lowering_edges = [
+            edge
+            for edge in hidden_lowering_edges
+            if edge[0] in nodes and edge[1] in nodes
+        ]
 
     # attach the exact API/ISA HANDLE to each node (1:1 for single-API boxes, the member
     # list for coarsened families; hidden nodes get no handle — that absence IS the gap).
@@ -1077,35 +1411,82 @@ def build_graph(focus_active: bool = True):
     cats = [("memory", "Memory & placement"), ("datamove", "Data movement / DMA"),
             ("compute", "Compute"), ("layout", "Layout & vectorization"),
             ("sync", "Synchronization & topology")]
-    layers = [("pallas", "JAX / Pallas primitives"), ("mosaic", "Mosaic TPU IR ops"),
+    layers = [("action", "AKT executable actions"),
+              ("pallas", "JAX / Pallas primitives"), ("mosaic", "Mosaic TPU IR ops"),
               ("llo", "Mosaic backend (LLO): reg-alloc / scheduling"), ("hw", "TPU hardware")]
     n_partial = sum(1 for n in nodes.values() if n.get("partial"))
 
-    # (3) AUTO-DERIVE the gap frontier + categories from the FULL serving stack, and
-    # CONNECT each gap to the reachable lowering node it would steer (config axis ->
-    # the Pallas primitive that already lowers, but which no config names). This is
-    # the loop's evolve target list, generated — not hand-authored.
+    # (3) AUTO-DERIVE findings + categories from the full serving stack. A finding only
+    # becomes an action when the frozen model gate exercises it; this keeps every red
+    # link executable by the loop and prevents uncovered source findings from masquerading
+    # as proposals that could pass the acceptance contract.
     mined = mine_serving_stack(src)
+    action_edges = []
     for g in mined["gaps"]:
         rp = g.get("reachable_prim")
         g["graph_node"] = f"pallas:{rp}" if rp and f"pallas:{rp}" in nodes else None
-    coverage = frontier_coverage(mined)
-    n_open = sum(
-        1
-        for g in mined["gaps"]
-        if g["in_akt_suite"] and not g["programmer_exposed"]
-    )
+        if not g["open"] or not g["eligible_for_current_gate"]:
+            g["action_node"] = None
+            continue
+        target = g["graph_node"]
+        if target is None:
+            raise ValueError(f"executable action {g['gap_id']!r} has no graph target")
+        action_id = f"action:{g['gap_id']}"
+        if action_id in nodes:
+            raise ValueError(f"duplicate action node {action_id!r}")
+        g["action_node"] = action_id
+        nodes[action_id] = {
+            "id": action_id,
+            "label": f"{g['family']}: {g['axis']}",
+            "layer": "action",
+            "category": nodes[target]["category"],
+            "nameability": "open-action",
+            "active": list(g.get("kernel_ids") or []),
+            "gap_id": g["gap_id"],
+            "gap_category": g["category"],
+            "detail": g["detail"],
+            "evidence": g["evidence"],
+            "model_callsites": list(g.get("model_callsites") or []),
+            "eligible_for_current_gate": bool(g["eligible_for_current_gate"]),
+        }
+        action_edges.append(
+            {
+                "gap_id": g["gap_id"],
+                "source": action_id,
+                "target": target,
+                "eligible_for_current_gate": bool(g["eligible_for_current_gate"]),
+            }
+        )
+    coverage = seed_coverage(mined)
+    n_open = sum(1 for g in mined["gaps"] if g["open"])
+    n_eligible = sum(1 for g in mined["gaps"] if g["eligible_for_current_gate"])
     return {
         "kind": "lowering-4layer", "generated_by": "flexgraph_extract.py (automated)",
+        "action_contract_version": 2,
+        "graph_target": {
+            "backend": "tpu",
+            "scope": "sglang-jax TPU-Pallas compiler and serving stack",
+            "stack": [
+                "JAX / Pallas",
+                "Mosaic TPU IR",
+                "Mosaic backend (LLO)",
+                "TPU hardware",
+            ],
+        },
         "categories": [{"id": c, "title": t} for c, t in cats],
         "layers": [{"id": l, "title": t} for l, t in layers],
         "nodes": list(nodes.values()),
-        "lowering_edges": low_edges, "exposure_edges": exposure, "gap_edges": gap_edges,
-        "n_gap": len(gap_edges), "n_hidden": len(hidden_ids), "n_partial": n_partial,
-        # auto-mined serving-stack investigation + evolve frontier
+        "lowering_edges": low_edges,
+        "exposure_edges": exposure,
+        "hidden_lowering_edges": hidden_lowering_edges,
+        "action_edges": action_edges,
+        "n_open_action_edges": len(action_edges),
+        "n_hidden_boundaries": len(hidden_lowering_edges),
+        "n_hidden": len(hidden_ids), "n_partial": n_partial,
+        # Auto-mined serving-stack investigation + loop action catalog.
         "serving_stack": mined["serving_stack"], "gaps": mined["gaps"],
         "gap_categories": mined["gap_categories"],
-        "frontier_coverage": [{"family": f, "category": c, "hit": h} for (f, c, h) in coverage],
+        "seed_coverage": [{"family": f, "category": c, "hit": h} for (f, c, h) in coverage],
         "stats": {"jax_primitives_total": len(rules), "primitives_shown": shown_prims,
                   "mosaic_ops": sum(1 for n in nodes.values() if n["layer"] == "mosaic"),
                   "hw_units": sum(1 for n in nodes.values() if n["layer"] == "hw"),
@@ -1113,18 +1494,22 @@ def build_graph(focus_active: bool = True):
                   "active_primitives": sum(1 for p in rules if active.get(p)),
                   "kernels_scanned": len({k for ks in active.values() for k in ks}),
                   "pallas_families": len(mined["serving_stack"]),
-                  "auto_gaps": len(mined["gaps"]), "open_suite_gaps": n_open,
-                  "frontier_rediscovered": f"{sum(h for _,_,h in coverage)}/{len(coverage)}",
+                  "auto_gaps": len(mined["gaps"]), "open_gaps": n_open,
+                  "open_action_edges": len(action_edges),
+                  "hidden_lowering_boundaries": len(hidden_lowering_edges),
+                  "executable_action_gaps": n_eligible,
+                  "seed_patterns_rediscovered": f"{sum(h for _,_,h in coverage)}/{len(coverage)}",
                   "focus_active": focus_active},
         "note": ("AUTO-EXTRACTED: JAX/Pallas primitives + primitive→Mosaic-op edges parsed from "
                  "jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax "
                  "kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas → Mosaic IR "
                  "→ Mosaic backend (LLO: reg-alloc / scheduling) → hardware. Nameability is BINARY: "
-                 "NAMEABLE (green, reschedulable at the top) vs HIDDEN (red) — reachable in the "
-                 "lowering but with no handle. The LLO level is hidden (the backend's decisions have "
-                 "no user handle) and every op must traverse it; hardware micro-behaviours (MXU "
-                 "staging, VMEM bank, DMA channel, ICI route) are hidden nodes AT the hw level. A "
-                 "red directed edge into any hidden node = a flexibility gap."),
+                 "NAMEABLE (reschedulable at the top) vs HIDDEN (compiler-internal) — reachable in the "
+                 "lowering but with no direct handle. Neutral dashed links mark these compiler-internal "
+                 "boundaries; they are structural context, not loop actions. Each source-derived, "
+                 "programmer-unexposed finding covered by the frozen model gate is represented by "
+                 "exactly one red action link carrying the same stable gap_id consumed by the AKT "
+                 "loop. Open findings without a model callsite remain visible but are not actions."),
     }
 
 
@@ -1143,14 +1528,16 @@ def main():
     print(f"[flexgraph-extract] graph ({'FULL' if args.full else 'serving-stack focus'}): "
           f"{len(g['nodes'])} nodes ({s['primitives_shown']} primitives, {s['mosaic_ops']} Mosaic "
           f"ops, {s['hw_units']} HW units), {len(g['lowering_edges'])} lowering edges, "
-          f"{g['n_gap']} gap edges into {g['n_hidden']} hidden capabilities.")
+          f"{g['n_hidden_boundaries']} hidden lowering boundaries, "
+          f"{g['n_open_action_edges']} executable action edges.")
     print(f"[flexgraph-extract] serving stack: {s['pallas_families']} Pallas kernel families "
           f"investigated -> {s['auto_gaps']} flexibility gaps auto-derived "
-          f"({s['open_suite_gaps']} OPEN in the akt suite) across {len(g['gap_categories'])} "
-          f"categories; hand-FRONTIER rediscovered {s['frontier_rediscovered']}.")
-    miss = [c for c in g["frontier_coverage"] if not c["hit"]]
+          f"({s['executable_action_gaps']} executable by the AKT model gate) across "
+          f"{len(g['gap_categories'])} "
+          f"categories; regression seeds rediscovered {s['seed_patterns_rediscovered']}.")
+    miss = [c for c in g["seed_coverage"] if not c["hit"]]
     if miss:
-        print("[flexgraph-extract] WARNING frontier gaps NOT rediscovered: "
+        print("[flexgraph-extract] WARNING action seed patterns NOT rediscovered: "
               + ", ".join(f"{c['family']}/{c['category']}" for c in miss))
     print(f"[flexgraph-extract] -> {args.out}")
 

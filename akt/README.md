@@ -1,137 +1,211 @@
-# AKT — the capability-elevation loop (sglang-jax kernels)
+# AKT capability-elevation loop
 
-AKT is an autonomous loop that improves the sglang-jax TPU-Pallas kernels by
-**elevating one low-level flexibility per round** through the production serving path
-and stable programmer API, then keeping the change only if exposure, correctness, and
-performance gates all pass. A Claude/LLM session is the *oracle* that implements each
-round; the loop owns the trajectory, measurement, and keep/restore rule.
+AKT exposes source-proven, already-existing TPU kernel choices through the serving
+stack. A round may add the control-plane plumbing needed to name an existing choice
+(`KernelControlPolicy`, a production forwarding path, and planner metadata), but it
+may not introduce a new low-level algorithm, kernel path, schedule mode, or semantic
+behavior.
 
-```
-init      measure the incumbent (best config in the deployable design space)
-rebaseline
-          preserve campaign history but replace a legacy objective with the
-          current stateful-serving, deployable-space baseline
-run       for each round: hand the QUERY to the oracle -> it elevates ONE gap ->
-          re-search the enlarged space -> gate (>2% on the suite) -> KEEP or REVERT
-status    print the current Capability QUERY (bottleneck + ranked gap frontier)
-submit    gate a manually-implemented capability
-```
+The flexibility graph is the oracle's authorization boundary, not a performance
+oracle. The LLM still ranks actions and writes the implementation; the graph limits
+that work to fingerprinted source findings and the gate decides with measurements.
+
+## Quick start
+
+Run from the repository root with the project `.venv`:
 
 ```bash
-python akt/core/evolve/loop.py init  --hours 6 --target 0.02
-python akt/core/evolve/loop.py rebaseline --hours 6 --runs 3   # legacy campaigns
-python akt/core/evolve/loop.py run   --rounds 3 --oracle claude   # autonomous
-python akt/core/evolve/loop.py status                             # see the QUERY
-python akt/core/evolve/loop.py submit --capability <name>         # manual
+# Start in the repository root.
+
+# Refresh source findings and the executable action contract.
+PYTHONPATH=python:. .venv/bin/python akt/core/analysis/flexgraph_extract.py
+
+# Fast proof that the DP implementation equals a bounded Cartesian oracle.
+PYTHONPATH=python:. .venv/bin/python akt/benchmark/gates/dp_verify.py
+
+# The implementation tree must be clean before establishing a rollback point.
+git status --porcelain
+
+# Fresh campaign. The synthetic gate requires compiled TPU execution.
+.venv/bin/python akt/core/evolve/loop.py init --hours 6 --target 0.02 --runs 3
+
+# Migrate an older campaign to the current objective.
+.venv/bin/python akt/core/evolve/loop.py rebaseline --hours 6 --runs 3
+
+# Autonomous or manual operation.
+.venv/bin/python akt/core/evolve/loop.py run --rounds 3 --oracle codex
+.venv/bin/python akt/core/evolve/loop.py status
+.venv/bin/python akt/core/evolve/loop.py submit --capability <name> --runs 3
 ```
 
----
+The active objective scope is `model-serving-empirical-dp-v2`. `init` and
+`rebaseline` fail closed unless `jax.default_backend() == "tpu"`,
+`PALLAS_INTERPRET` is disabled, all 15 synthetic callsites execute, and every
+synthetic correctness and empirical-DP guard passes.
 
-## Running the loop — setup, execution, and memory
+## Frozen objective
 
-### Before you launch — environment + setup scripts
+[`benchmark/model_workloads.py`](benchmark/model_workloads.py) defines three
+deterministic serving traces. Each call has a fixed seed, frozen tensor generator,
+frozen reference, and explicit inference phase.
 
-Environment (this AI-kernel port, `/home/ubuntu/work/sglang-jax`): the project
-**`.venv`** (jax 0.8.1) — *not* the conda `jaxite` env, which belongs to the FHE/maple
-tree — with **`PALLAS_INTERPRET=1`** and **`PYTHONPATH="python:."`**. There is **no
-Go/Lattigo build** (kernels are pure Pallas). The loop injects those two env vars into
-its own subprocesses, so you only need to export them for **hand-run** commands (the
-adapter / eval / extractor); a bare `loop.py …` invocation sets them itself.
+| Workload | Purpose | Calls |
+|---|---|---|
+| `tiny-linear-serving` | linear-attention prefill envelope | GMM, two GLA, two KDA |
+| `tiny-dense-serving` | dense prefill and decode | GMM v2, fused MLP, RPA, KV update |
+| `tiny-moe-serving` | MoE prefill and decode | GMM, MoE v1/v2, fused MLP, RPA, KV update |
 
-Run these in order before `run`:
+Together they cover every frozen `KernelCase`. Campaign state pins the model
+contract, generated tensors/references, target hardware, and action graph. Each
+evaluation also records its measured-cost graph and empirical-panel hashes, but those
+timing-derived hashes are evidence for that evaluation rather than cross-round pins.
 
-| # | Command | Required? | Why |
-|---|---------|-----------|-----|
-| 1 | `cd /home/ubuntu/work/sglang-jax` | **yes** | all loop paths are repo-relative and the git keep/restore logic assumes the repo root is CWD |
-| 2 | `.venv/bin/python -c "import jax; print(jax.__version__)"` | optional | sanity-check the interpreter the loop shells out to (expect `0.8.1`) |
-| 3 | `PALLAS_INTERPRET=1 PYTHONPATH="python:." .venv/bin/python akt/core/analysis/flexgraph_extract.py` | recommended | refresh the initial auto-derived gap frontier (`flexgraph_generated.json`). The loop refreshes it after every KEEP; running it here makes the first QUERY reflect source edits made outside AKT |
-| 4 | `git status --porcelain` | **yes** | `init`, `rebaseline`, and `run` require a **clean implementation tree** because the incumbent commit is the rollback point. Commit or stash code changes first |
-| 5a | `.venv/bin/python akt/core/evolve/loop.py init --hours 6 --target 0.02 --runs 3` | **fresh campaign only** | exhaustively measures the best **deployable** configuration under the stateful-serving objective and writes `evolve_state.json` plus `.evolve_eval.json` |
-| 5b | `.venv/bin/python akt/core/evolve/loop.py rebaseline --hours 6 --runs 3` | **existing legacy campaign only** | preserves rounds/manifests but replaces the old output-only incumbent with a correctness-checked stateful-serving baseline. `status` and the board explicitly say `REBASELINE_REQUIRED` / `OBJECTIVE STALE` when this migration is required |
-| 6 | `.venv/bin/python akt/core/evolve/loop.py run --rounds N --oracle claude` | **yes** | the target command (autonomous mode needs the `claude` CLI on `PATH`) |
+These traces use production kernels, but they are not downloaded checkpoints. The
+separate live-model gate conditionally runs the actual
+`moonshotai/Kimi-Linear-48B-A3B-Instruct` checkpoint.
 
-Do not use `init` merely to renew an existing campaign: it starts a new round-zero
-ratchet. Use `rebaseline` to retain historical evidence while changing objective scope.
-Both commands refresh the deadline. Historical output-only rounds remain reviewable on
-the board but are excluded from the stateful incumbent envelope. A truncated search
-cannot initialize or rebaseline a campaign.
+## One round
 
-### What runs during a round
+1. `adapter.py bottleneck` reports the latest model/callsite timing and selected
+   plans. `adapter.py gaps` reports the complete executable graph action catalog.
+2. The oracle receives both the human-readable report and a structured action
+   contract containing version, target stack, actions, and SHA-256 fingerprint. The
+   checked-in v2 graph currently has five source-proven actions.
+3. A proposal selects one `gap_id` under the complete graph fingerprint. Source
+   evidence, axis, family, incumbent value, finite candidate domain, semantic sink,
+   and affected callsites are derived from that foreign key rather than copied into
+   the manifest.
+4. The implementation exposes that existing axis through a production consumer,
+   `KernelControlPolicy`, a runner `Knob`, and planner metadata. A newly added backend
+   argument is allowed only as forwarding for the exact hardcoded source axis, with
+   the incumbent behavior preserved as its default.
+5. The extractor regenerates a candidate graph. The selected action must be closed
+   or marked programmer-exposed; unrelated actions may not disappear, appear, or
+   change semantics.
+6. Every valid *deployable* local configuration is correctness-checked and timed on
+   TPU. Runner-only benchmark knobs are held at their defaults; adding a stable
+   `programmer_control` is what expands their existing values into the serving search.
+7. [`core/search/model_dp.py`](core/search/model_dp.py) computes the exact layered
+   optimum of each complete finite additive model graph. A bounded Cartesian oracle
+   independently checks the implementation.
+8. The `synthetic_trace_additivity` gate builds a binary whole-plan panel: every stage
+   contains the full-DP choice and, when available, its cheapest distinct alternative.
+   It executes every valid combination, up to the fail-closed 64-plan limit, and
+   correctness-checks every complete trace.
+9. Each challenger is timed against the DP plan in balanced paired order. A
+   deterministic bootstrap produces a 95% upper bound on selection regret and on
+   multi-factor interaction residual. By default, regret must be at most 1% and the
+   interaction residual at most 2%; incomplete or inconclusive panels fail.
+10. The selected plan must use the new control at a non-default value. A frozen probe
+    observes the declared backend argument at the exact model/callsite scope.
+    Candidate and incumbent synthetic traces then run in paired alternating order.
+11. After the synthetic process releases the TPU, the conditional live Kimi-Linear
+    gate runs only for a changed GMM-v2 control on Kimi's production
+    EPMoE→GMM-v2 route. Other actions record `not_applicable`; incompatible hardware
+    records a topology skip. Neither case imports the model stack or downloads a
+    checkpoint.
+12. KEEP requires every guard plus both paired and absolute three-trace geomean
+    improvement strictly above the campaign threshold (never below 2%). The validated
+    candidate graph is installed atomically only for KEEP; rejection restores the
+    declared implementation files.
 
-Everything below is **automatic** — `run` spawns it; you don't invoke any of it by hand:
+## What the search proves
 
-- **`adapter.py bottleneck` + `adapter.py gaps`** — shelled to build the QUERY (and again to reprint it after the gate); `gaps` reads `flexgraph_generated.json`.
-- **the oracle** — `cat .oracle_prompt.txt | claude -p … --output-format stream-json` (the loop *drives* the LLM; streamed to `.oracle.log` + the board heartbeat).
-- **FROZEN-fingerprint guard** — hashes `akt/benchmark/**`, board source, the loop, the native-test tree, and reference ASTs that share editable kernel files; any oracle change to those contracts voids the round.
-- **Manifest-scope guard** — `files_touched` must exactly equal the oracle's non-bookkeeping worktree edits; campaign state/history are also protected during the oracle window.
-- **Frozen case-contract validator** — every runner must retain the exact workload IDs, canonical input partials, reference functions, tolerances, output projection, execution-regime declaration, and native-test wiring declared by `benchmark/suites.py`.
-- **`akt/benchmark/gates/eval.py --suite full`** — THE GATE: exhaustively autotunes each kernel's **deployable** space, requires *every* advertised configuration to match the frozen reference, and times it. Recurrent KDA/GLA cases start from a nonzero state and compare both token output and final state, matching production prefill semantics. Configured sglang-jax native pytest checks must positively pass; errors/timeouts fail closed. The runnable case set is fixed at `init`/`rebaseline`, so a candidate cannot improve the geomean by turning a slow case into `tpu-deferred`.
-- **Programmer-exposure gate** — requires a new runner dimension to name a registered `KernelControlPolicy` control and verifies that a production layer/backend forwards it to the declared kernel argument. A larger candidate list, new default, or runner-only switch does not qualify.
-- **`flexgraph_extract.py` after KEEP** — re-mines the live serving stack so the next round sees the updated programmer-exposure frontier.
-- **`akt/board/build.py`** — rebuilds the dashboard on every keep/reject.
-- **git** — `git commit` on KEEP, `git checkout <incumbent> -- <file>` on REJECT.
+Local enumeration covers every valid configuration exposed by the finite deployment
+space. The DP is the exact optimum of the fingerprinted *additive measured-cost*
+graph. The bounded `DP == brute` check verifies the solver, while the empirical binary
+panel tests whether the additive choice survives selected whole-trace interactions.
 
-> `build.py` only reads the generated graph. `loop.py` regenerates it after a successful
-> KEEP; run the extractor manually before `init` when the stack changed outside the loop.
+This is not brute force over arbitrary post-modification programs, the full
+non-additive Cartesian model space, or external systems, and it is not a global SOTA
+claim. The paired synthetic trace and conditional Kimi measurements are the hardware
+evidence within their stated scopes.
 
-Run these **alongside**, to watch (optional, read-only): `loop.py status` (reprint the
-QUERY), `tail -f akt/optimization_history/.oracle.log` (live oracle work),
-`cd akt/board && python -m http.server 8777` (dashboard),
-`tail -f akt/optimization_history/evolve_history.jsonl` (per-round decisions).
+## Flexibility-graph guardrail
 
-### Does the loop consider the changes it made in past runs? — **Yes, it is a ratchet**
+Run:
 
-The loop is **cumulative, not fresh-each-run**. Each round is measured against the *best
-result kept so far*, and past decisions persist:
+```bash
+PYTHONPATH=python:. .venv/bin/python akt/core/analysis/flexgraph_extract.py
+PYTHONPATH=python:. .venv/bin/python akt/benchmark/adapter.py gaps
+```
 
-- **KEEP advances the incumbent.** On a kept round the loop lowers `incumbent_geomean`,
-  `git commit`s the capability's edits, and sets `incumbent_commit = git HEAD`. Since the
-  next round reloads that state and never reverts kept edits, **every later round builds on
-  top of all kept capabilities** and must beat the *improved* incumbent.
-- **REJECT reverts cleanly.** A rejected round `git checkout`s every touched file back to
-  the incumbent commit (or deletes newly-added files); the incumbent is left untouched.
-- **The oracle is told the history.** The QUERY hands it the **KEPT** capabilities (with
-  their `+Δ%`) and the **REJECTED** ones marked *"do not re-attempt unmodified"* — persisted
-  as `kept`/`rejected` status in `capabilities/*.json`.
-- **The gap frontier shrinks only after production exposure.** The extractor separately
-  records `elevated_in_akt` (the benchmark runner can search it) and
-  `programmer_exposed` (the production API can select it). A runner-only experiment stays
-  open; a matching registered control removes the gap after the post-KEEP refresh.
-- **Objective scopes never mix.** The incumbent and chart envelope can advance only
-  from measurements tagged `stateful-serving-deployable-v1`. Legacy output-only rounds
-  are retained as audit history but cannot compete with or seed the current objective.
+The extractor scans the Pallas kernel sources and installed Pallas-to-Mosaic
+lowering registry. The oracle receives a canonical context shaped like:
 
-State lives in `akt/optimization_history/evolve_state.json` (the ratchet),
-`evolve_history.jsonl` (append-only per-round ledger), and `core/evolve/capabilities/*.json`
-(the kept/rejected memory).
+```json
+{
+  "version": 2,
+  "graph_target": {
+    "backend": "tpu",
+    "scope": "sglang-jax TPU-Pallas compiler and serving stack"
+  },
+  "actions": [
+    {
+      "gap_id": "fused_moe/v2:interleave_bt:schedule-toggle",
+      "family": "fused_moe/v2",
+      "kernel_ids": ["moe_v2"],
+      "source_axis": "interleave_bt",
+      "source_function": "_fused_ep_moe_kernel",
+      "source_sink": {
+        "assignments": ["use_gather_bank"],
+        "expression_asts": {"use_gather_bank": "<normalized source expression>"}
+      },
+      "incumbent_value": true,
+      "candidate_values": [true, false],
+      "category": "schedule-toggle",
+      "source_evidence": {
+        "path": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py",
+        "line": 342,
+        "detail": "default=True"
+      },
+      "model_callsites": ["tiny-moe-serving/expert-v2"],
+      "action_edge": {
+        "source": "action:fused_moe/v2:interleave_bt:schedule-toggle",
+        "target": "pallas:dma_start"
+      }
+    }
+  ],
+  "fingerprint": "<sha256-of-the-complete-canonical-context>"
+}
+```
 
----
+The red edge target is extractor category context, not proof that the named source
+axis data-flows to that lowering primitive; source/sink validation and measurement
+provide the enforceable evidence. The
+fingerprint covers the complete ordered action context, so changing any action's
+family, axis, source function/sink, incumbent/domain, evidence, callsites, or edge
+changes the manifest namespace. Campaign
+state pins the fingerprint; `run` refuses stale graph state.
 
-## Capability elevation versus parameter tuning
+Only findings that are source-proven to exist, covered by the frozen model gate, open,
+bound to an exact live call argument or normalized assignment expression, and not already programmer-exposed receive red
+action links. The checked-in graph has 22 visible findings but only five executable v2
+actions. Dead or missing tuning tables and numeric-representation toggles remain
+analysis-only, as do other opportunities and hidden compiler boundaries; none
+authorizes the oracle to invent behavior.
 
-The old loop drifted toward model-specific tuning because its contract stopped at the
-benchmark runner: adding a `Knob`, searching two fixed GLA shapes or two fixed KDA shapes,
-and improving their geomean was sufficient for KEEP. It did not require a server option,
-a production backend consumer, or evidence that another workload could select the new
-path. Large full-sequence chunks and output-only state elision were therefore rewarded by
-the canonical shapes even when stateful serving could not use them.
+Before evaluation, AKT regenerates the post-implementation graph in a temporary
+location and proves that exactly the selected action closes in the source-mined
+catalog, with no unrelated action removed or introduced. After KEEP, that already
+validated graph and its new fingerprint become the next round's pinned context.
 
-That setup optimized a small empirical table, not the software abstraction. A proposal
-could win by choosing a better value for the benchmark's exact sequence/head dimensions
-without making any capability selectable by a model server. Worse, the old recurrent
-cases used no incoming state and did not observe the outgoing state, so eliminating state
-work looked valid despite changing the contract needed for subsequent decode.
+## Capability versus tuning
 
-The current contract distinguishes three levels:
+A valid round can expose either:
 
-1. **Kernel argument** — low-level machinery exists.
-2. **Runner-only experiment** — AKT can measure it, but application code cannot select it.
-3. **Programmer control** — a validated, shape-aware policy reaches the argument through
-   the production serving backend. Only this level is capability elevation.
+- an explicit backend argument that already existed but lacked stable programmer
+  access (`existing-backend-argument`); or
+- an existing literal/derived low-level axis that must be lifted into an entry
+  argument solely for forwarding (`existing-low-level-axis`).
 
-The API is [`KernelControlPolicy`](../python/sgl_jax/srt/configs/kernel_control.py).
-It matches static per-device shape/state context, not model or checkpoint names. Pass a
-JSON object or JSON file at server startup:
+Both modes may add a serving API field and forwarding code. Neither authorizes a new
+algorithm or a replacement low-level abstraction. Changing defaults, widening an
+already exposed control, or adding only a benchmark knob is tuning and cannot pass.
+
+The stable API is
+[`KernelControlPolicy`](../python/sgl_jax/srt/configs/kernel_control.py). It is shape-
+and state-aware rather than checkpoint-name-aware. A server can load JSON controls:
 
 ```bash
 PYTHONPATH=python .venv/bin/python -m sgl_jax.launch_server \
@@ -139,140 +213,91 @@ PYTHONPATH=python .venv/bin/python -m sgl_jax.launch_server \
   --kernel-control-config /path/to/kernel-controls.json
 ```
 
-```json
-{
-  "kda": {
-    "default": {"intra_block_size": 16, "compute_block_chunks": 2},
-    "rules": [
-      {
-        "when": {"head_dim": 64, "max_sequence_length": 512},
-        "set": {"state_dim_alignment": 64, "state_block_chunks": 2}
-      }
-    ]
-  },
-  "gla": {
-    "rules": [
-      {
-        "when": {"min_sequence_length": 1024},
-        "set": {"chunk_size": 256, "output_value_tiles": 4}
-      }
-    ]
-  }
-}
-```
+See [`core/evolve/capabilities/README.md`](core/evolve/capabilities/README.md) for the
+pending-manifest schema.
 
-Unknown controls and invalid combinations fail at server startup; shape-dependent
-constraints fail before the kernel launch. An empty policy preserves kernel defaults.
-The state-elision experiments remain runner-only because SGLang serving observes the
-final recurrent state for subsequent decode, while those optimizations are exact only
-when that state is unobserved.
+## Conditional live Kimi-Linear gate
 
-The policy is deliberately **shape-aware, not model-name-aware**. Its context consists
-of kernel family, tensor dimensions, sequence bounds, and whether recurrent state is
-present/observed. This lets one exposed capability apply across checkpoints and workload
-mixtures while still permitting shape-specific selection. Searching values already
-present in an exposed control remains autotuning; adding a previously unavailable,
-end-to-end selectable axis is the capability elevation AKT accepts.
+[`benchmark/live_model_candidates.py`](benchmark/live_model_candidates.py) defines
+one direct GMM-v2 view of one real checkpoint using the TP4 nightly launch profile.
+A round launches it only when its new capability changes a `gmm_v2.*` policy.
+Eligibility
+requires a successful synthetic gate, compiled single-host TPU execution, at least
+four local TPU devices with stable device IDs, and tensor parallelism 4.
 
-AKT still has to time concrete workload shapes: performance is hardware- and
-shape-dependent. The distinction is that a shape may select a value for a generic
-control, but it cannot be the only place that control exists. The current production
-policy exposes **nine controls across KDA and GLA**. Pre-AKT axes in other runners remain
-part of the inherited incumbent search contract; they are not retroactively claimed as
-stable server APIs. A future AKT round touching those families must add the same typed
-policy and production-consumer path before it can KEEP.
+An eligible run launches Kimi-Linear with the selected policy and an incumbent policy,
+attests the server-reported policies, and records:
 
-The present two-shape KDA and two-shape GLA cases establish correctness and performance
-only for those sampled regimes. Broader generalization still requires representative
-model-derived shapes and an attached-TPU run. What is now generic is the **elevation
-contract and programmer abstraction**, not a claim that one tuned value is optimal for
-every model.
+- GSM8K accuracy with threshold 0.89;
+- prefill point C1: input 3072, output 1, 8 prompts;
+- packed prefill point C8: input 512, output 1, 32 prompts.
 
----
+All requests must complete and the selected/incumbent input-throughput ratio geomean
+must be at least 0.98. Input throughput and median TTFT are retained per point. If the
+topology is ineligible, the evaluator imports no model stack, downloads no checkpoint,
+and records a clean skip. A skip permits the portable AKT gate to run but supplies no
+real-model performance claim; any eligible attempted run must pass to KEEP.
 
-## Two things people always ask
+This is a quality/performance guard, not the source of the round's claimed speedup:
+the 0.98 floor permits a small Kimi throughput regression and does not establish SOTA.
 
-### (1) Where is the flexibility gap documented, and how does the loop use it?
+The policy is derived from `tiny-dense-serving/dense-projection` and applied
+route-wide. Current source inspection shows Kimi's default EPMoE path calling
+`megablox_gmm_backend.gmm`, which can dispatch compiled TPU GMM-v2. The live gate
+attests the selected policy and completed requests, but it does not machine-observe
+that a request took GMM-v2 or the changed kernel argument. No checked-in single-host
+live candidate covers fused-MoE-v2 or fused MLP today, so those actions are explicitly
+outside the live gate's applicability.
 
-**The gaps are stored, as auto-generated data, in
-[`akt/core/analysis/flexgraph_generated.json`](core/analysis/flexgraph_generated.json)**
-(top-level `gaps` / `gap_categories` / `serving_stack` keys). Each gap is one
-self-describing record — the axis, its category, the source `evidence` (`file:line`),
-whether it is in the AKT suite, whether a runner searches it, and whether the production
-programmer API exposes it:
+Candidate and incumbent synthetic plans, and both live policy variants, currently
+run through the same post-edit implementation. The loop preserves the graph-mined
+incumbent control value and compares against stored incumbent measurements, but does
+not re-execute the prior Git revision or prove semantic/AST equivalence of its default
+path. Cross-revision causal attribution therefore remains weaker than the control and
+measurement contracts.
 
-```json
-{ "id": "fused_mlp:buffer_count:pipeline-depth",
-  "axis": "buffer_count", "category": "pipeline-depth",
-  "detail": "Buffered(buffer_count=3) — hardcoded literal",
-  "evidence": "python/sgl_jax/srt/kernels/fused_mlp.py:97",
-  "reachable_prim": "dma_start", "graph_node": "pallas:dma_start",
-  "in_akt_suite": true, "elevated_in_akt": true,
-  "programmer_exposed": false, "exposure_level": "runner" }
-```
+The launch profile names the Hugging Face checkpoint repository but does not pin an
+immutable model revision. A future upstream checkpoint update would therefore make a
+later live run non-identical unless the profile is pinned first.
 
-This file is **not hand-authored** — it is regenerated from the source tree by
-[`akt/core/analysis/flexgraph_extract.py`](core/analysis/flexgraph_extract.py), which
-AST-scans every Pallas kernel to find tiling/pipeline/schedule axes the lowering *can*
-execute but no config *names*. (A `gap` = reachable-but-unnamed.)
+The live comparison also starts the selected server before the incumbent server in a
+fixed order. Separate model startups can therefore contribute order or thermal drift;
+the synthetic paired comparison is better balanced than this checkpoint guard.
 
-**The contract for how the loop consumes gaps is documented in
-[`akt/benchmark/adapter.py`](benchmark/adapter.py)** (top-of-file docstring + the
-`gaps` subcommand). The data flows to the loop like this:
+## Campaign memory
 
-```
-flexgraph_generated.json                         (storage: the gap records)
-   │  adapter.py  gaps  →  AKT_GAPS {title, lines[], note}   (filter to actionable, rank, flatten)
-   ▼
-loop.py::frontier_block()  →  the "== FRONTIER" block of the Capability QUERY
-   ▼
-run mode:  QUERY written to akt/optimization_history/.oracle_prompt.txt → handed to the oracle
-status mode: QUERY printed to the terminal
-```
+- KEEP stores the selected plans and graph fingerprint as the next incumbent; history
+  retains a compact live-gate status when applicable.
+- REJECT restores every declared implementation file from `incumbent_commit`.
+- The next query includes kept capabilities, rejected estimates, bottlenecks, runtime
+  evidence, and the latest structured graph context.
+- Objective scopes never mix. Historical `stateful-serving-deployable-v1` and
+  `model-serving-dp-real-hw-v1` results cannot seed
+  `model-serving-empirical-dp-v2`.
 
-The gap record is a **pointer** — it tells the oracle *what* axis to elevate and *where*
-in the source (`evidence`). The loop never auto-applies it; it hands over the ranked
-frontier and then gates the result. A new runner `Knob` flips `elevated_in_akt`; only a
-corresponding production `KernelControlPolicy` path flips `programmer_exposed` and removes
-the gap from the OPEN frontier. This prevents benchmark-only tuning from masquerading as
-stack capability elevation.
+State is stored in `optimization_history/evolve_state.json`; decisions are appended
+to `evolve_history.jsonl`; manifests live under `core/evolve/capabilities/`.
 
-> The frozen fallback: if the extractor has not run, `adapter.py` falls back to a
-> hand-curated `FRONTIER` list. The auto-miner is validated to rediscover that list
-> **7/7**, so it is a fresh superset, not a replacement of unknown fidelity.
-
-### (2) Does the LLM oracle choose which gap to elevate?
-
-**Yes.** The loop *generates and ranks* the frontier but does **not** decide. In
-autonomous `run` mode the ranked list is embedded in the QUERY prompt and the **LLM
-oracle picks ONE gap** to implement — the one it judges best relieves the current
-bottleneck. The loop then checks end-to-end exposure, re-searches the enlarged design
-space, validates correctness, and applies the performance threshold. In manual mode a
-human picks instead.
-
-The extractor's ranking (`_rank`: in-suite first, un-elevated first, then category
-salience) is only a *suggested ordering* — the oracle is free to choose any gap.
-
----
-
-## Map of the subsystem
+## Component map
 
 | Path | Role |
-|------|------|
-| `akt/core/evolve/loop.py` | THE loop — init/run/submit/gate/keep-restore; builds the QUERY, drives the oracle |
-| `akt/core/evolve/exposure.py` | Frozen gate proving runner knob → stable API → production consumer → kernel keyword |
-| `akt/core/analysis/flexgraph_extract.py` | Investigates the serving stack; **auto-derives the gap frontier + the lowering graph** |
-| `akt/core/analysis/flexgraph_generated.json` | **Where the gaps are stored** (generated) |
-| `akt/benchmark/adapter.py` | **The gaps/bottleneck contract** the loop shells out to (FROZEN) |
-| `akt/benchmark/` | The frozen measurement harness (suites, gates/eval.py, runners/base.py) |
-| `akt/core/runners/*.py` | Editable per-kernel design spaces — where an elevated gap becomes a `Knob` |
-| `python/sgl_jax/srt/configs/kernel_control.py` | Stable, validated programmer-facing control policy and registry |
-| `akt/core/evolve/capabilities/*.json` | One manifest per elevated capability ([schema](core/evolve/capabilities/README.md)) |
-| `akt/board/` | The dashboard (trajectory, flexibility graph, serving-stack gap frontier) |
+|---|---|
+| `core/evolve/loop.py` | oracle driver, graph closure, gates, keep/restore ratchet |
+| `core/evolve/action_catalog.py` | structured action context and fingerprint validator |
+| `core/evolve/capability_contract.py` | graph foreign keys, prior access, planner contract |
+| `core/evolve/exposure.py` | stable API-to-production-to-kernel proof |
+| `core/analysis/flexgraph_extract.py` | source and compiler graph extractor |
+| `benchmark/model_workloads.py` | immutable three-trace definitions and seeds |
+| `benchmark/gates/model_eval.py` | local search, DP, empirical panel, paired TPU gate |
+| `core/search/model_dp.py` | exact DP, bounded brute oracle, binary plan panel |
+| `benchmark/live_model_candidates.py` | host-neutral Kimi candidate and policy mapping |
+| `benchmark/gates/live_model_eval.py` | conditional checkpoint launch and metrics |
+| `benchmark/runtime.py` | probe-authenticated model/callsite event collector |
+| `core/runners/*.py` | editable kernel design spaces and dispatch mappings |
+| `python/sgl_jax/srt/configs/kernel_control.py` | stable programmer control policy |
+| `board/` | progress, objective, history, action catalog, flexibility graph |
 
-**FROZEN** (defines the measurement and frontier — the loop/oracle may not edit):
-everything under `akt/benchmark/**`, `python/sgl_jax/test/**`, the source-derived
-`flexgraph_extract.py` miner, the loop, and its exposure gate. Pure-JAX
-reference symbols that still share an editable production-kernel file are protected by
-AST fingerprints. Production kernels and runners remain editable, but the frozen suite
-validates that runners cannot replace their workload/reference/tolerance/test contract.
+The benchmark harness, graph extractor and validators, DP, loop, board source, and
+maintainer tests are frozen during oracle work. Production kernels, stable controls,
+production consumers, and runners are editable only as declared by one pending
+manifest.

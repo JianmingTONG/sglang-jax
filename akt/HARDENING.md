@@ -1,140 +1,83 @@
-# AKT hardening roadmap — porting robustness from `maple/akt` (A)
+# AKT hardening status
 
-This sglang-jax AKT loop (**B**) was forked from the mature FHE/ORION AKT loop
-(**A**, `maple/akt`). B inherited A's *engine* almost verbatim — the same five
-subcommands, the same oracle seam (claude/codex, stream-json, watchdog, rate-limit
-sleep), the same FROZEN-fingerprint tamper guard, the same void handling, and the same
-keep→git-commit incumbent ratchet. What B did **not** inherit is A's downstream
-robustness: a hard **gate**, a dedicated **verification harness**, a **convergence /
-design-space analysis** layer, and **board integrity**.
+The enforced objective scope is `model-serving-empirical-dp-v2`.
 
-This doc records the gap. **Tier 0 (the four confirmed latent bugs) is DONE** (see the
-commit that adds this file). **Tiers 1–3 are the planned port**, each item annotated
-with its source in A, its value to B, and a rough effort.
+## Enforced now
 
-> Scope note: A's proofs are about the `vn_go` layout **DP** search; B's "search" is the
-> `runners/base.py::search_best` *enumerate → check-correct → time → argmin* autotune.
-> Where an A feature is CKKS/FHE-specific it is called out as **not portable**; the rest
-> port as the *idea*, re-expressed against B's autotune + real-latency objective.
+- The flexibility graph is a machine-readable guardrail. Its canonical v2 context
+  includes target, action identities, kernel-family mappings, source axes, finite
+  candidate domains, call sinks or normalized assignment expressions, evidence,
+  callsites, and edges under one SHA-256 fingerprint. The checked-in graph
+  exposes five source-proven existing actions. Dead or missing tuning tables,
+  numeric-representation toggles, and other findings without an exact live
+  sink/argument remain analysis-only context.
+- Campaign state pins that fingerprint. Oracle execution and pending manifests fail
+  before TPU work when the graph is stale, invalid, empty, or foreign keys do not
+  match exactly.
+- A round may add API and forwarding plumbing only to expose the selected existing
+  axis. `existing-backend-argument` and `existing-low-level-axis` are the only access
+  modes; neither authorizes a new kernel algorithm or semantic behavior.
+- Runner-only benchmark knobs are default-only in the deployment space. Promoting an
+  existing knob to a stable programmer control expands the exact graph-owned domain
+  without changing the incumbent default.
+- The gate proves exact affected callsites, graph `source_axis`, mapped
+  `kernel_family`, incumbent access history, runner values/default, production
+  forwarding, backend argument observation, and complete file declaration.
+- Every valid deployable local configuration is measured and correctness-checked.
+  Exact layered DP searches the complete finite measured additive graph; a bounded
+  Cartesian oracle independently checks the solver.
+- `synthetic_trace_additivity` empirically challenges the DP choice with the complete
+  valid binary neighborhood of DP-selected versus cheapest-distinct stage choices,
+  up to 64 plans. Complete plans are correctness-checked and timed in balanced pairs.
+  Deterministic bootstrap bounds on regret and multi-factor interaction must pass;
+  truncation and inconclusive evidence fail closed.
+- Candidate and incumbent three-trace plans run in paired alternating order on the
+  same compiled TPU. KEEP still requires both paired and absolute geomean improvement
+  strictly above 2% or the higher campaign threshold.
+- After the synthetic process exits, a compatible single-host TP4 TPU runs the actual
+  `moonshotai/Kimi-Linear-48B-A3B-Instruct` checkpoint. GMM-v2 actions use a direct
+  Kimi EPMoE→GMM-v2 policy view and require a changed selected control; other actions
+  are explicitly not applicable. GSM8K,
+  two prefill points, request completion, server-policy attestation, and a 0.98
+  input-throughput ratio floor are enforced. Ineligible topology is an explicit
+  no-import/no-download skip; an eligible attempt must pass.
+- The candidate graph is regenerated before hardware evaluation. KEEP is impossible
+  unless the selected action closes without collateral action loss, and only the
+  validated graph is installed for the next round.
 
----
+## Claim boundary
 
-## Tier 0 — confirmed latent bugs (DONE)
+The graph constrains what the LLM may expose; it does not discover the winning
+implementation or replace measurement. The LLM remains the proposal oracle.
 
-| # | Bug (B) | Fix | File |
-|---|---------|-----|------|
-| 1 | `search_best(cap=256)` silently truncated the larger moe spaces (raw ~750 / ~1620 configs) — "optimal within the space" was false and nothing surfaced it. | cap raised to `4096` (matches `enumerate`'s default → current kernels searched exhaustively) **and** a `truncated` flag now propagates `base → eval → gate`; a truncated search **fails** the gate. | `benchmark/runners/base.py`, `benchmark/gates/eval.py`, `core/evolve/loop.py` |
-| 2 | A capability could be KEPT while a kernel it affects was never correctness-checked: `correct=None` (tpu-deferred) passed silently and there was **no missing-case guard**. | `init` snapshots `expected_cases`; the gate now fails if any expected case is **missing** from the eval (a broken runner import that drops a kernel), and records `n_verified` / `n_deferred` so a KEEP with unverified kernels is visible. | `core/evolve/loop.py` |
-| 3 | `hw_eval` never deleted `.evolve_eval.json` first, so a **crashed eval re-read the prior round's numbers** as if fresh. | `out_path.unlink(missing_ok=True)` before the eval — a crash now leaves no file and correctly fails the round. | `core/evolve/loop.py` |
-| 4 | `build.py` dumped `board.json`/`flexgraph.json` with `allow_nan=False` **without cleaning**, so a single NaN/Inf metric raised and left the board un-rebuilt. | added `_clean()` (coerce non-finite floats → `null`) applied before both dumps. | `board/build.py` |
+The DP is the exact optimum of its finite additive measured-cost graph. `DP == brute`
+is a bounded solver check. The empirical binary panel tests a selected interaction
+neighborhood, but it is not exhaustive search over the full non-additive model space,
+arbitrary modified programs, or external SOTA implementations.
 
----
+The synthetic traces cover every AKT kernel family and prefill/decode phase. The live
+gate adds one real Kimi-Linear TP4 checkpoint and two prefill operating points. It
+directly maps only GMM-v2 actions today; fused-MoE-v2 and fused-MLP still lack a
+single-host direct checkpoint candidate. Policy attestation plus source inspection
+provides end-to-end request evidence under the selected policy, not a machine-observed
+per-kernel route,
+and an ineligible-topology skip carries no live-model claim.
 
-## Tier 1 — gate hardening (the biggest structural gap)
+## Remaining limits
 
-B's gate is a 2-stage funnel (speed + a weak correctness check). A's is a 5-stage funnel
-where each stage is a hard reject and the expensive eval runs **last** (fail-cheap-first).
-Port, in priority order:
-
-1. **Manifest v2 validation contract.** *A: `loop.py::validate_manifest`.* B's
-   `load_manifest` only substring-checks `files_touched` against FROZEN — no schema, no
-   required fields, no path-safety, no "is this knob actually a live runner Knob" check. A
-   malformed or path-traversing manifest passes. **Port:** a `validate_manifest(m)` that
-   checks a name regex, required fields, `_manifest_path` safety (reject absolute / `..` /
-   non-normalized), the FROZEN set, and that each declared knob resolves to a real
-   `Knob(...)` in `core/runners/`. *Effort: low–med · generic.*
-
-2. **Execution-evidence cross-check.** *A: `loop.py::_execution_evidence`.* B never
-   verifies the manifest's declared knob was actually **selected by the autotuner** and
-   **changed behaviour** — despite B's own "cost == execution" premise. **Port (light
-   analog):** assert the declared knob name appears in the winning `best_config` for at
-   least one case, and that the best config differs from the default (else the "new
-   flexibility" is a silent no-op that only shuffled timing noise). *Effort: med · generic.*
-
-3. **Per-round optimality certificate.** *A: the per-round `{production_cost, exact_cost,
-   modeled_gap, space_fingerprint, certified_global_modeled_optimum}` record.* B keeps/
-   rejects on geomean but records no proof the enlarged space was fully searched. **Port:**
-   emit one machine-readable record per round `{space_size, n_valid, n_correct, truncated,
-   exhausted, best_config, space_fingerprint}` (most fields already exist post-Tier-0) and
-   wire it into `evolve_history.jsonl` + the board. *Effort: low–med · generic.*
-
-4. **Fail-cheap-first ordering.** *A: eval runs only after verifier + certificate pass.* B
-   runs the expensive `hw_eval` unconditionally every round. **Port:** run the manifest
-   validation + a cheap search/exhaustiveness check *before* `hw_eval`, so a broken round
-   rejects without paying for the full suite eval. *Effort: low · generic.*
-
----
-
-## Tier 2 — a real `akt/core/verify/` harness (B has none today)
-
-A ships a dedicated `core/verify/` dir whose only job is to **prove** the search and the
-gate, separate from the perf loop. B's correctness lives entirely inside the frozen perf
-harness (`check_correct`'s allclose). Create `akt/core/verify/` with:
-
-1. **Brute-vs-search optimality proof.** *A: `dp_verify.py::verify_synthetic`.* Build a toy
-   `DesignSpace` whose fastest config is known (or force a synthetic timing), and assert
-   `search_best` returns it. Today B's optimality is only a docstring claim. *Effort: low ·
-   light-FHE (rewrite for autotune).*
-
-2. **Negative control (the gate can fail).** *A: `layout_verify.py` asserts a deliberately-
-   wrong result is rejected.* Feed `check_correct` a mutated/wrong output and assert it
-   **rejects** it — proving the allclose gate detects real bugs (guards against a reference
-   and a run sharing a bug, or coincidentally-matching shapes). *Effort: low · generic.*
-
-3. **Golden `best_config` regression.** *A: `dp_verify.py::verify_models` pins the DP result
-   for the 3 real models.* Pin a per-case golden `best_config` (or golden `search_note`) so a
-   runner/objective regression that changes the chosen optimum is caught. *Effort: low ·
-   generic.*
-
-4. **Bit-exact identity checks for config-independent transforms.** *A: `input_verify.py`
-   asserts a `~1e-9` identity separate from the loose end-to-end gate.* Several B kernels
-   have paths that should be bit-exact regardless of the knob (e.g. `fused_mlp`'s per-
-   `b_inter` weight re-interleave); assert those tightly instead of under the blanket
-   `atol=rtol=2e-2`. *Effort: low · light-FHE.*
-
-5. **DEFAULT-reproduces-incumbent proof.** *A: `verify_prerot` proves ON==OFF within noise
-   and OFF has no markers.* Prove that a capability's **default** config reproduces the
-   shipped kernel exactly (no silent behavioural drift on the un-elevated path). *Effort:
-   med · light-FHE.*
-
----
-
-## Tier 3 — convergence & board completeness
-
-1. **Convergence / optimum-distance certificate.** *A: `core/analysis/tier_analysis.py`
-   emits `optimality_gap_upper_bound == 0.0`.* B's loop has no principled **stopping
-   signal** — it can't tell "design space exhausted, stop" from "keep elevating". B already
-   computes half of it (`elevated_in_akt` in `flexgraph_extract.py`); extend it into a
-   per-run certificate. *Effort: med · light-FHE.*
-
-2. **Supported → Enabled → Selected funnel + utilization ratios.** *A: `tier_analysis.py` /
-   `space_breakdown.py`.* B reports only an absolute `space.size()` + `best_config`; it can't
-   say whether a newly-elevated knob usefully **enlarged the reachable space** or just
-   over-exposed it, nor localize exposed-but-unused flexibility to a specific knob. *Effort:
-   med · light-FHE.*
-
-3. **Board correctness-replay (taint reverted KEEPs).** *A: `board/correctness_replay.py`.* A
-   later-reverted or `correct=False` KEEP still counts in `kept` and its geomean stays the
-   displayed incumbent. Port the tainted-interval state machine so an invalidated KEEP can't
-   remain the shown incumbent. *Effort: low–med · generic.*
-
-4. **Self-describing `gate` adapter subcommand.** *A: `adapter.py::cmd_gate` emits
-   `objective_name` / `objective_unit` / `lower_is_better`.* B's loop is hardwired to geomean
-   latency. A metric-agnostic `gate` contract decouples the objective (useful when the TPU
-   run swaps the metric). *Effort: low · generic.*
-
-5. *(nice-to-have)* design-choice **activation timeline**, multi-run **archival**, and a
-   run-to-run **noise band** on the board — all `board/build.py` mechanisms in A. *Effort:
-   med · generic.*
-
----
-
-## Explicitly NOT ported
-
-- **`calibrate_weights.py`** — A microbenchmarks CKKS `Rotate`/`Mul`/`Add` to calibrate the
-  ROT/MUL/CT cost-model weights. **B optimizes directly on measured latency** (`perf_counter`
-  + `block_until_ready`); there is no proxy cost model, so there are no weights to calibrate.
-  No B analog needed.
-- **`slot_util.py` / `packing_dump.py`** — CKKS ciphertext-slot utilization and per-layer
-  packing dumps. Deep-FHE; only a loose "VMEM/VREG/MXU occupancy vs latency" analog would
-  ever apply, and it would be a fresh implementation, not a port.
+1. Broader checkpoint, topology, decode, and traffic coverage remains outside this
+   objective.
+2. A larger non-additive plan panel or adaptive interaction search would strengthen
+   evidence beyond the current fail-closed binary neighborhood.
+3. Direct per-kernel tracing in the live Kimi server would strengthen attribution
+   beyond policy attestation and completed requests.
+4. Candidate and incumbent variants share the post-edit implementation; the loop
+   does not re-execute the prior Git revision or prove semantic equivalence of the
+   default path, so cross-revision causal attribution remains incomplete.
+5. The checked-in historical campaign still requires TPU `rebaseline` before it can
+   advance under the v2 objective.
+6. The Kimi checkpoint is identified by Hugging Face repository name but is not
+   pinned to an immutable model revision, so a future upstream update could change
+   the artifact evaluated by a later run.
+7. The live gate starts selected then incumbent in a fixed order with separate server
+   startups; unlike the synthetic gate, it does not balance startup-order drift.

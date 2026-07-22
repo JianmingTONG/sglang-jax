@@ -26,7 +26,7 @@ STATE = ROOT / "optimization_history/evolve_state.json"
 EVAL = ROOT / "optimization_history/.evolve_eval.json"
 STATUS = BOARD / "evolve_status.json"
 CAPS = ROOT / "core/evolve/capabilities"
-CURRENT_OBJECTIVE_SCOPE = "stateful-serving-deployable-v1"
+CURRENT_OBJECTIVE_SCOPE = "model-serving-empirical-dp-v2"
 
 
 def _load_jsonl(p):
@@ -64,6 +64,48 @@ def _kernels_from_eval():
     """Per-kernel latency card from the freshest gate eval."""
     s = _load_json(EVAL, {})
     out = []
+    # The current target-hardware gate records exhaustive per-case measurement
+    # tables. Keep the legacy ``results`` adapter below so old campaign artifacts
+    # remain readable.
+    if s.get("case_search"):
+        backend = (s.get("target_hardware") or {}).get("backend", "target")
+        for case_id, result in s["case_search"].items():
+            measurements = result.get("measurements") or []
+            best = min(
+                measurements,
+                key=lambda row: row.get("latency_s", math.inf),
+                default=None,
+            )
+            defaults = {
+                knob.get("name"): knob.get("default")
+                for knob in result.get("knobs") or []
+            }
+            default = next(
+                (row for row in measurements if row.get("config") == defaults),
+                None,
+            )
+            out.append({
+                "case": case_id,
+                "kernel": case_id.split(":", 1)[0],
+                "regime": backend,
+                "default_s": (default or {}).get("latency_s"),
+                "best_s": (best or {}).get("latency_s"),
+                "speedup": (
+                    default["latency_s"] / best["latency_s"]
+                    if default and best and best.get("latency_s")
+                    else None
+                ),
+                "space_size": result.get("valid_configs"),
+                "research_space_size": result.get("space_size"),
+                "best_config": (best or {}).get("config"),
+                "correct": result.get("all_configs_correct"),
+                "native_test": None,
+                "note": (
+                    f"exhaustive {result.get('correct_configs', 0)}/"
+                    f"{result.get('valid_configs', 0)} configs"
+                ),
+            })
+        return out, s
     for r in s.get("results", []):
         d, b = r.get("default_s"), r.get("forward_s")
         nt = r.get("native_test") or {}
@@ -123,31 +165,130 @@ def _control_inventory():
     }
 
 
-# ---- Flexibility graph: the TPU compiler LOWERING GRAPH ----------------------
-# Nodes = the 3-layer taxonomy (JAX/Pallas -> Mosaic TPU IR -> TPU hardware) + a hidden
-# band, across 5 category columns; edges verified against the jax 0.8.1 Pallas/Mosaic
-# source and annotated with which sglang-jax kernels exercise them. Data + assembly live
-# in akt/core/analysis/flexgraph_spec.py (jax-free). A lowering edge into a HIDDEN node
-# has no exposure back to the top -> the flexibility gap.
-def _flexgraph(eval_summary):
-    # Prefer the AUTO-EXTRACTED graph: flexgraph_extract.py navigates the live stack
-    # (jax/Pallas/Mosaic lowering source + the serving kernels) and writes
-    # flexgraph_generated.json. Fall back to the hand-authored spec if not generated.
-    gen = ROOT / "core/analysis/flexgraph_generated.json"
+# ---- Flexibility graph: compiler context + canonical AKT actions -------------
+def _flexgraph(eval_summary, state=None):
     try:
-        if gen.exists():
-            g = json.loads(gen.read_text())
-            if g.get("nodes"):
-                return g
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        from akt.core.analysis.flexgraph_spec import build_graph
-        return build_graph()
+        graph = _load_json(ROOT / "core/analysis/flexgraph_generated.json")
+        required = ("nodes", "lowering_edges", "hidden_lowering_edges", "action_edges")
+        if not all(isinstance(graph.get(key), list) for key in required):
+            raise ValueError("generated flexibility graph is missing v2 edge tables")
+        if not graph["nodes"]:
+            raise ValueError("generated flexibility graph has no nodes")
+        from akt.core.evolve.action_catalog import (
+            action_catalog_context,
+            load_action_graph,
+        )
+
+        validated, _catalog = load_action_graph(REPO)
+        if graph != validated:
+            raise ValueError("displayed graph differs from the canonical action graph")
+        fingerprint = action_catalog_context(REPO)["fingerprint"]
+        expected = (state or {}).get("action_graph_fingerprint") or (
+            eval_summary or {}
+        ).get("action_graph_fingerprint")
+        status = (
+            "unbound"
+            if not expected
+            else "current"
+            if expected == fingerprint
+            else "stale"
+        )
+        return {
+            **graph,
+            "action_graph_fingerprint": fingerprint,
+            "campaign_action_graph_fingerprint": expected,
+            "action_context_status": status,
+            "actions_executable_for_campaign": status == "current",
+        }
     except Exception as e:  # noqa: BLE001
         return {"kind": "unavailable", "error": repr(e)[:200], "nodes": [],
-                "lowering_edges": [], "exposure_edges": [], "gap_edges": [],
-                "n_gap": 0, "n_hidden": 0, "note": ""}
+                "lowering_edges": [], "exposure_edges": [],
+                "hidden_lowering_edges": [], "action_edges": [],
+                "n_open_action_edges": 0, "n_hidden": 0,
+                "note": f"Generated action graph unavailable: {e}"}
+
+
+def _compact_empirical_status(record):
+    certificate = (record or {}).get("empirical_dp_certificate") or {}
+    if not certificate:
+        return {"status": "not_run", "ok": None, "models": 0, "passed_models": 0}
+    models = certificate.get("models") or []
+    return {
+        "status": certificate.get("status") or (
+            "validated" if certificate.get("ok") is True else "inconclusive"
+        ),
+        "ok": certificate.get("ok"),
+        "models": len(models),
+        "passed_models": sum(model.get("ok") is True for model in models),
+    }
+
+
+def _compact_live_status(record):
+    record = record or {}
+    gate = record.get("live_model_gate") or {}
+    document = record.get("live_model_evaluation") or {}
+    candidates = document.get("candidates") or []
+    eligible = gate.get("eligible_candidates")
+    if eligible is None:
+        eligible = sum(
+            (candidate.get("eligibility") or {}).get("eligible") is True
+            for candidate in candidates
+        )
+    skipped = gate.get("topology_skipped_candidates")
+    if skipped is None:
+        skipped = sum(
+            candidate.get("status") == "skipped"
+            and candidate.get("applicability") == "direct-capability"
+            and (candidate.get("eligibility") or {}).get("eligible") is not True
+            for candidate in candidates
+        )
+    not_applicable = gate.get("not_applicable_candidates")
+    if not_applicable is None:
+        not_applicable = sum(
+            candidate.get("applicability") == "not_applicable"
+            for candidate in candidates
+        )
+    if not gate and not document:
+        status = "not_run"
+        ok = None
+    elif not_applicable and gate.get("ok") is not False:
+        status = "not_applicable"
+        ok = gate.get("ok", True)
+    elif skipped and not eligible and gate.get("ok") is not False:
+        status = "topology_skipped"
+        ok = gate.get("ok", True)
+    else:
+        status = document.get("status") or (
+            "passed" if gate.get("ok") is True else "failed"
+        )
+        ok = gate.get("ok", document.get("all_passed"))
+    return {
+        "status": status,
+        "ok": ok,
+        "eligible": eligible,
+        "passed": gate.get("passed_candidates", 0),
+        "not_applicable": not_applicable,
+        "topology_skipped": skipped,
+    }
+
+
+def _compact_models(record):
+    models = []
+    for model in (record or {}).get("models") or []:
+        certificate = model.get("certificate") or {}
+        models.append({
+            "model": model.get("model"),
+            "candidate_s": model.get("candidate_s"),
+            "incumbent_s": model.get("incumbent_s"),
+            "ratio": model.get("ratio"),
+            "correct": model.get("selected_correct"),
+            "dp_ok": (
+                certificate.get("certified_additive_optimum") is True
+                and certificate.get("bounded_dp_matches_bruteforce") is True
+            ),
+            "empirical": _compact_empirical_status(model),
+        })
+    return models
 
 
 def _clean(o):
@@ -171,6 +312,84 @@ def _valid_latency(value):
         and math.isfinite(value)
         and value > 0
     )
+
+
+def _trail_record(record, manifest):
+    """Normalize current and historical round schemas into one compact board row."""
+
+    accuracy = record.get("accuracy") or {}
+    best_configs = []
+    for label, evidence in accuracy.items():
+        if not isinstance(evidence, dict):
+            continue
+        if evidence.get("best_config") is not None:
+            best_configs.append({"case": label, "config": evidence["best_config"]})
+        selected_plan = evidence.get("selected_plan")
+        if isinstance(selected_plan, dict):
+            best_configs.extend(
+                {"case": callsite, "config": config}
+                for callsite, config in selected_plan.items()
+                if isinstance(config, dict)
+            )
+
+    estimate = record.get("estimate")
+    if not isinstance(estimate, dict):
+        estimate = manifest.get("estimate") or {}
+    dimensions = record.get("search_dimensions")
+    if not isinstance(dimensions, list):
+        dimensions = manifest.get("search_dimensions") or []
+    dimension_summary = record.get("search_dimension") or manifest.get(
+        "search_dimension"
+    )
+    if not dimension_summary and dimensions:
+        dimension_summary = "; ".join(
+            f"{dimension.get('control')}={dimension.get('candidate_values')}"
+            for dimension in dimensions
+            if isinstance(dimension, dict)
+        )
+
+    action_snapshot = record.get("action_snapshot") or {}
+    contract = record.get("capability_contract") or {}
+    gap_id = record.get("gap_id") or manifest.get("gap_id")
+    delta = record.get("delta_pct")
+    if delta is None:
+        delta = record.get("improvement_pct")
+    estimated_relief = record.get("estimated_relief_pct")
+    if estimated_relief is None:
+        estimated_relief = estimate.get("expected_relief_pct")
+
+    return {
+        "round": record.get("round"),
+        "capability": record.get("capability"),
+        "gap": record.get("gap") or manifest.get("gap") or gap_id,
+        "gap_id": gap_id,
+        "source_evidence": contract.get("source_evidence")
+        or action_snapshot.get("evidence"),
+        "decision": record.get("decision"),
+        "delta_pct": delta,
+        "target_pct": record.get("target_pct"),
+        "estimated_relief_pct": estimated_relief,
+        "geomean_s": record.get("geomean_s"),
+        "incumbent_geomean": record.get("incumbent_geomean"),
+        "reason": record.get("reason"),
+        "hypothesis": record.get("hypothesis") or manifest.get("hypothesis"),
+        "search_dimension": dimension_summary,
+        "search_dimensions": dimensions,
+        "files_touched": record.get("files_touched") or manifest.get("files_touched"),
+        "correct": record.get("correct"),
+        "performance_status": record.get("performance_status"),
+        "correctness_regime": record.get("correctness_regime"),
+        "n_verified": record.get("n_verified"),
+        "n_deferred": record.get("n_deferred"),
+        "missing_cases": record.get("missing_cases") or [],
+        "truncated_cases": record.get("truncated_cases") or [],
+        "best_configs": best_configs,
+        "programmer_exposure": record.get("programmer_exposure"),
+        "empirical_dp": _compact_empirical_status(record),
+        "live_kimi": _compact_live_status(record),
+        "objective_scope": record.get("objective_scope"),
+        "timestamp": record.get("timestamp"),
+    }
 
 
 def _apply_incumbent_envelope(trail, state):
@@ -227,37 +446,7 @@ def build():
     trail = []
     for r in hist:
         mm = manifests.get(r.get("capability"), {})
-        accuracy = r.get("accuracy") or {}
-        best_configs = [
-            {"case": case, "config": evidence.get("best_config")}
-            for case, evidence in accuracy.items()
-            if evidence.get("best_config") is not None
-        ]
-        trail.append({
-            "round": r.get("round"), "capability": r.get("capability"),
-            "gap": r.get("gap") or mm.get("gap"),
-            "decision": r.get("decision"),
-            "delta_pct": r.get("delta_pct"), "target_pct": r.get("target_pct"),
-            "estimated_relief_pct": (r.get("estimated_relief_pct")
-                                     if r.get("estimated_relief_pct") is not None
-                                     else mm.get("estimated_relief_pct")),
-            "geomean_s": r.get("geomean_s"), "incumbent_geomean": r.get("incumbent_geomean"),
-            "reason": r.get("reason"),
-            "hypothesis": r.get("hypothesis") or mm.get("hypothesis"),
-            "search_dimension": r.get("search_dimension") or mm.get("search_dimension"),
-            "files_touched": r.get("files_touched") or mm.get("files_touched"),
-            "correct": r.get("correct"),
-            "performance_status": r.get("performance_status"),
-            "correctness_regime": r.get("correctness_regime"),
-            "n_verified": r.get("n_verified"),
-            "n_deferred": r.get("n_deferred"),
-            "missing_cases": r.get("missing_cases") or [],
-            "truncated_cases": r.get("truncated_cases") or [],
-            "best_configs": best_configs,
-            "programmer_exposure": r.get("programmer_exposure"),
-            "objective_scope": r.get("objective_scope"),
-            "timestamp": r.get("timestamp"),
-        })
+        trail.append(_trail_record(r, mm))
     original_geomean, replayed_geomean = _apply_incumbent_envelope(trail, st)
     kept = [t for t in trail if t["decision"] in ("keep", "baseline")]
     rejected = [t for t in trail if t["decision"] not in ("keep", "baseline")]
@@ -269,7 +458,7 @@ def build():
 
     board = {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "objective": "geomean kernel latency (interpret proxy on this box; TPU when attached)",
+        "objective": "paired latency across three frozen serving traces on target TPU",
         "incumbent": {
             "original_geomean_s": original_geomean,
             "shipped_default_geomean_s": st.get("shipped_default_geomean"),
@@ -289,11 +478,19 @@ def build():
                  "allclose_correct": eval_summary.get("allclose_correct"),
                  "native_ok": eval_summary.get("native_ok"),
                  "native_summary": eval_summary.get("native_summary"),
-                 "n_runnable": eval_summary.get("n_runnable"),
+                 "models": _compact_models(eval_summary),
+                 "empirical_dp": _compact_empirical_status(eval_summary),
+                 "live_kimi": _compact_live_status(eval_summary),
+                 "n_runnable": (len(eval_summary.get("case_search") or {})
+                                if eval_summary.get("case_search") is not None
+                                else eval_summary.get("n_runnable")),
                  "n_deferred": eval_summary.get("n_deferred"),
                  "n_choices": eval_summary.get("n_choices"),
-                 "search_geomean_s": eval_summary.get("geomean_s"),
-                 "default_geomean_s": eval_summary.get("geomean_default_s")},
+                 "search_geomean_s": (eval_summary.get("candidate_geomean_s")
+                                      or eval_summary.get("geomean_s")),
+                 "default_geomean_s": (eval_summary.get("incumbent_geomean_s")
+                                       or eval_summary.get("geomean_default_s")),
+                 "paired_ratio_geomean": eval_summary.get("paired_ratio_geomean")},
         "objective_scope": st.get("objective_scope"),
         "required_objective_scope": CURRENT_OBJECTIVE_SCOPE,
         "objective_stale": st.get("objective_scope") != CURRENT_OBJECTIVE_SCOPE,
@@ -304,14 +501,15 @@ def build():
         "n_rounds": len(trail),
     }
     (BOARD / "board.json").write_text(json.dumps(_clean(board), indent=1, allow_nan=False))
-    fg = _flexgraph(eval_summary)
+    fg = _flexgraph(eval_summary, st)
     (BOARD / "flexgraph.json").write_text(json.dumps(_clean(fg), indent=1, allow_nan=False))
     n_run = sum(1 for k in kernels if k.get("best_s"))
     print(f"akt-board: {len(kernels)} kernels ({n_run} runnable, {len(kernels)-n_run} deferred), "
           f"{len(trail)} round(s) ({len(kept)} kept, {len(rejected)} rejected), "
           f"{len(FRONTIER)} frontier gaps; flexgraph {len(fg.get('nodes',[]))} nodes / "
-          f"{len(fg.get('lowering_edges',[]))} lowering / {fg.get('n_gap',0)} gap edges "
-          f"({fg.get('n_hidden',0)} hidden). -> board.json + flexgraph.json")
+          f"{len(fg.get('lowering_edges',[]))} lowering / "
+          f"{len(fg.get('hidden_lowering_edges',[]))} hidden / "
+          f"{len(fg.get('action_edges',[]))} actions. -> board.json + flexgraph.json")
 
 
 if __name__ == "__main__":

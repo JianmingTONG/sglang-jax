@@ -1,6 +1,17 @@
 {
  "kind": "lowering-4layer",
  "generated_by": "flexgraph_extract.py (automated)",
+ "action_contract_version": 2,
+ "graph_target": {
+  "backend": "tpu",
+  "scope": "sglang-jax TPU-Pallas compiler and serving stack",
+  "stack": [
+   "JAX / Pallas",
+   "Mosaic TPU IR",
+   "Mosaic backend (LLO)",
+   "TPU hardware"
+  ]
+ },
  "categories": [
   {
    "id": "memory",
@@ -24,6 +35,10 @@
   }
  ],
  "layers": [
+  {
+   "id": "action",
+   "title": "AKT executable actions"
+  },
   {
    "id": "pallas",
    "title": "JAX / Pallas primitives"
@@ -1854,6 +1869,97 @@
     "moe_v1",
     "moe_v2"
    ]
+  },
+  {
+   "id": "action:fused_mlp:buffer_count:pipeline-depth",
+   "label": "fused_mlp: buffer_count",
+   "layer": "action",
+   "category": "datamove",
+   "nameability": "open-action",
+   "active": [
+    "fused_mlp"
+   ],
+   "gap_id": "fused_mlp:buffer_count:pipeline-depth",
+   "gap_category": "pipeline-depth",
+   "detail": "Buffered(buffer_count=3) \u2014 hardcoded literal",
+   "evidence": "python/sgl_jax/srt/kernels/fused_mlp.py:97",
+   "model_callsites": [
+    "tiny-dense-serving/dense-mlp",
+    "tiny-moe-serving/expert-mlp"
+   ],
+   "eligible_for_current_gate": true
+  },
+  {
+   "id": "action:megablox_gmm_kernel:buffer_count:pipeline-depth",
+   "label": "megablox_gmm_kernel: buffer_count",
+   "layer": "action",
+   "category": "datamove",
+   "nameability": "open-action",
+   "active": [
+    "gmm_v2"
+   ],
+   "gap_id": "megablox_gmm_kernel:buffer_count:pipeline-depth",
+   "gap_category": "pipeline-depth",
+   "detail": "Buffered(buffer_count=3) \u2014 hardcoded literal",
+   "evidence": "python/sgl_jax/srt/kernels/gmm/megablox_gmm_kernel/gmm_v2.py:140",
+   "model_callsites": [
+    "tiny-dense-serving/dense-projection"
+   ],
+   "eligible_for_current_gate": true
+  },
+  {
+   "id": "action:fused_moe/v2:enable_bt_scatter_overlap:schedule-toggle",
+   "label": "fused_moe/v2: enable_bt_scatter_overlap",
+   "layer": "action",
+   "category": "datamove",
+   "nameability": "open-action",
+   "active": [
+    "moe_v2"
+   ],
+   "gap_id": "fused_moe/v2:enable_bt_scatter_overlap:schedule-toggle",
+   "gap_category": "schedule-toggle",
+   "detail": "default=True",
+   "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:340",
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "eligible_for_current_gate": true
+  },
+  {
+   "id": "action:fused_moe/v2:cross_expert_prefetch_mode:schedule-toggle",
+   "label": "fused_moe/v2: cross_expert_prefetch_mode",
+   "layer": "action",
+   "category": "datamove",
+   "nameability": "open-action",
+   "active": [
+    "moe_v2"
+   ],
+   "gap_id": "fused_moe/v2:cross_expert_prefetch_mode:schedule-toggle",
+   "gap_category": "schedule-toggle",
+   "detail": "default='full'",
+   "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:341",
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "eligible_for_current_gate": true
+  },
+  {
+   "id": "action:fused_moe/v2:interleave_bt:schedule-toggle",
+   "label": "fused_moe/v2: interleave_bt",
+   "layer": "action",
+   "category": "datamove",
+   "nameability": "open-action",
+   "active": [
+    "moe_v2"
+   ],
+   "gap_id": "fused_moe/v2:interleave_bt:schedule-toggle",
+   "gap_category": "schedule-toggle",
+   "detail": "default=True",
+   "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:342",
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "eligible_for_current_gate": true
   }
  ],
  "lowering_edges": [
@@ -2596,7 +2702,7 @@
    "pallas:while"
   ]
  ],
- "gap_edges": [
+ "hidden_lowering_edges": [
   [
    "mosaic:math.* transcendental",
    "llo:reg-alloc + instruction scheduling (VLIW)"
@@ -2758,7 +2864,40 @@
    "hw:ICI route selection"
   ]
  ],
- "n_gap": 40,
+ "action_edges": [
+  {
+   "gap_id": "fused_mlp:buffer_count:pipeline-depth",
+   "source": "action:fused_mlp:buffer_count:pipeline-depth",
+   "target": "pallas:dma_start",
+   "eligible_for_current_gate": true
+  },
+  {
+   "gap_id": "megablox_gmm_kernel:buffer_count:pipeline-depth",
+   "source": "action:megablox_gmm_kernel:buffer_count:pipeline-depth",
+   "target": "pallas:dma_start",
+   "eligible_for_current_gate": true
+  },
+  {
+   "gap_id": "fused_moe/v2:enable_bt_scatter_overlap:schedule-toggle",
+   "source": "action:fused_moe/v2:enable_bt_scatter_overlap:schedule-toggle",
+   "target": "pallas:dma_start",
+   "eligible_for_current_gate": true
+  },
+  {
+   "gap_id": "fused_moe/v2:cross_expert_prefetch_mode:schedule-toggle",
+   "source": "action:fused_moe/v2:cross_expert_prefetch_mode:schedule-toggle",
+   "target": "pallas:dma_start",
+   "eligible_for_current_gate": true
+  },
+  {
+   "gap_id": "fused_moe/v2:interleave_bt:schedule-toggle",
+   "source": "action:fused_moe/v2:interleave_bt:schedule-toggle",
+   "target": "pallas:dma_start",
+   "eligible_for_current_gate": true
+  }
+ ],
+ "n_open_action_edges": 5,
+ "n_hidden_boundaries": 40,
  "n_hidden": 9,
  "n_partial": 14,
  "serving_stack": [
@@ -2936,17 +3075,31 @@
  ],
  "gaps": [
   {
+   "gap_id": "fused_mlp:buffer_count:pipeline-depth",
    "id": "fused_mlp:buffer_count:pipeline-depth",
    "family": "fused_mlp",
    "kernel_ids": [
     "fused_mlp"
    ],
    "axis": "buffer_count",
+   "source_axis": "buffer_count",
+   "source_function": "mlp_kernel_main",
    "category": "pipeline-depth",
    "status": "pipeline-depth",
    "what": "pipeline / double-buffering depth",
    "detail": "Buffered(buffer_count=3) \u2014 hardcoded literal",
    "evidence": "python/sgl_jax/srt/kernels/fused_mlp.py:97",
+   "incumbent_value": 3,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    2,
+    3,
+    4
+   ],
+   "source_sink": {
+    "callee": "Buffered",
+    "argument": "buffer_count"
+   },
    "reachable_prim": "dma_start",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -2954,21 +3107,42 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dma_start"
+   "model_callsites": [
+    "tiny-dense-serving/dense-mlp",
+    "tiny-moe-serving/expert-mlp"
+   ],
+   "open": true,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": true,
+   "graph_node": "pallas:dma_start",
+   "action_node": "action:fused_mlp:buffer_count:pipeline-depth"
   },
   {
+   "gap_id": "megablox_gmm_kernel:buffer_count:pipeline-depth",
    "id": "megablox_gmm_kernel:buffer_count:pipeline-depth",
    "family": "megablox_gmm_kernel",
    "kernel_ids": [
-    "gmm",
     "gmm_v2"
    ],
    "axis": "buffer_count",
+   "source_axis": "buffer_count",
+   "source_function": "generate_block_specs",
    "category": "pipeline-depth",
    "status": "pipeline-depth",
    "what": "pipeline / double-buffering depth",
    "detail": "Buffered(buffer_count=3) \u2014 hardcoded literal",
    "evidence": "python/sgl_jax/srt/kernels/gmm/megablox_gmm_kernel/gmm_v2.py:140",
+   "incumbent_value": 3,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    2,
+    3,
+    4
+   ],
+   "source_sink": {
+    "callee": "Buffered",
+    "argument": "buffer_count"
+   },
    "reachable_prim": "dma_start",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -2976,20 +3150,34 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dma_start"
+   "model_callsites": [
+    "tiny-dense-serving/dense-projection"
+   ],
+   "open": true,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": true,
+   "graph_node": "pallas:dma_start",
+   "action_node": "action:megablox_gmm_kernel:buffer_count:pipeline-depth"
   },
   {
+   "gap_id": "fused_mlp:b_inter,b_seq,w_gu_tile:missing-tuned-table",
    "id": "fused_mlp:b_inter,b_seq,w_gu_tile:missing-tuned-table",
    "family": "fused_mlp",
    "kernel_ids": [
     "fused_mlp"
    ],
    "axis": "b_inter,b_seq,w_gu_tile",
+   "source_axis": "b_inter,b_seq,w_gu_tile",
+   "source_function": null,
    "category": "missing-tuned-table",
    "status": "missing-tuned-table",
    "what": "tiles reachable but kernel ships no tuned table",
    "detail": "fused_mlp.py constructs tiles but references no tuned table",
    "evidence": "python/sgl_jax/srt/kernels/fused_mlp.py:0",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3000,21 +3188,35 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-dense-serving/dense-mlp",
+    "tiny-moe-serving/expert-mlp"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "megablox_gmm_kernel:tile_info:missing-tuned-table",
    "id": "megablox_gmm_kernel:tile_info:missing-tuned-table",
    "family": "megablox_gmm_kernel",
    "kernel_ids": [
-    "gmm",
     "gmm_v2"
    ],
    "axis": "tile_info",
+   "source_axis": "tile_info",
+   "source_function": null,
    "category": "missing-tuned-table",
    "status": "missing-tuned-table",
    "what": "tiles reachable but kernel ships no tuned table",
    "detail": "gmm_v2.py constructs tiles but references no tuned table (a sibling file in this family ships one)",
    "evidence": "python/sgl_jax/srt/kernels/gmm/megablox_gmm_kernel/gmm_v2.py:0",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3022,87 +3224,34 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-dense-serving/dense-projection"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
-   "id": "ragged_paged_attention:bkv_sz:compute-tile-pinned",
-   "family": "ragged_paged_attention",
-   "kernel_ids": [
-    "rpa_v3"
-   ],
-   "axis": "bkv_sz",
-   "category": "compute-tile-pinned",
-   "status": "compute-tile-pinned",
-   "what": "compute sub-tile pinned to load tile",
-   "detail": "defaults to load tile `sliding_window` when unset",
-   "evidence": "python/sgl_jax/srt/kernels/ragged_paged_attention/ragged_paged_attention_v3.py:1530",
-   "reachable_prim": "dot_general",
-   "elevated_in_akt": true,
-   "programmer_exposed": false,
-   "runner_axes": [
-    "bkv_sz"
-   ],
-   "programmer_controls": [],
-   "exposure_level": "runner",
-   "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
-  },
-  {
-   "id": "ragged_paged_attention:bkv_csz:compute-tile-pinned",
-   "family": "ragged_paged_attention",
-   "kernel_ids": [
-    "rpa_v3"
-   ],
-   "axis": "bkv_csz",
-   "category": "compute-tile-pinned",
-   "status": "compute-tile-pinned",
-   "what": "compute sub-tile pinned to load tile",
-   "detail": "defaults to load tile `page_size` when unset",
-   "evidence": "python/sgl_jax/srt/kernels/ragged_paged_attention/ragged_paged_attention_v3.py:1539",
-   "reachable_prim": "dot_general",
-   "elevated_in_akt": true,
-   "programmer_exposed": false,
-   "runner_axes": [
-    "bkv_sz"
-   ],
-   "programmer_controls": [],
-   "exposure_level": "runner",
-   "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
-  },
-  {
-   "id": "simple_gla:BV:compute-tile-pinned",
-   "family": "simple_gla",
-   "kernel_ids": [
-    "gla"
-   ],
-   "axis": "BV",
-   "category": "compute-tile-pinned",
-   "status": "compute-tile-pinned",
-   "what": "compute sub-tile pinned to load tile",
-   "detail": "defaults to load tile `V` when unset",
-   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:690",
-   "reachable_prim": "dot_general",
-   "elevated_in_akt": false,
-   "programmer_exposed": false,
-   "runner_axes": [],
-   "programmer_controls": [],
-   "exposure_level": "none",
-   "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
-  },
-  {
+   "gap_id": "simple_gla:BK,BV:missing-tuned-table",
    "id": "simple_gla:BK,BV:missing-tuned-table",
    "family": "simple_gla",
    "kernel_ids": [
     "gla"
    ],
    "axis": "BK,BV",
+   "source_axis": "BK,BV",
+   "source_function": null,
    "category": "missing-tuned-table",
    "status": "missing-tuned-table",
    "what": "tiles reachable but kernel ships no tuned table",
    "detail": "simple_gla_fused.py constructs tiles but references no tuned table",
    "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla_fused.py:0",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3110,20 +3259,35 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "update_kv_cache:best_num_slices_per_block_config:dead-tuned-table",
    "id": "update_kv_cache:best_num_slices_per_block_config:dead-tuned-table",
    "family": "update_kv_cache",
    "kernel_ids": [
     "kv_cache"
    ],
    "axis": "best_num_slices_per_block_config",
+   "source_axis": "best_num_slices_per_block_config",
+   "source_function": "get_best_num_slices_per_block",
    "category": "dead-tuned-table",
    "status": "dead-tuned-table",
    "what": "tuned table exists but selector never consults it",
    "detail": "selector returns at L234; table best_num_slices_per_block_config referenced only after (unreachable)",
    "evidence": "python/sgl_jax/srt/kernels/update_kv_cache/tuned_block_sizes.py:234",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3131,44 +3295,35 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-dense-serving/cache-update",
+    "tiny-moe-serving/cache-update"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
-   "id": "update_kv_cache:num_slices_per_block:compute-tile-pinned",
-   "family": "update_kv_cache",
-   "kernel_ids": [
-    "kv_cache"
-   ],
-   "axis": "num_slices_per_block",
-   "category": "compute-tile-pinned",
-   "status": "compute-tile-pinned",
-   "what": "compute sub-tile pinned to load tile",
-   "detail": "defaults to load tile `page_size` when unset",
-   "evidence": "python/sgl_jax/srt/kernels/update_kv_cache/tuned_block_sizes.py:232",
-   "reachable_prim": "dot_general",
-   "elevated_in_akt": true,
-   "programmer_exposed": false,
-   "runner_axes": [
-    "num_slices_per_block",
-    "page_size"
-   ],
-   "programmer_controls": [],
-   "exposure_level": "runner",
-   "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
-  },
-  {
+   "gap_id": "update_kv_cache:num_slices_per_block,page_size:missing-tuned-table",
    "id": "update_kv_cache:num_slices_per_block,page_size:missing-tuned-table",
    "family": "update_kv_cache",
    "kernel_ids": [
     "kv_cache"
    ],
    "axis": "num_slices_per_block,page_size",
+   "source_axis": "num_slices_per_block,page_size",
+   "source_function": null,
    "category": "missing-tuned-table",
    "status": "missing-tuned-table",
    "what": "tiles reachable but kernel ships no tuned table",
    "detail": "update_kv_cache.py constructs tiles but references no tuned table (a sibling file in this family ships one)",
    "evidence": "python/sgl_jax/srt/kernels/update_kv_cache/update_kv_cache.py:0",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": true,
    "programmer_exposed": false,
@@ -3179,20 +3334,45 @@
    "programmer_controls": [],
    "exposure_level": "runner",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-dense-serving/cache-update",
+    "tiny-moe-serving/cache-update"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "fused_moe/v2:enable_bt_scatter_overlap:schedule-toggle",
    "id": "fused_moe/v2:enable_bt_scatter_overlap:schedule-toggle",
    "family": "fused_moe/v2",
    "kernel_ids": [
     "moe_v2"
    ],
    "axis": "enable_bt_scatter_overlap",
+   "source_axis": "enable_bt_scatter_overlap",
+   "source_function": "_fused_ep_moe_kernel",
    "category": "schedule-toggle",
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default=True",
    "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:340",
+   "incumbent_value": true,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    true,
+    false
+   ],
+   "source_sink": {
+    "assignments": [
+     "use_bt_scatter_bank"
+    ],
+    "expression_asts": {
+     "use_bt_scatter_bank": "BoolOp(op=And(), values=[Name(id='enable_bt_scatter_overlap', ctx=Load()), Compare(left=Name(id='num_bt', ctx=Load()), ops=[Gt()], comparators=[Constant(value=1)])])"
+    }
+   },
    "reachable_prim": "dma_start",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3200,20 +3380,47 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dma_start"
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "open": true,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": true,
+   "graph_node": "pallas:dma_start",
+   "action_node": "action:fused_moe/v2:enable_bt_scatter_overlap:schedule-toggle"
   },
   {
+   "gap_id": "fused_moe/v2:cross_expert_prefetch_mode:schedule-toggle",
    "id": "fused_moe/v2:cross_expert_prefetch_mode:schedule-toggle",
    "family": "fused_moe/v2",
    "kernel_ids": [
     "moe_v2"
    ],
    "axis": "cross_expert_prefetch_mode",
+   "source_axis": "cross_expert_prefetch_mode",
+   "source_function": "_fused_ep_moe_kernel",
    "category": "schedule-toggle",
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default='full'",
    "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:341",
+   "incumbent_value": "full",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "full",
+    "none",
+    "w13"
+   ],
+   "source_sink": {
+    "assignments": [
+     "enable_cross_expert_prefetch",
+     "full_cross_expert_prefetch"
+    ],
+    "expression_asts": {
+     "enable_cross_expert_prefetch": "Compare(left=Name(id='cross_expert_prefetch_mode', ctx=Load()), ops=[NotEq()], comparators=[Constant(value='none')])",
+     "full_cross_expert_prefetch": "Compare(left=Name(id='cross_expert_prefetch_mode', ctx=Load()), ops=[Eq()], comparators=[Constant(value='full')])"
+    }
+   },
    "reachable_prim": "dma_start",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3221,20 +3428,44 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dma_start"
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "open": true,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": true,
+   "graph_node": "pallas:dma_start",
+   "action_node": "action:fused_moe/v2:cross_expert_prefetch_mode:schedule-toggle"
   },
   {
+   "gap_id": "fused_moe/v2:interleave_bt:schedule-toggle",
    "id": "fused_moe/v2:interleave_bt:schedule-toggle",
    "family": "fused_moe/v2",
    "kernel_ids": [
     "moe_v2"
    ],
    "axis": "interleave_bt",
+   "source_axis": "interleave_bt",
+   "source_function": "_fused_ep_moe_kernel",
    "category": "schedule-toggle",
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default=True",
    "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:342",
+   "incumbent_value": true,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    true,
+    false
+   ],
+   "source_sink": {
+    "assignments": [
+     "use_gather_bank"
+    ],
+    "expression_asts": {
+     "use_gather_bank": "BoolOp(op=And(), values=[Name(id='interleave_bt', ctx=Load()), Compare(left=Name(id='num_bt', ctx=Load()), ops=[Gt()], comparators=[Constant(value=1)])])"
+    }
+   },
    "reachable_prim": "dma_start",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3242,20 +3473,44 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dma_start"
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "open": true,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": true,
+   "graph_node": "pallas:dma_start",
+   "action_node": "action:fused_moe/v2:interleave_bt:schedule-toggle"
   },
   {
+   "gap_id": "fused_moe/v2:enable_act_quant:schedule-toggle",
    "id": "fused_moe/v2:enable_act_quant:schedule-toggle",
    "family": "fused_moe/v2",
    "kernel_ids": [
     "moe_v2"
    ],
    "axis": "enable_act_quant",
+   "source_axis": "enable_act_quant",
+   "source_function": "_fused_ep_moe_kernel",
    "category": "schedule-toggle",
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default=False",
    "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:350",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "source_sink": {
+    "assignments": [
+     "use_per_bt_prequant"
+    ],
+    "expression_asts": {
+     "use_per_bt_prequant": "BoolOp(op=And(), values=[Name(id='enable_act_quant', ctx=Load()), Compare(left=Name(id='bt', ctx=Load()), ops=[LtE()], comparators=[Name(id='bts', ctx=Load())]), UnaryOp(op=Not(), operand=Call(func=Attribute(value=Attribute(value=Name(id='os', ctx=Load()), attr='environ', ctx=Load()), attr='get', ctx=Load()), args=[Constant(value='SGLJAX_SKIP_PREQUANT')], keywords=[]))])"
+    }
+   },
    "reachable_prim": "dma_start",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3263,20 +3518,34 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dma_start"
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dma_start",
+   "action_node": null
   },
   {
+   "gap_id": "fused_moe/v1:token_tile:shape-pinned-tile",
    "id": "fused_moe/v1:token_tile:shape-pinned-tile",
    "family": "fused_moe/v1",
    "kernel_ids": [
     "moe_v1"
    ],
    "axis": "token_tile",
+   "source_axis": "token_tile",
+   "source_function": "_fused_ep_moe_kernel",
    "category": "shape-pinned-tile",
    "status": "shape-pinned-tile",
    "what": "tile derived from input shape (not a knob)",
    "detail": "derived from t_vmem.shape (tied to input dims, not a knob)",
    "evidence": "python/sgl_jax/srt/kernels/fused_moe/v1/kernel.py:1669",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3284,20 +3553,34 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-moe-serving/expert-v1"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "ragged_paged_attention:page_size:shape-pinned-tile",
    "id": "ragged_paged_attention:page_size:shape-pinned-tile",
    "family": "ragged_paged_attention",
    "kernel_ids": [
     "rpa_v3"
    ],
    "axis": "page_size",
+   "source_axis": "page_size",
+   "source_function": "ragged_paged_attention",
    "category": "shape-pinned-tile",
    "status": "shape-pinned-tile",
    "what": "tile derived from input shape (not a knob)",
    "detail": "derived from kv_cache_fused_processed.shape (tied to input dims, not a knob)",
    "evidence": "python/sgl_jax/srt/kernels/ragged_paged_attention/ragged_paged_attention.py:1500",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3305,20 +3588,35 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-dense-serving/paged-attention",
+    "tiny-moe-serving/paged-attention"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "simple_gla:BV:shape-pinned-tile",
    "id": "simple_gla:BV:shape-pinned-tile",
    "family": "simple_gla",
    "kernel_ids": [
     "gla"
    ],
    "axis": "BV",
+   "source_axis": "BV",
+   "source_function": "_chunk_fwd_h_kernel_varlen",
    "category": "shape-pinned-tile",
    "status": "shape-pinned-tile",
    "what": "tile derived from input shape (not a knob)",
    "detail": "derived from v_ref.shape (tied to input dims, not a knob)",
    "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:338",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3326,20 +3624,35 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "update_kv_cache:num_slices_per_block:shape-pinned-tile",
    "id": "update_kv_cache:num_slices_per_block:shape-pinned-tile",
    "family": "update_kv_cache",
    "kernel_ids": [
     "kv_cache"
    ],
    "axis": "num_slices_per_block",
+   "source_axis": "num_slices_per_block",
+   "source_function": "kv_cache_update_kernel",
    "category": "shape-pinned-tile",
    "status": "shape-pinned-tile",
    "what": "tile derived from input shape (not a knob)",
    "detail": "derived from scratch.shape (tied to input dims, not a knob)",
    "evidence": "python/sgl_jax/srt/kernels/update_kv_cache/update_kv_cache.py:86",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": true,
    "programmer_exposed": false,
@@ -3349,20 +3662,35 @@
    "programmer_controls": [],
    "exposure_level": "runner",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-dense-serving/cache-update",
+    "tiny-moe-serving/cache-update"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "fused_moe/v1:TUNED_BLOCK_CONFIGS:backend-gated",
    "id": "fused_moe/v1:TUNED_BLOCK_CONFIGS:backend-gated",
    "family": "fused_moe/v1",
    "kernel_ids": [
     "moe_v1"
    ],
    "axis": "TUNED_BLOCK_CONFIGS",
+   "source_axis": "TUNED_BLOCK_CONFIGS",
+   "source_function": "get_tuned_fused_moe_block_config",
    "category": "backend-gated",
    "status": "backend-gated",
    "what": "tuned table gated to one TPU generation",
    "detail": "table lookup guarded by TPU-generation / device test",
    "evidence": "python/sgl_jax/srt/kernels/fused_moe/v1/tuned_block_configs.py:323",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3370,20 +3698,34 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-moe-serving/expert-v1"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "fused_moe/v2:TUNED_BLOCK_CONFIGS:backend-gated",
    "id": "fused_moe/v2:TUNED_BLOCK_CONFIGS:backend-gated",
    "family": "fused_moe/v2",
    "kernel_ids": [
     "moe_v2"
    ],
    "axis": "TUNED_BLOCK_CONFIGS",
+   "source_axis": "TUNED_BLOCK_CONFIGS",
+   "source_function": "get_tuned_fused_moe_v2_block_config",
    "category": "backend-gated",
    "status": "backend-gated",
    "what": "tuned table gated to one TPU generation",
    "detail": "table lookup guarded by TPU-generation / device test",
    "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/tuned_block_configs.py:153",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3391,20 +3733,34 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "ragged_paged_attention:TUNED_BLOCK_SIZES:backend-gated",
    "id": "ragged_paged_attention:TUNED_BLOCK_SIZES:backend-gated",
    "family": "ragged_paged_attention",
    "kernel_ids": [
     "rpa_v3"
    ],
    "axis": "TUNED_BLOCK_SIZES",
+   "source_axis": "TUNED_BLOCK_SIZES",
+   "source_function": "get_tuned_block_sizes",
    "category": "backend-gated",
    "status": "backend-gated",
    "what": "tuned table gated to one TPU generation",
    "detail": "table lookup guarded by TPU-generation / device test",
    "evidence": "python/sgl_jax/srt/kernels/ragged_paged_attention/tuned_block_sizes.py:1463",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3412,47 +3768,35 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-dense-serving/paged-attention",
+    "tiny-moe-serving/paged-attention"
+   ],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
-   "id": "kda:solve_block_size:compute-tile-pinned",
-   "family": "kda",
-   "kernel_ids": [
-    "kda"
-   ],
-   "axis": "solve_block_size",
-   "category": "compute-tile-pinned",
-   "status": "compute-tile-pinned",
-   "what": "compute sub-tile pinned to load tile",
-   "detail": "defaults to load tile `intra_block_size` when unset",
-   "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:448",
-   "reachable_prim": "dot_general",
-   "elevated_in_akt": true,
-   "programmer_exposed": true,
-   "runner_axes": [
-    "intra_block_size",
-    "scalar_intra_solve"
-   ],
-   "programmer_controls": [
-    "kda.intra_block_size",
-    "kda.scalar_intra_solve"
-   ],
-   "exposure_level": "programmer",
-   "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
-  },
-  {
+   "gap_id": "kda:BT,block_size,chunk_size:missing-tuned-table",
    "id": "kda:BT,block_size,chunk_size:missing-tuned-table",
    "family": "kda",
    "kernel_ids": [
     "kda"
    ],
    "axis": "BT,block_size,chunk_size",
+   "source_axis": "BT,block_size,chunk_size",
+   "source_function": null,
    "category": "missing-tuned-table",
    "status": "missing-tuned-table",
    "what": "tiles reachable but kernel ships no tuned table",
    "detail": "kda.py constructs tiles but references no tuned table",
    "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:0",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": true,
    "programmer_exposed": true,
@@ -3466,20 +3810,35 @@
    ],
    "exposure_level": "programmer",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "simple_gla:BT,chunk_size:missing-tuned-table",
    "id": "simple_gla:BT,chunk_size:missing-tuned-table",
    "family": "simple_gla",
    "kernel_ids": [
     "gla"
    ],
    "axis": "BT,chunk_size",
+   "source_axis": "BT,chunk_size",
+   "source_function": null,
    "category": "missing-tuned-table",
    "status": "missing-tuned-table",
    "what": "tiles reachable but kernel ships no tuned table",
    "detail": "simple_gla.py constructs tiles but references no tuned table",
    "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:0",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": true,
    "programmer_exposed": true,
@@ -3491,37 +3850,33 @@
    ],
    "exposure_level": "programmer",
    "in_akt_suite": true,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
-   "id": "quantized_matmul_kernels:block_size:compute-tile-pinned",
-   "family": "quantized_matmul_kernels",
-   "kernel_ids": [],
-   "axis": "block_size",
-   "category": "compute-tile-pinned",
-   "status": "compute-tile-pinned",
-   "what": "compute sub-tile pinned to load tile",
-   "detail": "defaults to load tile `block_size` when unset",
-   "evidence": "python/sgl_jax/srt/kernels/quantized_matmul/quantized_matmul_kernels/blockwise_kernel.py:80",
-   "reachable_prim": "dot_general",
-   "elevated_in_akt": false,
-   "programmer_exposed": false,
-   "runner_axes": [],
-   "programmer_controls": [],
-   "exposure_level": "none",
-   "in_akt_suite": false,
-   "graph_node": "pallas:dot_general"
-  },
-  {
+   "gap_id": "grouped_topk/v1:bt:shape-pinned-tile",
    "id": "grouped_topk/v1:bt:shape-pinned-tile",
    "family": "grouped_topk/v1",
    "kernel_ids": [],
    "axis": "bt",
+   "source_axis": "bt",
+   "source_function": "_grouped_topk_kernel",
    "category": "shape-pinned-tile",
    "status": "shape-pinned-tile",
    "what": "tile derived from input shape (not a knob)",
    "detail": "derived from logits.shape (tied to input dims, not a knob)",
    "evidence": "python/sgl_jax/srt/kernels/grouped_topk/v1/kernel.py:79",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3529,18 +3884,30 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": false,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   },
   {
+   "gap_id": "paged_attention:page_size:shape-pinned-tile",
    "id": "paged_attention:page_size:shape-pinned-tile",
    "family": "paged_attention",
    "kernel_ids": [],
    "axis": "page_size",
+   "source_axis": "page_size",
+   "source_function": "paged_attention_kernel",
    "category": "shape-pinned-tile",
    "status": "shape-pinned-tile",
    "what": "tile derived from input shape (not a knob)",
    "detail": "derived from k_pages_ref.shape (tied to input dims, not a knob)",
    "evidence": "python/sgl_jax/srt/kernels/paged_attention/paged_attention.py:61",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
    "reachable_prim": "dot_general",
    "elevated_in_akt": false,
    "programmer_exposed": false,
@@ -3548,7 +3915,12 @@
    "programmer_controls": [],
    "exposure_level": "none",
    "in_akt_suite": false,
-   "graph_node": "pallas:dot_general"
+   "model_callsites": [],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
   }
  ],
  "gap_categories": {
@@ -3557,12 +3929,6 @@
    "reachable_prim": "dma_start",
    "salience": 6,
    "count": 2
-  },
-  "compute-tile-pinned": {
-   "label": "compute sub-tile pinned to load tile",
-   "reachable_prim": "dot_general",
-   "salience": 5,
-   "count": 6
   },
   "missing-tuned-table": {
    "label": "tiles reachable but kernel ships no tuned table",
@@ -3595,7 +3961,7 @@
    "count": 6
   }
  },
- "frontier_coverage": [
+ "seed_coverage": [
   {
    "family": "update_kv_cache",
    "category": "dead-tuned-table",
@@ -3609,11 +3975,6 @@
   {
    "family": "fused_mlp",
    "category": "pipeline-depth",
-   "hit": true
-  },
-  {
-   "family": "ragged_paged_attention",
-   "category": "compute-tile-pinned",
    "hit": true
   },
   {
@@ -3641,10 +4002,13 @@
   "active_primitives": 53,
   "kernels_scanned": 8,
   "pallas_families": 13,
-  "auto_gaps": 28,
-  "open_suite_gaps": 22,
-  "frontier_rediscovered": "7/7",
+  "auto_gaps": 22,
+  "open_gaps": 20,
+  "open_action_edges": 5,
+  "hidden_lowering_boundaries": 40,
+  "executable_action_gaps": 5,
+  "seed_patterns_rediscovered": "6/6",
   "focus_active": true
  },
- "note": "AUTO-EXTRACTED: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas \u2192 Mosaic IR \u2192 Mosaic backend (LLO: reg-alloc / scheduling) \u2192 hardware. Nameability is BINARY: NAMEABLE (green, reschedulable at the top) vs HIDDEN (red) \u2014 reachable in the lowering but with no handle. The LLO level is hidden (the backend's decisions have no user handle) and every op must traverse it; hardware micro-behaviours (MXU staging, VMEM bank, DMA channel, ICI route) are hidden nodes AT the hw level. A red directed edge into any hidden node = a flexibility gap."
+ "note": "AUTO-EXTRACTED: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas \u2192 Mosaic IR \u2192 Mosaic backend (LLO: reg-alloc / scheduling) \u2192 hardware. Nameability is BINARY: NAMEABLE (reschedulable at the top) vs HIDDEN (compiler-internal) \u2014 reachable in the lowering but with no direct handle. Neutral dashed links mark these compiler-internal boundaries; they are structural context, not loop actions. Each source-derived, programmer-unexposed finding covered by the frozen model gate is represented by exactly one red action link carrying the same stable gap_id consumed by the AKT loop. Open findings without a model callsite remain visible but are not actions."
 }

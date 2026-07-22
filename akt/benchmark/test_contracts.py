@@ -67,7 +67,16 @@ def test_case_fails_when_any_advertised_valid_config_is_incorrect():
         make_inputs=lambda: {"x": jnp.asarray([1.0])},
         run=lambda inp, cfg: inp["x"] + (1.0 if cfg["wrong"] else 0.0),
         reference=lambda inp: inp["x"],
-        space=DesignSpace([Knob("wrong", [False, True], default=False)]),
+        space=DesignSpace(
+            [
+                Knob(
+                    "wrong",
+                    [False, True],
+                    default=False,
+                    programmer_control="contract_test.wrong",
+                )
+            ]
+        ),
     )
     result = eval_case(case, runs=1, native=False)
     assert result["correct"] is False

@@ -72,7 +72,7 @@
 <body>
 <div class="wrap">
   <h1>AKT · capability-elevation loop <span class="muted">on sglang-jax TPU-Pallas kernels</span></h1>
-  <div class="sub" id="subtitle">Each round must expose one lowering-reachable flexibility through the stable programmer API and production serving path, search it, and keep it only when exposure, correctness, and real-HW performance gates all pass.</div>
+  <div class="sub" id="subtitle">Each round exposes one graph-backed low-level flexibility through the stable serving API, exhaustively measures its local space, and keeps it only after model-level target-TPU gates pass.</div>
 
   <div class="live" id="live"></div>
   <div class="banner" id="banner"></div>
@@ -84,12 +84,21 @@
   <div class="panel"><canvas id="geoChart" height="112"></canvas>
     <div class="sub" style="margin:8px 2px 0" id="chartnote"></div></div>
 
-  <h2>Per-kernel — incumbent (best config in the deployable design space)</h2>
+  <h2>Per-kernel — best measured deployable configuration</h2>
   <div class="panel scroll"><table id="ktab"><thead><tr>
-    <th>kernel</th><th>regime</th><th class="num">incumbent&nbsp;(interp)*</th><th>best config</th>
+    <th>kernel</th><th>regime</th><th class="num">best latency</th><th>best config</th>
     <th class="num">deployable |space|</th><th>ref&nbsp;check</th><th>sglang&nbsp;pytest</th>
   </tr></thead><tbody></tbody></table></div>
-  <div class="sub" style="margin-top:6px">* The acceptance space retains inherited pre-AKT axes and adds only AKT axes with a production programmer control; runner-only experiments are fixed at their safe defaults. The control inventory above, not mere runner membership, identifies stable server APIs. Pallas-interpret rankings are proxies and must be re-measured on TPU.</div>
+  <div class="sub" style="margin-top:6px">Only programmer-nameable controls vary in the serving objective; runner-only axes stay at their incumbent defaults.</div>
+
+  <h2>Three-model target-hardware gate</h2>
+  <div class="panel">
+    <div class="flex" id="gatebadges" style="margin-bottom:8px"></div>
+    <div class="scroll"><table id="mtab"><thead><tr>
+      <th>model trace</th><th class="num">candidate</th><th class="num">incumbent</th>
+      <th class="num">paired ratio</th><th>correctness</th><th>DP / empirical</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
 
   <h2>Capability-elevation trail</h2>
   <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
@@ -97,7 +106,7 @@
     <th>key change</th><th>verification</th>
   </tr></thead><tbody></tbody></table></div>
 
-  <h2>Flexibility graph <span class="muted">— Pallas → Mosaic IR → Mosaic backend (LLO) → hardware (floor) · nameable vs hidden gap (red)</span></h2>
+  <h2>Flexibility graph <span class="muted">— red = executable action · dashed = hidden lowering context</span></h2>
   <div class="panel">
     <div id="flexgraphs"></div>
     <div id="flexdetail" style="margin-top:10px"></div>
@@ -182,7 +191,7 @@ function renderChart(b){
     'Round points are measured attempts; rejected or correctness-invalid attempts do not move the envelope. '+
     ((hasPendingBaseline || (!b.objective_stale && allTrail.length!==trail.length))
       ? (allTrail.length-trail.length)+' legacy output-only round(s) are omitted from this chart. ' : '')+
-    'Latencies are interpret proxies on this box (TPU-faithful when a TPU is attached).';
+    'Current-objective points use the target-hardware gate; legacy rounds retain their recorded objective scope.';
 }
 
 const pct = v => (v==null? "—" : (v>0?"+":"")+v.toFixed(2)+"%");
@@ -216,10 +225,22 @@ function exposureEvidence(exposure){
 }
 function objectiveBadge(round, board){
   if(!round.objective_scope)
-    return '<span class="badge b-defer" title="Measured before the stateful serving objective">legacy output-only</span>';
+    return '<span class="badge b-defer" title="Measured before the model-serving objective">legacy output-only</span>';
   if(round.objective_scope!==board.required_objective_scope)
     return '<span class="badge b-defer">legacy objective</span>';
-  return '<span class="badge b-keep">stateful serving</span>';
+  return '<span class="badge b-keep">model serving</span>';
+}
+function statusBadge(label, status, ok){
+  const cls=['not_applicable','not_run','topology_skipped'].includes(status)?'b-defer':ok===true?'b-keep':ok===false?'b-reject':'b-run';
+  return '<span class="badge '+cls+'">'+esc(label)+' '+esc(status||'not_run')+'</span>';
+}
+function gateBadges(empirical, live){
+  const badges=[];
+  if(empirical && empirical.status!=='not_run')
+    badges.push(statusBadge('empirical DP', empirical.status, empirical.ok));
+  if(live && live.status!=='not_run')
+    badges.push(statusBadge('Kimi', live.status, live.ok));
+  return badges.join(' ');
 }
 
 function renderFlexGraph(fg){
@@ -235,7 +256,7 @@ function renderFlexGraph(fg){
         good=cssVar('--good')||'#3fb950', warn=cssVar('--warn')||'#d29922',
         ink=cssVar('--mut')||'#9aa4b2', line=cssVar('--line')||'#2a2f3a',
         panel=cssVar('--panel2')||'#1e222b', panelHi=cssVar('--panel')||'#171a21';
-  const nameCol = nm => nm==='hidden'? bad : acc;   // BINARY: nameable (blue) vs hidden (red)
+  const nameCol = nm => nm==='open-action'? bad : nm==='hidden'? ink : acc;
   const cx={}; cats.forEach((c,i)=>cx[c.id]=leftPad + i*colW + colW/2);
   const cell={}; fg.nodes.forEach(n=>{ (cell[n.layer+'|'+n.category]=cell[n.layer+'|'+n.category]||[]).push(n); });
   const bandTop={}, bandH={}; let y=topPad;
@@ -246,7 +267,7 @@ function renderFlexGraph(fg){
   layers.forEach(l=>cats.forEach(c=>{ (cell[l.id+'|'+c.id]||[]).forEach((n,k)=>{
     pos[n.id]={x:cx[c.id], y:bandTop[l.id]+14+k*(nodeH+vgap)+nodeH/2}; }); }));
   const nById={}; fg.nodes.forEach(n=>nById[n.id]=n);
-  const gapSet=new Set((fg.gap_edges||[]).map(e=>e[0]+'>'+e[1]));
+  const hiddenSet=new Set((fg.hidden_lowering_edges||[]).map(e=>e[0]+'>'+e[1]));
   function trim(a,b){ const pa=pos[a],pb=pos[b],dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,r=nodeH/2+3;
     return {x1:pa.x+dx/d*r,y1:pa.y+dy/d*r,x2:pb.x-dx/d*r,y2:pb.y-dy/d*r}; }
   let s='<svg viewBox="0 0 '+fullW+' '+H+'" width="'+fullW+'" height="'+H+'" style="max-width:none;display:block">';
@@ -260,14 +281,20 @@ function renderFlexGraph(fg){
     s+='<text x="8" y="'+((t+b)/2)+'" font-size="11" font-weight="700" fill="'+ink+'"><tspan>'+esc(l.title.replace(/ /g,' '))+'</tspan></text>'; });
   // edges (each carries data-a/data-b + its base opacity/width, for click highlighting)
   (fg.lowering_edges||[]).forEach(e=>{ const a=e[0],b=e[1]; if(!pos[a]||!pos[b])return; const t=trim(a,b);
-    const gap=gapSet.has(a+'>'+b);
+    const hidden=hiddenSet.has(a+'>'+b);
     const on=(nById[a].active&&nById[a].active.length&&nById[b].active&&nById[b].active.length);
-    const op=gap?0.9:(on?0.42:0.12), w=gap?1.7:(on?1.3:1), stroke=gap?bad:good;
-    const mk=gap?' marker-end="url(#fx-gap)"':'';
-    const ttl=gap?'<title>GAP: '+esc(nById[a].label)+' → '+esc(nById[b].label)+' (lowered, not exposed)</title>':'';
+    const op=hidden?0.3:(on?0.42:0.12), w=on?1.3:1, stroke=hidden?ink:good;
+    const dash=hidden?' stroke-dasharray="3 3"':'';
+    const ttl=hidden?'<title>Hidden compiler lowering boundary</title>':'';
     s+='<line class="fx-edge" data-a="'+esc(a)+'" data-b="'+esc(b)+'" data-baseop="'+op+'" data-basew="'+w+
-       '" x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+stroke+'" stroke-width="'+w+'"'+mk+
+       '" x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+stroke+'" stroke-width="'+w+'"'+dash+
        ' opacity="'+op+'">'+ttl+'</line>';
+  });
+  (fg.action_edges||[]).forEach(e=>{ const a=e.source,b=e.target; if(!pos[a]||!pos[b])return; const t=trim(a,b);
+    const actionLabel=fg.actions_executable_for_campaign?'AKT action: ':'Graph candidate (campaign fingerprint '+esc(fg.action_context_status||'unbound')+'): ';
+    s+='<line class="fx-edge" data-a="'+esc(a)+'" data-b="'+esc(b)+'" data-baseop="0.9" data-basew="1.7"'+
+      ' x1="'+t.x1+'" y1="'+t.y1+'" x2="'+t.x2+'" y2="'+t.y2+'" stroke="'+bad+'" stroke-width="1.7"'+
+      ' marker-end="url(#fx-gap)" opacity="0.9"><title>'+actionLabel+esc(e.gap_id||a)+'</title></line>';
   });
   // nodes
   fg.nodes.forEach(n=>{ const p=pos[n.id], active=(n.active&&n.active.length>0), col=nameCol(n.nameability);
@@ -284,13 +311,18 @@ function renderFlexGraph(fg){
   const sw=(c,d)=>'<svg width="30" height="11" style="vertical-align:middle"><line x1="2" y1="5.5" x2="'+(d?22:28)+'" y2="5.5" stroke="'+c+'" stroke-width="2.4"'+(d?'':'')+'/>'+(d?'<polygon points="22,1.5 30,5.5 22,9.5" fill="'+c+'"/>':'')+'</svg>';
   const chip=(c,dash)=>'<span style="display:inline-block;width:11px;height:11px;border:1.6px '+(dash?'dashed':'solid')+' '+c+';border-radius:3px;vertical-align:middle"></span>';
   const lg='<div style="display:flex;gap:16px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;color:'+ink+'">'+
-    '<span>'+sw(good,false)+' nameable ▼▲ — reschedulable at the top</span>'+
-    '<span>'+sw(bad,true)+' <b style="color:'+bad+'">flexibility gap: reachable ▼, NOT reschedulable</b></span>'+
+    '<span>'+sw(good,false)+' compiler lowering</span>'+
+    '<span>'+sw(bad,true)+' <b style="color:'+bad+'">executable AKT action</b></span>'+
+    '<span><svg width="30" height="11" style="vertical-align:middle"><line x1="2" y1="5.5" x2="28" y2="5.5" stroke="'+ink+'" stroke-width="2" stroke-dasharray="3 3"/></svg> hidden lowering context</span>'+
     '<span>'+chip(acc)+' nameable capability</span>'+
-    '<span>'+chip(bad,true)+' hidden capability</span>'+
+    '<span>'+chip(bad)+' executable action</span>'+
+    '<span>'+chip(ink,true)+' hidden compiler context</span>'+
     (fg.nodes.some(n=>!(n.active&&n.active.length)) ? '<span style="opacity:.45">'+chip(ink)+' faded = reachable in the stack but no suite kernel uses it</span>' : '')+
     '<span style="margin-left:auto;opacity:.85"><b>tip:</b> click a box to trace its connections (click it again / background to reset)</span></div>';
-  host.innerHTML = lg + '<div style="overflow-x:auto">'+s+'</div>';
+  const graphStatus=fg.actions_executable_for_campaign
+    ? '<div class="badge b-keep" style="margin-bottom:10px">campaign graph fingerprint current</div>'
+    : '<div class="badge b-defer" style="margin-bottom:10px">graph candidates are not campaign-executable: fingerprint '+esc(fg.action_context_status||'unbound')+'</div>';
+  host.innerHTML = graphStatus + lg + '<div style="overflow-x:auto">'+s+'</div>';
   document.getElementById('flexnote').textContent = fg.note||'';
   // interactivity: click a node box -> highlight its incident edges + directly-connected nodes
   const svg = host.querySelector('svg');
@@ -304,27 +336,33 @@ function renderFlexGraph(fg){
     const eEls=[].slice.call(host.querySelectorAll('.fx-edge'));   // render order == edgesR
     const ids=fg.nodes.map(n=>n.id);
     const baseOp=fg.nodes.map(n=>(n.active&&n.active.length)?1:0.4);
-    const edgesR=(fg.lowering_edges||[]).filter(e=>pos[e[0]]&&pos[e[1]]);   // same filter as render
-    const eMeta=edgesR.map(e=>{ const na=nById[e[0]], nb=nById[e[1]], gap=gapSet.has(e[0]+'>'+e[1]);
+    const edgesR=[
+      ...(fg.lowering_edges||[]).filter(e=>pos[e[0]]&&pos[e[1]]).map(e=>({a:e[0],b:e[1],action:false})),
+      ...(fg.action_edges||[]).filter(e=>pos[e.source]&&pos[e.target]).map(e=>({a:e.source,b:e.target,action:true})),
+    ];
+    const eMeta=edgesR.map(e=>{ const na=nById[e.a], nb=nById[e.b], hidden=hiddenSet.has(e.a+'>'+e.b);
       const on=(na&&na.active&&na.active.length&&nb&&nb.active&&nb.active.length);
-      return {a:e[0], b:e[1], op:gap?0.9:(on?0.42:0.12), w:gap?1.7:(on?1.3:1)}; });
-    const nbr={}; edgesR.forEach(e=>{ (nbr[e[0]]=nbr[e[0]]||{})[e[1]]=1; (nbr[e[1]]=nbr[e[1]]||{})[e[0]]=1; });
+      return {a:e.a, b:e.b, op:e.action?0.9:(hidden?0.3:(on?0.42:0.12)), w:e.action?1.7:(on?1.3:1)}; });
+    const nbr={}; edgesR.forEach(e=>{ (nbr[e.a]=nbr[e.a]||{})[e.b]=1; (nbr[e.b]=nbr[e.b]||{})[e.a]=1; });
     const detail=document.getElementById('flexdetail');
     // On click, surface the node's EXACT 1:1 real handle: the Pallas/JAX API + jax primitive
     // (pallas), the Mosaic IR op(s) (mosaic), or the hardware descriptor (hw). Family boxes
     // (>1 member) list every member; hidden boxes have no handle by design — that IS the gap.
     const kv=(k,v)=>'<div style="margin:2px 0"><span class="muted">'+esc(k)+':</span> <code style="font-size:11.5px">'+esc(v)+'</code></div>';
     const nodeDetailHTML=n=>{
-      const h=n.handle||{}, gap=(n.nameability==='hidden');
+      const h=n.handle||{}, gap=(n.nameability==='hidden'), action=(n.layer==='action');
       // "family" = the box aggregates >1 distinct low-level handle (primitives / Mosaic ops).
       // Multiple API *spellings* of one primitive (e.g. pl.dot / jnp.matmul → dot_general_p)
       // is still a 1:1 box — the aliases are synonyms, not an aggregation.
       const fam=((h.prim&&h.prim.length>1)||(h.op&&h.op.length>1));
-      const tag=gap?'no handle (gap)':(fam?'family (aggregated box)':'1:1 real handle');
-      const tagCol=gap?bad:(fam?warn:good);
+      const tag=action?'executable action':gap?'hidden compiler context':(fam?'family (aggregated box)':'1:1 real handle');
+      const tagCol=action?bad:gap?ink:(fam?warn:good);
       let body;
-      if(gap){
-        body='<span style="color:'+bad+'">No Pallas / Mosaic API or hardware ISA handle — this box is a compiler/hardware-internal decision with no top-level name. Its absence is the flexibility gap.</span>';
+      if(action){
+        body=kv('gap id',n.gap_id||n.id)+kv('source',n.evidence||'—')+
+          '<div style="margin-top:5px">'+esc(n.detail||'')+'</div>';
+      } else if(gap){
+        body='<span class="muted">Compiler-internal lowering context; it is not independently selectable by AKT.</span>';
       } else {
         const rows=[];
         // Pallas: HEADLINE the real invocation form(s); the internal *_p primitive
@@ -370,30 +408,28 @@ function renderFlexGraph(fg){
 function renderGaps(fg){
   const sm=document.getElementById('gapsummary'); if(!sm) return;
   const gaps=fg.gaps||[], cats=fg.gap_categories||{}, stack=fg.serving_stack||[],
-        st=fg.stats||{}, cov=fg.frontier_coverage||[];
+        st=fg.stats||{}, actionIds=new Set((fg.action_edges||[]).map(edge=>edge.gap_id));
   if(!gaps.length){ sm.innerHTML='<span class="empty">no auto-gaps — run the extractor (flexgraph_extract.py).</span>';
     document.getElementById('gapcats').innerHTML=''; document.getElementById('autogaps').innerHTML='';
     document.getElementById('stackcov').innerHTML=''; return; }
-  const covHit=cov.filter(c=>c.hit).length, covN=cov.length;
-  const open=gaps.filter(g=>g.in_akt_suite&&!g.programmer_exposed),
+  const open=gaps.filter(g=>actionIds.has(g.gap_id)),
         exposed=gaps.filter(g=>g.programmer_exposed),
-        runnerOnly=gaps.filter(g=>g.in_akt_suite&&g.elevated_in_akt&&!g.programmer_exposed),
-        other=gaps.filter(g=>!g.in_akt_suite);
+        context=gaps.filter(g=>!actionIds.has(g.gap_id)&&!g.programmer_exposed);
   sm.innerHTML='<b>'+(st.pallas_families||stack.length)+'</b> Pallas kernel families auto-scanned · '+
     '<b>'+gaps.length+'</b> flexibility gaps derived from source across <b>'+Object.keys(cats).length+'</b> categories · '+
-    '<b style="color:var(--bad)">'+open.length+'</b> OPEN programmer gaps · '+
-    '<b style="color:var(--good)">'+exposed.length+'</b> programmer-exposed · '+
-    '<span class="badge '+(covHit===covN?'b-keep':'b-reject')+'">hand-FRONTIER rediscovered '+covHit+'/'+covN+'</span>';
+    '<b style="color:var(--bad)">'+open.length+'</b> executable actions · '+
+    '<b style="color:var(--good)">'+exposed.length+'</b> programmer-exposed';
   // category chips
   document.getElementById('gapcats').innerHTML=Object.entries(cats)
     .sort((a,b)=>b[1].salience-a[1].salience)
     .map(([c,i])=>'<span class="badge b-defer" style="margin:2px 4px 2px 0" title="'+esc(i.label)+
       (i.reachable_prim?' — steers '+esc(i.reachable_prim):'')+'">'+esc(c)+' ×'+i.count+'</span>').join('');
   // Gap table distinguishes benchmark-only tuning from production programmer control.
-  const badge=g=> !g.in_akt_suite ? '<span class="badge b-defer">unexplored</span>'
+  const badge=g=> actionIds.has(g.gap_id) ? (fg.actions_executable_for_campaign
+        ? '<span class="badge b-reject">ACTION</span>'
+        : '<span class="badge b-defer">STALE</span>')
       : g.programmer_exposed ? '<span class="badge b-keep">programmer API</span>'
-      : g.elevated_in_akt ? '<span class="badge b-run">runner only</span>'
-      : '<span class="badge b-reject">OPEN</span>';
+      : '<span class="badge b-defer">context</span>';
   const row=g=>'<tr><td>'+badge(g)+'</td><td><span class="muted">'+esc(g.category)+'</span></td>'+
     '<td><b>'+esc(g.family)+'</b>'+(g.kernel_ids&&g.kernel_ids.length?' <span class="muted">('+esc(g.kernel_ids.join(','))+')</span>':'')+'</td>'+
     '<td><code>'+esc(g.axis)+'</code></td>'+
@@ -403,10 +439,9 @@ function renderGaps(fg){
   document.getElementById('autogaps').innerHTML=
     '<div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12.5px">'+
     '<thead><tr><th>status</th><th>category</th><th>kernel family</th><th>axis</th><th>evidence (file:line) · reachable lowering node</th></tr></thead><tbody>'+
-    grp('OPEN — not exposed through the programmer API', open.filter(g=>!g.elevated_in_akt))+
-    grp('runner-only tuning — still missing production programmer exposure', runnerOnly)+
+    grp(fg.actions_executable_for_campaign?'executable graph actions':'graph candidates (campaign fingerprint not current)', open)+
     grp('exposed end-to-end through the programmer API', exposed)+
-    grp('unexplored serving stack (not in the akt suite)', other)+
+    grp('non-executable findings retained as context', context)+
     '</tbody></table></div>';
   // serving-stack coverage strip
   document.getElementById('stackcov').innerHTML='<div class="muted" style="font-size:12px;margin-bottom:4px">serving stack (green = in akt suite · ⊞ = ships a tuned table):</div>'+
@@ -434,25 +469,23 @@ async function load(){
   const nr = b.n_rounds||0;
   document.getElementById('banner').innerHTML =
     (b.objective_stale
-      ? '<b>OBJECTIVE STALE:</b> existing state predates the stateful deployable objective. Run <code>loop.py rebaseline</code> before another round. '
-      : '<b>Stateful serving objective:</b> runner-only switches are anchored at defaults. ')+
-    'On this box (no TPU) all latencies are <b>Pallas-interpret proxies</b> — plumbing validation, not results. '+
-    '<b>'+nr+' capability round'+(nr===1?'':'s')+' run.</b> The definitive “is AKT effective in AI?” test needs a TPU. '+
-    'Correctness (allclose vs the sglang-jax reference + its native pytest) is backend-independent and holds here.';
+      ? '<b>OBJECTIVE STALE:</b> existing state predates the three-model target-TPU objective. Run <code>loop.py rebaseline</code> before another round. '
+      : '<b>Model-serving objective:</b> exact local enumeration, additive DP, paired complete-trace timing, and conditional Kimi validation. ')+
+    '<b>'+nr+' capability round'+(nr===1?'':'s')+' run.</b>';
 
   const inc = b.incumbent||{}, ev = b.eval||{}, controls = b.controls||{};
   const exposedControls = controls.programmer_controls||[];
   const runnerOnly = controls.runner_only_knobs||[];
   const pendingBaseline = b.objective_stale && ev.objective_scope===b.required_objective_scope;
   document.getElementById('stats').innerHTML = [
-    [pendingBaseline?'rebaseline candidate (interp)':'incumbent geomean (interp)',
+    [pendingBaseline?'rebaseline candidate':'incumbent geomean',
       ms(pendingBaseline?ev.search_geomean_s:inc.current_geomean_s),
-      pendingBaseline?'measured and verified; adopt after committing code':'best deployable config; capabilities must beat it'],
+      pendingBaseline?'measured and verified; adopt after committing code':'paired three-model objective'],
     ['design choices', pendingBaseline?(ev.n_choices??'—'):(inc.choices!=null?inc.choices:'—'),
       'deployable configs across the suite'],
     ['round', inc.round!=null? inc.round : 0, 'KEEP bar > '+(inc.target_pct??2)+'% · '+(b.n_rounds||0)+' run'],
     ['programmer controls', exposedControls.length, 'production API · '+runnerOnly.length+' runner-only experiment'+(runnerOnly.length===1?'':'s')],
-    ['objective', b.objective_stale?'STALE':'stateful', esc(b.objective_scope||'legacy output-only')],
+    ['objective', b.objective_stale?'STALE':'model serving', esc(b.objective_scope||'legacy output-only')],
     ['correctness', ev.all_correct===false?'FAIL':(ev.all_correct==null?'—':'all pass'),
       'allclose '+(ev.allclose_correct===false?'✗':'✓')+' · sglang pytest '+
       ((ev.native_summary||{}).passed||0)+'/'+((ev.native_summary||{}).ran||0)+
@@ -461,6 +494,26 @@ async function load(){
       '</div><div class="d">'+d+'</div></div>').join('');
 
   renderChart(b);
+
+  const empirical=ev.empirical_dp||{}, kimi=ev.live_kimi||{};
+  document.getElementById('gatebadges').innerHTML =
+    statusBadge('empirical DP',empirical.status,empirical.ok)+' '+
+    statusBadge('Kimi',kimi.status,kimi.ok)+' '+
+    '<span class="muted">'+esc(empirical.passed_models||0)+'/'+esc(empirical.models||0)+
+    ' empirical models · '+esc(kimi.eligible||0)+' Kimi eligible · '+
+    esc(kimi.not_applicable||0)+' not applicable · '+
+    esc(kimi.topology_skipped||0)+' topology skipped</span>';
+
+  const mt=document.querySelector('#mtab tbody');
+  mt.innerHTML=(ev.models||[]).map(m=>{
+    const cor=m.correct===true?'<span class="badge b-keep">correct</span>':
+      m.correct===false?'<span class="badge b-reject">failed</span>':'<span class="badge b-defer">—</span>';
+    const dp=m.dp_ok?'<span class="badge b-keep">bounded solver check</span>':'<span class="badge b-reject">solver check failed</span>';
+    const ratio=Number.isFinite(m.ratio)?m.ratio.toFixed(4):'—';
+    return '<tr><td><b>'+esc(m.model||'—')+'</b></td><td class="num">'+ms(m.candidate_s)+
+      '</td><td class="num">'+ms(m.incumbent_s)+'</td><td class="num">'+ratio+
+      '</td><td>'+cor+'</td><td>'+dp+' '+statusBadge('empirical',(m.empirical||{}).status,(m.empirical||{}).ok)+'</td></tr>';
+  }).join('')||'<tr><td colspan="6" class="empty">no model-level evaluation yet.</td></tr>';
 
   // kernels
   const kt = document.querySelector('#ktab tbody');
@@ -483,7 +536,9 @@ async function load(){
   // trail
   const tt = document.querySelector('#ttab tbody');
   tt.innerHTML = (b.trail||[]).slice().reverse().map(t=>{
-    const change = t.search_dimension||t.hypothesis||'key change not recorded';
+    const dimensions=(t.search_dimensions||[]).map(d=>
+      (d.control||'?')+'='+JSON.stringify(d.candidate_values||[])).join('; ');
+    const change = t.search_dimension||dimensions||t.hypothesis||'key change not recorded';
     const verified = t.correct===true
       ? '<span class="badge b-keep">correct</span>'
       : t.correct===false
@@ -498,6 +553,13 @@ async function load(){
     const configs = (t.best_configs||[]).map(c=>
       '<div class="config-line"><b>'+esc(c.case)+'</b> <code>'+esc(JSON.stringify(c.config))+'</code></div>'
     ).join('') || '<span class="muted">no selected configuration recorded</span>';
+    const source = t.source_evidence && typeof t.source_evidence==='object'
+      ? (t.source_evidence.path||'')+((t.source_evidence.line!=null)?':'+t.source_evidence.line:'')
+      : (t.source_evidence||'');
+    const gap = '<code>'+esc(t.gap_id||t.gap||'—')+'</code>'+
+      (source?' · '+esc(source):'');
+    const estimate = Number.isFinite(t.estimated_relief_pct)
+      ? pct(t.estimated_relief_pct) : '—';
     const issues = [
       ...(t.missing_cases||[]).map(c=>'missing '+c),
       ...(t.truncated_cases||[]).map(c=>'truncated '+c),
@@ -507,12 +569,14 @@ async function load(){
       : '<span class="badge b-keep">no missing or truncated cases</span>';
     return '<tr><td class="num">'+esc(t.round)+'</td><td><b>'+esc(t.capability)+'</b></td>'+
       '<td>'+decBadge(t.decision)+'</td><td class="num">'+pct(t.delta_pct)+'</td>'+
-      '<td class="trail-change">'+esc(change)+'</td><td>'+verified+' '+exposure+' '+objective+coverage+'</td></tr>'+
+      '<td class="trail-change">'+esc(change)+'</td><td>'+verified+' '+exposure+' '+objective+' '+
+      gateBadges(t.empirical_dp,t.live_kimi)+coverage+'</td></tr>'+
       '<tr class="trail-detail"><td></td><td colspan="5"><details><summary>Review implementation evidence</summary>'+
-      '<div class="trail-review"><div><b>Why</b><br>'+esc(t.hypothesis||'—')+'</div>'+
+      '<div class="trail-review"><div><b>Why</b><br>'+esc(t.hypothesis||'—')+
+      '<div class="muted" style="margin-top:5px">estimated relief '+estimate+'</div></div>'+
       '<div><b>Gate result</b><br>'+esc(t.reason||'—')+'<div style="margin-top:5px">'+gate+'</div></div>'+
       '<div class="wide"><b>Programmer exposure</b><br>'+exposureEvidence(t.programmer_exposure)+'</div>'+
-      '<div class="wide"><b>Source gap</b><br>'+esc(t.gap||'—')+'</div>'+
+      '<div class="wide"><b>Source gap</b><br>'+gap+'</div>'+
       '<div class="wide trail-files"><b>Files changed</b><br>'+(files||'—')+'</div>'+
       '<div class="wide"><b>Selected configurations</b>'+configs+'</div></div></details></td></tr>';
   }).join('') || '<tr><td colspan="6" class="empty">no capability rounds yet.</td></tr>';

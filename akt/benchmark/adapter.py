@@ -2,14 +2,14 @@
 
 The AKT loop (akt/core/evolve/loop.py) never imports benchmark code; it shells out
 to THIS file and reads one JSON line per subcommand, so the whole benchmark domain
-(kernels, metrics, bottleneck, gap frontier) is swappable without touching core/.
+(kernels, metrics, bottleneck, red-link action space) is swappable without touching core/.
 
 CONTRACT
   adapter.py bottleneck  -> "AKT_BOTTLENECK {json}": {title, lines[], note}
       what dominates the suite latency (ranked kernels), pre-rendered for the QUERY.
   adapter.py gaps        -> "AKT_GAPS {json}":       {title, lines[], note}
-      the flexibility-gap frontier: lowering-reachable tiling/pipeline/fusion knobs
-      the kernel config schema does NOT currently name — candidate capabilities.
+      the validated red-link action catalog: source-derived low-level flexibilities
+      the programmer API does NOT currently expose.
   adapter.py space [--kernel K] -> plain text: per-case design-space size + knobs
       (evidence the enlarged space is enumerated, used by loop.search_audit).
 
@@ -27,144 +27,150 @@ import json
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent          # akt/benchmark
-ROOT = Path(__file__).resolve().parents[2]       # akt/
-REPO = ROOT.parent                               # sglang-jax/
-for p in (str(REPO), str(REPO / "python"), str(ROOT)):
+REPO = Path(__file__).resolve().parents[2]       # sglang-jax/
+AKT = REPO / "akt"
+for p in (str(REPO), str(REPO / "python"), str(AKT)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-EVAL_OUT = ROOT / "akt/optimization_history/.evolve_eval.json"
+EVAL_OUT = AKT / "optimization_history/.evolve_eval.json"
 
 
 # ------------------------------------------------------------------ bottleneck
 def cmd_bottleneck(_args):
-    """Rank kernels by measured latency from the freshest gate eval. On this box
-    those are Pallas-interpret proxies (functional, NOT TPU-faithful); on TPU they
-    are the real device latencies. The dominant kernel is THE target to relieve."""
+    """Rank models and selected callsites from the freshest target-HW evaluation."""
     if not EVAL_OUT.exists():
         print("AKT_BOTTLENECK " + json.dumps(
-            {"missing": "no eval yet — run akt/benchmark/gates/eval.py --out "
+            {"missing": "no eval yet — run akt/benchmark/gates/model_eval.py --out "
                         f"{EVAL_OUT} (or the loop's `init`)"}))
         return
     s = json.loads(EVAL_OUT.read_text())
-    rows = []
-    for r in s.get("results", []):
-        lat = r.get("forward_s") or r.get("default_s")
-        rows.append((r.get("case"), lat, r.get("regime", "tpu-deferred"),
-                     r.get("best_config"), r.get("search_note", "")))
-    ran = [x for x in rows if x[1]]
-    tot = sum(x[1] for x in ran) or 1.0
-    ran.sort(key=lambda x: -x[1])
-    lines = [f"{c}: {lat*1e3:.2f}ms ({round(100*lat/tot)}% suite) [{reg}] best={cfg}"
-             for (c, lat, reg, cfg, _n) in ran]
-    deferred = [x[0] for x in rows if not x[1]]
-    if deferred:
-        lines.append("tpu-deferred (wired, latency awaits a TPU): " + ", ".join(deferred))
-    print("AKT_BOTTLENECK " + json.dumps(
-        {"title": "kernel-suite latency share (interpret proxy on this box)",
-         "lines": lines,
-         "note": ("%suite = share of the runnable-suite latency (THE target). "
-                  "Interpret latencies are functional proxies, not TPU-faithful — "
-                  "the config RANKING may differ on TPU; treat the dominant kernel + "
-                  "its structural bottleneck as the target, not the exact ms.")},
-        allow_nan=False))
+    if s.get("models"):
+        from akt.benchmark.model_workloads import callsite_inventory
 
-
-# ------------------------------------------------------------------ gap frontier
-# The flexibility-gap frontier — the AI-domain analog of the FHE flexgap.json.
-# Each entry is a lowering-reachable capability (the Mosaic/Pallas backend CAN
-# execute it) that the kernel's config schema does NOT currently name/select. These
-# are candidate capabilities to expose through production, the stable programmer
-# policy, and a runner DesignSpace Knob used for measurement.
-FRONTIER = [
-    {"interface": "kv_cache: get_best_num_slices_per_block", "status": "unexposed",
-     "what": "the shape-keyed tuned num_slices_per_block table is DEAD CODE — the "
-             "selector early-returns 4 if page==1 else page_size. Elevate the block/"
-             "grid tile (num_slices_per_block) into the search so it is chosen per shape."},
-    {"interface": "gmm_v2: calculate_tiling (TileSizes)", "status": "unexposed",
-     "what": "GMM v2 tiles via a VMEM auto-tiler with NO tuned table (v1 has one). "
-             "Elevate an autotuned (tile_m,tile_k,tile_n) table for v2, per shape."},
-    {"interface": "fused_mlp: apply_fused_mlp_sharded(buffer_count,b_seq,b_inter)",
-     "status": "unexposed",
-     "what": "emit_pipeline double-buffering depth is hardcoded buffer_count=3, and "
-             "b_seq/b_inter have no tuned table/selector (caller-supplied). Elevate "
-             "pipeline depth + a per-shape (b_seq,b_inter) table."},
-    {"interface": "rpa_v3: decode block sweep (bq_csz,bkv_csz)", "status": "pinned",
-     "what": "the shipped tuner pins the compute sub-tiles bq_csz=bq_sz, bkv_csz=bkv_sz; "
-             "the kernel accepts them independently. Elevate independent (bq_csz,bkv_csz) "
-             "so the search can decouple the load tile from the MXU compute tile."},
-    {"interface": "moe_v2: fused_ep_moe_v2 toggles", "status": "unexposed",
-     "what": "the None block_config falls to a crude hardcoded config, and the boolean "
-             "schedule toggles (cross_expert_prefetch_mode, interleave_bt, "
-             "enable_bt_scatter_overlap) are never searched. Elevate them as knobs."},
-    {"interface": "gla/kda: chunk kernels BK/BV", "status": "pinned",
-     "what": "BK=BV are pinned to the head dim (128) inside the chunk kernels; the "
-             "state-update matmul could tile K/V. Elevate BK/BV tiling as knobs."},
-    {"interface": "rpa_v3: tuned_block_sizes_v3 lookup", "status": "floor-only",
-     "what": "the shipped RPA tuned table is consulted only on TPU v7; v6e falls to the "
-             "heuristic. Backend/config gating (not a kernel knob) — flag to the user."},
-]
-
-
-# The extractor (akt/core/analysis/flexgraph_extract.py) AUTO-DERIVES the gap frontier
-# by investigating the whole serving stack; it writes flexgraph_generated.json. Prefer
-# that live analysis (same "prefer generated, fall back to hand-authored" pattern as
-# build.py::_flexgraph). The auto-miner rediscovers this FRONTIER 7/7, so it is a fresh
-# SUPERSET — FRONTIER stays the safe fallback when the extractor hasn't run.
-_GENERATED = ROOT / "akt/core/analysis/flexgraph_generated.json"
+        inventory = callsite_inventory()
+        lines = []
+        rejected_candidate = s.get("gate_decision") == "reject"
+        latency_key = "incumbent_s" if rejected_candidate else "candidate_s"
+        plan_key = "incumbent_plan" if rejected_candidate else "selected_plan"
+        role = "RETAINED INCUMBENT" if rejected_candidate else "CURRENT INCUMBENT"
+        models = sorted(
+            s["models"],
+            key=lambda model: -(model.get(latency_key) or 0.0),
+        )
+        total = sum(model.get(latency_key) or 0.0 for model in models) or 1.0
+        for model in models:
+            latency = model.get(latency_key)
+            ratio = model.get("ratio")
+            lines.append(
+                f"{role} MODEL {model.get('model')}: {latency * 1e3:.3f}ms "
+                f"({100 * latency / total:.1f}% of three-model total), "
+                f"paired candidate/incumbent={ratio:.4f}"
+            )
+            selected = model.get(plan_key) or {}
+            call_rows = []
+            for site, config in selected.items():
+                if site not in model.get("callsites", []):
+                    continue
+                call = inventory.get(site)
+                search = (s.get("case_search") or {}).get(call.case_id if call else "", {})
+                measured = next(
+                    (
+                        row.get("latency_s")
+                        for row in search.get("measurements", [])
+                        if row.get("config") == config
+                    ),
+                    None,
+                )
+                if measured:
+                    call_rows.append((measured, site, config))
+            for measured, site, config in sorted(call_rows, reverse=True)[:4]:
+                lines.append(
+                    f"  CALL {site}: modeled {measured * 1e3:.3f}ms selected={config}"
+                )
+        runtime = s.get("runtime_evidence") or {}
+        if runtime.get("required"):
+            lines.append(
+                ("REJECTED CANDIDATE " if rejected_candidate else "")
+                + "RUNTIME EVIDENCE: "
+                + ("PASS" if runtime.get("ok") else "FAIL")
+                + ("; " + "; ".join(runtime.get("errors") or []) if runtime.get("errors") else "")
+            )
+            for control in runtime.get("controls") or []:
+                for event in (control.get("matched") or [])[:4]:
+                    lines.append(
+                        f"  TRACE {control.get('control')}: {event.get('model')}/"
+                        f"{str(event.get('callsite', '')).rsplit('/', 1)[-1]} -> "
+                        f"{event.get('backend')}({event.get('value')!r}) "
+                        f"probe={'verified' if event.get('verified_backend_probe') else 'untrusted'}"
+                    )
+        print(
+            "AKT_BOTTLENECK "
+            + json.dumps(
+                {
+                    "title": "paired target-hardware three-model latency and selected callsites",
+                    "lines": lines,
+                    "models": models,
+                    "runtime_evidence": runtime,
+                    "note": (
+                        "Choose a source-derived open gap that maps to a dominant model callsite. "
+                        + ("The latest candidate was rejected; rankings above use its paired retained-incumbent branch. "
+                           if rejected_candidate else "")
+                        + "The next round must remeasure every local configuration, certify the "
+                        "model DP, and beat the paired incumbent on target hardware."
+                    ),
+                },
+                allow_nan=False,
+            )
+        )
+        return
+    print("AKT_BOTTLENECK " + json.dumps({"missing": "evaluation has no model results"}))
 
 
 def _auto_gap_lines():
-    """Actionable suite gaps not yet exposed through the production programmer API."""
-    try:
-        g = json.loads(_GENERATED.read_text())
-    except Exception:  # noqa: BLE001
+    """All graph-linked red actions executable by the frozen three-model gate."""
+    from akt.core.evolve.action_catalog import action_catalog_context
+
+    context = action_catalog_context(REPO)
+    actions = context["actions"]
+    if not actions:
         return None
-    gaps = g.get("gaps")
-    if not gaps:
-        return None
-    actionable = [
-        x
-        for x in gaps
-        if x.get("in_akt_suite") and not x.get("programmer_exposed", False)
-    ]
-    if not actionable:
-        return None
-    lines = [f"[{x['family']}:{x['axis']}] ({x['category']}) {x.get('detail', x.get('what', ''))[:150]}"
-             f"  <{x.get('evidence', '')}>" for x in actionable]
-    st = g.get("stats", {})
-    n_elev = sum(1 for x in gaps if x.get("programmer_exposed"))
-    n_runner_only = sum(
-        1
-        for x in gaps
-        if x.get("elevated_in_akt") and not x.get("programmer_exposed")
+    lines = []
+    for gap in actions:
+        sites = gap["model_callsites"]
+        eligibility = "models=" + ",".join(sites)
+        edge = gap["action_edge"]
+        lines.append(
+            f"gap_id={gap['gap_id']} ({gap['category']}) "
+            f"{gap['source_evidence']['detail'][:150]} "
+            f"<{gap['source_evidence']['path']}:{gap['source_evidence']['line']}> "
+            f"[red-link {edge['source']} -> {edge['target']}; {eligibility}]"
+        )
+    note = (
+        f"Complete fingerprinted action catalog ({len(actions)} actions). Each red link "
+        "is an existing low-level choice that may be exposed; other graph findings and "
+        "hidden compiler boundaries are context, not executable actions."
     )
-    n_other = sum(1 for x in gaps if not x.get("in_akt_suite"))
-    note = (f"AUTO-DERIVED from the full serving stack ({st.get('pallas_families', '?')} Pallas "
-            f"families scanned; hand-FRONTIER rediscovered {st.get('frontier_rediscovered', '?')}). "
-            f"Each gap = a tiling/pipeline/schedule axis the Pallas/Mosaic lowering executes but no "
-            f"config names -> expose ONE through production and a runner DesignSpace Knob. Shown = the OPEN suite "
-            f"frontier; {n_elev} exposed to programmers, {n_runner_only} runner-only, "
-            f"{n_other} more in non-suite kernels. "
-            f"'backend-gated' = frozen for the loop (flag to user).")
-    return lines, note
+    return lines, note, context
 
 
 def cmd_gaps(_args):
-    auto = _auto_gap_lines()
-    if auto:
-        lines, note = auto
-        title = "flexibility gaps (AUTO-DERIVED from the serving stack): axes reachable but unnamed"
-    else:
-        lines = [f"[{f['interface'][:52]}] ({f['status']}) {f['what'][:150]}" for f in FRONTIER]
-        title = "flexibility gaps: lowering-reachable knobs the config schema can't name"
-        note = ("each gap = a capability the Pallas/Mosaic lowering executes but no "
-                "programmer config names/selects -> candidate to expose through a "
-                "production consumer plus runner Knob; 'pinned' = the axis exists but is tied to another; "
-                "'floor-only' = backend/config gating, frozen for the loop (flag to user).")
-    print("AKT_GAPS " + json.dumps({"title": title, "lines": lines, "note": note},
-                                   allow_nan=False))
+    try:
+        auto = _auto_gap_lines()
+        lines, note, context = auto
+    except Exception as error:  # noqa: BLE001
+        print("AKT_GAPS " + json.dumps({
+            "missing": f"generated red-link action catalog is invalid: {error}"
+        }))
+        return
+    title = "complete executable red-link AKT action catalog"
+    print("AKT_GAPS " + json.dumps({
+        "title": title,
+        "lines": lines,
+        "action_graph_fingerprint": context["fingerprint"],
+        "action_context_version": context["version"],
+        "note": note,
+    }, allow_nan=False))
 
 
 # ------------------------------------------------------------------ space report
@@ -180,7 +186,7 @@ def cmd_space(args):
     for c in cases:
         deploy = c.space.deployment_space()
         knobs = [(k.name,
-                  len(k.values) if k.elevated_by is None or k.programmer_control else 1,
+                  len(k.values) if k.programmer_control else 1,
                   "+" + k.elevated_by if k.elevated_by else "base",
                   k.programmer_control or "runner-only")
                  for k in c.space.knobs]
@@ -192,7 +198,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("bottleneck", help="emit AKT_BOTTLENECK json for the QUERY")
-    sub.add_parser("gaps", help="emit AKT_GAPS json (flexibility-gap frontier)")
+    sub.add_parser("gaps", help="emit AKT_GAPS json (canonical red-link action space)")
     ps = sub.add_parser("space", help="design-space size/knobs report (search evidence)")
     ps.add_argument("--kernel", default=None)
     args = ap.parse_args()

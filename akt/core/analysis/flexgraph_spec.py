@@ -8,12 +8,12 @@ Pallas/Mosaic source and annotated with which sglang-jax kernels actually exerci
 each (ACTIVE, from akt/core/analysis stack investigation 2026-07-13).
 
 EXPOSURE (bottom->top) is implicit: every NAMEABLE node is exposed; a LOWERING edge
-whose target is a HIDDEN node has no exposure counterpart -> that edge is a FLEXIBILITY
-GAP (reachable in the lowering, not reschedulable from the top). Nameability is BINARY:
+whose target is a HIDDEN node has no exposure counterpart. That edge is a hidden
+compiler boundary, not an actionable flexibility finding. Nameability is BINARY:
   nameable = reschedulable at the top: an explicit API / IR op / attribute / HW name
              (green). A high-level op that fuses several actions is still nameable —
              the internals it can't reschedule are the HIDDEN nodes it lowers into.
-  hidden   = compiler/hardware-controlled, no Pallas or Mosaic handle -> the gap (red).
+  hidden   = compiler/hardware-controlled, no Pallas or Mosaic handle.
 """
 
 CATS = [("memory", "Memory & placement"), ("datamove", "Data movement / DMA"),
@@ -226,21 +226,21 @@ def build_graph():
     hidden_ids = {n["id"] for n in nodes if n["nameability"] == "hidden"}
     # exposure = reverse of every lowering edge whose target is NOT hidden
     exposure = [[b, a] for (a, b) in low if b not in hidden_ids]
-    gap_edges = [[a, b] for (a, b) in low if b in hidden_ids]
+    hidden_lowering_edges = [[a, b] for (a, b) in low if b in hidden_ids]
     # propagate active downward
     active = {i: set(ks) for i, ks in ACTIVE_L1.items()}
     adj = {}
     for a, b in low:
         adj.setdefault(a, []).append(b)
-    frontier = list(active)
-    while frontier:
-        a = frontier.pop()
+    worklist = list(active)
+    while worklist:
+        a = worklist.pop()
         for b in adj.get(a, []):
             before = active.get(b, set())
             new = before | active.get(a, set())
             if new != before:
                 active[b] = new
-                frontier.append(b)
+                worklist.append(b)
     for n in nodes:
         n["active"] = sorted(active.get(n["id"], []))
     return {
@@ -250,12 +250,14 @@ def build_graph():
         "nodes": nodes,
         "lowering_edges": low,
         "exposure_edges": exposure,
-        "gap_edges": gap_edges,
-        "n_gap": len(gap_edges), "n_hidden": len(hidden_ids),
+        "hidden_lowering_edges": hidden_lowering_edges,
+        "action_edges": [],
+        "n_open_action_edges": 0,
+        "n_hidden_boundaries": len(hidden_lowering_edges), "n_hidden": len(hidden_ids),
         "note": ("Lowering ▼ (top→bottom): JAX/Pallas → Mosaic TPU IR → TPU hardware; "
                  "every edge verified against jax 0.8.1 Pallas/Mosaic source. Nameability is "
                  "BINARY: a capability is NAMEABLE/reschedulable at the top (green, "
-                 "bidirectional) or HIDDEN — reachable in the lowering but not reschedulable "
-                 "(red directed edge into it = the flexibility gap). Node fill brightness = "
+                 "bidirectional) or HIDDEN — reachable in the lowering but not reschedulable. "
+                 "Hidden boundaries are compiler context, not AKT actions. Node fill brightness = "
                  "exercised by the sglang-jax kernel suite."),
     }

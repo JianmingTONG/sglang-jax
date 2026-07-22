@@ -8,58 +8,35 @@ production layer/backend forwards that control to the low-level kernel argument.
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 
+from akt.core.evolve.capability_contract import (
+    _argument_forwarding_path,
+    _control_registry,
+    derive_search_dimensions,
+    _module_source_path,
+    _safe_file,
+)
 
-_CONTROL_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 _CONTROL_CONFIG = "python/sgl_jax/srt/configs/kernel_control.py"
 _PRODUCTION_PREFIXES = (
     "python/sgl_jax/srt/layers/",
     "python/sgl_jax/srt/model_executor/",
+    "python/sgl_jax/srt/models/",
 )
 
 
-def _safe_repo_file(repo: Path, relative: str) -> Path | None:
-    path = Path(relative)
-    if path.is_absolute() or ".." in path.parts:
-        return None
-    resolved = (repo / path).resolve()
-    try:
-        resolved.relative_to(repo.resolve())
-    except ValueError:
-        return None
-    return resolved
-
-
-def _control_registry(config_path: Path) -> dict[str, set[str]]:
-    tree = ast.parse(config_path.read_text())
-    for node in tree.body:
-        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-            continue
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        if not any(
-            isinstance(target, ast.Name)
-            and target.id == "PROGRAMMER_CONTROL_REGISTRY"
-            for target in targets
-        ):
-            continue
-        value = ast.literal_eval(node.value)
-        if not isinstance(value, dict):
-            break
-        return {
-            str(family): {str(control) for control in controls}
-            for family, controls in value.items()
-        }
-    raise ValueError("PROGRAMMER_CONTROL_REGISTRY is missing or not a literal mapping")
-
-
-def _control_fields(config_path: Path) -> dict[str, set[str]]:
-    """Map registry family names to fields on their typed control objects."""
+def _control_fields(config_path: Path) -> dict[str, dict[str, tuple[bool, object]]]:
+    """Map typed control fields to whether they have a literal default and its value."""
     tree = ast.parse(config_path.read_text())
     class_fields = {
         node.name: {
-            statement.target.id
+            statement.target.id: (
+                True,
+                ast.literal_eval(statement.value),
+            )
+            if statement.value is not None
+            else (False, None)
             for statement in node.body
             if isinstance(statement, ast.AnnAssign)
             and isinstance(statement.target, ast.Name)
@@ -108,9 +85,30 @@ def _consumer_forwards_argument(
     family: str,
     control_key: str,
     kernel_argument: str,
+    repo: Path,
+    kernel_path: str,
+    kernel_function: str,
 ) -> bool:
     """Prove a resolver-produced control reaches the declared kernel keyword."""
     tree = ast.parse(path.read_text())
+    imported = {}
+    for top_level in tree.body:
+        if (
+            isinstance(top_level, ast.ImportFrom)
+            and top_level.module
+            and not top_level.level
+        ):
+            imported_path = _module_source_path(repo, top_level.module)
+            if imported_path is None:
+                continue
+            for alias in top_level.names:
+                if alias.name != "*":
+                    imported[alias.asname or alias.name] = (imported_path, alias.name)
+    local_functions = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
     for function in (
         node
         for node in ast.walk(tree)
@@ -132,116 +130,131 @@ def _consumer_forwards_argument(
         for node in ast.walk(function):
             if not isinstance(node, ast.Call):
                 continue
+            called = (
+                node.func.id
+                if isinstance(node.func, ast.Name)
+                else node.func.attr
+                if isinstance(node.func, ast.Attribute)
+                else None
+            )
             for keyword in node.keywords:
                 if keyword.arg != kernel_argument:
                     continue
-                for child in ast.walk(keyword.value):
-                    if (
-                        isinstance(child, ast.Attribute)
-                        and child.attr == control_key
-                        and isinstance(child.value, ast.Name)
-                        and child.value.id in control_vars
-                    ):
-                        return True
+                value = keyword.value
+                if not (
+                    isinstance(value, ast.Attribute)
+                    and value.attr == control_key
+                    and isinstance(value.value, ast.Name)
+                    and value.value.id in control_vars
+                ):
+                    continue
+                if called in local_functions:
+                    start_path, start_function = path, called
+                elif called in imported:
+                    start_path, start_function = imported[called]
+                else:
+                    continue
+                try:
+                    start_path = start_path.resolve().relative_to(repo.resolve())
+                except ValueError:
+                    continue
+                forwarding = _argument_forwarding_path(
+                    repo,
+                    start_path=start_path,
+                    start_function=start_function,
+                    start_argument=kernel_argument,
+                    target_path=kernel_path,
+                    target_function=kernel_function,
+                    target_argument=kernel_argument,
+                )
+                if forwarding is not None:
+                    return True
     return False
 
 
 def validate_programmer_exposure(
     manifest: dict,
-    eval_results: list[dict],
+    eval_results: list[dict] | dict,
     repo: Path,
 ) -> dict:
     """Return auditable evidence that a capability reaches programmer level."""
 
-    errors = []
+    action_reference, dimensions, errors = derive_search_dimensions(manifest, repo)
     capability = manifest.get("name")
-    declared_entries = manifest.get("programmer_controls")
-    if not isinstance(declared_entries, list) or not declared_entries:
-        return {
-            "ok": False,
-            "controls": [],
-            "runner_controls": [],
-            "errors": ["manifest must declare a non-empty programmer_controls list"],
-        }
 
     runner_controls = set()
-    for result in eval_results:
+    if isinstance(eval_results, dict):
+        results = list((eval_results.get("case_search") or {}).values())
+    else:
+        results = eval_results
+    for result in results:
         for knob in result.get("knobs") or []:
             if knob.get("elevated_by") == capability and knob.get("programmer_control"):
                 runner_controls.add(knob["programmer_control"])
 
-    declared_controls = []
-    touched = set(manifest.get("files_touched") or [])
-    config_path = _safe_repo_file(repo, _CONTROL_CONFIG)
+    declared_controls = [dimension["control"] for dimension in dimensions]
+    config_path = _safe_file(repo, _CONTROL_CONFIG)
     try:
-        registry = _control_registry(config_path) if config_path else {}
+        registry = (
+            _control_registry(config_path.read_text(), required=True)
+            if config_path
+            else {}
+        )
         control_fields = _control_fields(config_path) if config_path else {}
     except Exception as error:  # noqa: BLE001
         registry = {}
         control_fields = {}
         errors.append(f"cannot inspect programmer control registry: {error}")
 
-    for index, entry in enumerate(declared_entries):
-        label = f"programmer_controls[{index}]"
-        if not isinstance(entry, dict):
-            errors.append(f"{label} must be an object")
-            continue
-        required = {"control", "config_path", "consumer", "kernel_argument"}
-        if set(entry) != required:
-            errors.append(f"{label} must contain exactly {sorted(required)}")
-            continue
-        control = entry.get("control")
-        if not isinstance(control, str) or not _CONTROL_RE.fullmatch(control):
-            errors.append(f"{label}.control is not a family.key identifier")
-            continue
-        declared_controls.append(control)
+    for dimension in dimensions:
+        control = dimension["control"]
         family, key = control.split(".", 1)
         if key not in registry.get(family, set()):
             errors.append(f"{control} is absent from PROGRAMMER_CONTROL_REGISTRY")
         if key not in control_fields.get(family, set()):
             errors.append(f"{control} is absent from its typed kernel control object")
+        else:
+            default_known, control_default = control_fields[family][key]
+            expected_default = dimension["default"]
+            if not default_known or not (
+                type(control_default) is type(expected_default)
+                and control_default == expected_default
+            ):
+                errors.append(
+                    f"{control} typed API default must preserve the graph incumbent "
+                    f"{expected_default!r}"
+                )
 
-        if entry.get("config_path") != _CONTROL_CONFIG:
-            errors.append(
-                f"{control} must use the stable {_CONTROL_CONFIG} programmer API"
-            )
-        elif _CONTROL_CONFIG not in touched:
-            errors.append(f"{control} did not change its programmer API definition")
-
-        consumer = entry.get("consumer")
+        consumer = dimension["consumer"]
         if not isinstance(consumer, str) or not consumer.startswith(_PRODUCTION_PREFIXES):
             errors.append(
-                f"{control} consumer must be a production layer or model_executor path"
+                f"{control} consumer must be a production layer, model, or model_executor path"
             )
             continue
-        if consumer not in touched:
-            errors.append(f"{control} production consumer was not changed by the capability")
-        consumer_path = _safe_repo_file(repo, consumer)
+        consumer_path = _safe_file(repo, consumer)
         if consumer_path is None or not consumer_path.is_file():
             errors.append(f"{control} consumer does not exist: {consumer}")
             continue
-        kernel_argument = entry.get("kernel_argument")
-        if not isinstance(kernel_argument, str) or not kernel_argument.isidentifier():
-            errors.append(f"{control} has invalid kernel_argument")
+        kernel_argument = dimension["kernel_argument"]
+        try:
+            forwarded = _consumer_forwards_argument(
+                consumer_path,
+                family,
+                key,
+                kernel_argument,
+                repo,
+                dimension["kernel_path"],
+                dimension["kernel_function"],
+            )
+        except Exception as error:  # noqa: BLE001
+            errors.append(f"cannot inspect {control} consumer: {error}")
         else:
-            try:
-                forwarded = _consumer_forwards_argument(
-                    consumer_path,
-                    family,
-                    key,
-                    kernel_argument,
+            if not forwarded:
+                errors.append(
+                    f"{consumer} does not forward {control} to "
+                    f"{dimension['kernel_function']}.{kernel_argument}"
                 )
-            except Exception as error:  # noqa: BLE001
-                errors.append(f"cannot inspect {control} consumer: {error}")
-            else:
-                if not forwarded:
-                    errors.append(
-                        f"{consumer} does not forward {control} to keyword "
-                        f"{kernel_argument}"
-                    )
 
-    if len(declared_controls) != len(set(declared_controls)):
-        errors.append("programmer_controls contains duplicate control identifiers")
     if set(declared_controls) != runner_controls:
         errors.append(
             "declared controls do not exactly match newly elevated runner controls: "
@@ -250,6 +263,9 @@ def validate_programmer_exposure(
 
     return {
         "ok": not errors,
+        "gap_id": action_reference.get("gap_id"),
+        "source_evidence": action_reference.get("source_evidence"),
+        "affected_model_callsites": action_reference.get("affected_model_callsites") or [],
         "controls": sorted(set(declared_controls)),
         "runner_controls": sorted(runner_controls),
         "errors": errors,
