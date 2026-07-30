@@ -44,6 +44,49 @@ The enforced objective scope is `model-serving-empirical-dp-v2`.
 - The candidate graph is regenerated before hardware evaluation. KEEP is impossible
   unless the selected action closes without collateral action loss, and only the
   validated graph is installed for the next round.
+- Fail-cheap-first: the eval-independent halves of the programmer-exposure and
+  capability-contract validators run in a `static_only` pre-check (plus a static
+  scan of every manifest-declared edit for references to the frozen probe-evidence
+  channel) BEFORE the target-HW eval; a failing round rejects without paying for the
+  three-model measurement, and the full validators still run on the real summary.
+- Backend-probe reports are authenticated by CODE-OBJECT IDENTITY: only wrappers the
+  frozen evaluator registered may record a `verified_backend_probe` event; a direct
+  or filename-spoofed call from editable code raises. Registration is frozen-tree
+  gated, and the static forgery scan is the second layer (residual below).
+- Default-reproduces-incumbent: init/rebaseline/KEEP pin per-callsite output hashes
+  of the incumbent plan; every round re-executes that plan on the post-edit tree and
+  rejects on any bit-level drift — a default-path semantic change hiding inside the
+  family allclose tolerance fails closed.
+- Bit-exact invariant: a kernel whose frozen refs declare `BITEXACT_INVARIANT`
+  (kv_cache's DMA scatter-copy) must produce bit-identical outputs across its FULL
+  research space (runner-only values included); divergence or an incorrect research
+  config fails the eval. The suite contract pins the flag so an editable runner
+  cannot drop it. fused_mlp is deliberately NOT declared (MXU blocked-summation
+  rounding is not structurally order-invariant).
+- The DP preflight pins a GOLDEN plan+cost per workload (pure functions of the
+  frozen callsite ids), and negative controls prove the correctness comparator can
+  fail (wrong output / wrong shape / wrong leaf count rejected; a wrong config is
+  excluded from the DP-visible measurements; probe forgery and registration abuse
+  raise).
+- Convergence is a first-class verdict: an EMPTY-but-valid action catalog stops
+  `run` (before every round, including after a mid-run KEEP closes the last action)
+  with a recorded `space_exhausted` verdict, the board shows a convergence card
+  (live open-action count wins over the recorded flag), and `rebaseline` clears the
+  flag when the graph is widened.
+- The gate's metric coupling is a self-describing contract (`adapter.py gate`:
+  objective name/unit/direction/summary keys) fetched LIVE from the frozen adapter
+  at gate time — never trusted from editable campaign state.
+- Correctness replay: `restore` refuses a KEPT capability (its code IS the incumbent
+  commit; a checkout there is a no-op) and points at git-revert + `rebaseline`, which
+  detects reverted keeps (revert commit or vanished keep commit in HEAD's history),
+  downgrades their manifests, and taints their history rounds `post-run-invalid`;
+  the board's incumbent envelope and headline then stop crediting them. `restore`
+  also refuses to run concurrently with a live round.
+- Every gated round archives its full eval summary (per-config latency samples,
+  paired ratios, certificates) under `optimization_history/evals/` keyed by campaign
+  and round, records a paired-ratio noise band the board draws around each attempt,
+  and the board adds a research→deployable→valid→measured→selected design-space
+  funnel with per-knob attribution.
 
 ## Claim boundary
 
@@ -72,12 +115,21 @@ and an ineligible-topology skip carries no live-model claim.
 3. Direct per-kernel tracing in the live Kimi server would strengthen attribution
    beyond policy attestation and completed requests.
 4. Candidate and incumbent variants share the post-edit implementation; the loop
-   does not re-execute the prior Git revision or prove semantic equivalence of the
-   default path, so cross-revision causal attribution remains incomplete.
+   does not re-execute the prior Git revision. The pinned incumbent output hashes
+   now prove the default path's OUTPUTS are bit-identical across edits (within a
+   compiler version), but cross-revision TIMING attribution remains incomplete.
 5. The checked-in historical campaign still requires TPU `rebaseline` before it can
-   advance under the v2 objective.
+   advance under the v2 objective (the output-hash pin and funnel populate then).
 6. The Kimi checkpoint is identified by Hugging Face repository name but is not
    pinned to an immutable model revision, so a future upstream update could change
    the artifact evaluated by a later run.
 7. The live gate starts selected then incumbent in a fixed order with separate server
    startups; unlike the synthetic gate, it does not balance startup-order drift.
+8. CPython has no true in-process privilege boundary: code that deliberately spoofs
+   `co_filename` via `compile` could self-register a probe code object. The static
+   scan of manifest-declared edits for runtime-module references is the second
+   layer; a forgery must evade both, and the residual is accepted and documented
+   rather than claimed away.
+9. The bit-exact invariant and incumbent output-hash pins execute only on target
+   hardware (the whole v2 gate is TPU-only), so on a non-TPU box they are wired but
+   dormant, like every other eval-side guard.

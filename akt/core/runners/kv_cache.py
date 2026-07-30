@@ -36,6 +36,7 @@ from sgl_jax.srt.kernels.update_kv_cache.update_kv_cache import (
 
 from akt.benchmark.refs.kv_cache import (
     ATOL,
+    BITEXACT_INVARIANT,
     NATIVE_TEST,
     RTOL,
     make_inputs,
@@ -112,6 +113,7 @@ CASES = [
         make_inputs=functools.partial(make_inputs, hn, cl, nl, 128),
         run=_run, reference=reference, space=_space(hn, 128),
         atol=ATOL, rtol=RTOL, native_test=NATIVE_TEST,
+        bitexact_invariant=BITEXACT_INVARIANT,
         regime_pref=("tpu-deferred",),
         note="tpu-deferred (kernel TPU-only, no interpret path); "
              "ref=repo loc-scatter (expected_update_kv_cache); NATIVE_TEST=None (conftest shim)",

@@ -191,3 +191,21 @@ def test_only_generated_campaign_records_are_bookkeeping(monkeypatch):
     )
 
     assert _implementation_changes() == ["akt/board/index.html"]
+
+
+def test_suite_contract_pins_the_bitexact_invariant_flag():
+    """An editable runner must not be able to drop a frozen BITEXACT_INVARIANT."""
+    import importlib
+
+    from akt.benchmark import suites
+
+    refs = importlib.import_module("akt.benchmark.refs.kv_cache")
+    assert refs.BITEXACT_INVARIANT is True  # the frozen declaration itself
+
+    runner = importlib.import_module("akt.core.runners.kv_cache")
+    # an editable runner trying to drop the check
+    case = replace(runner.CASES[0], bitexact_invariant=False)
+    with pytest.raises(suites.SuiteContractError, match="bitexact_invariant"):
+        suites._validate_case_contract(
+            case, refs, suites.EXPECTED_CASES["kv_cache"][case.case_id]
+        )

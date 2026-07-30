@@ -176,9 +176,29 @@ function renderChart(b){
       pointRadius:5, pointHoverRadius:7,
       pointBackgroundColor:['#0000',...attemptColors], pointBorderColor:['#0000',...attemptColors] },
   ]};
+  // Run-to-run NOISE BAND: each round's paired candidate/incumbent ratio spread
+  // (ratio_band, recorded by the gate) mapped to absolute ms via that round's
+  // incumbent geomean — so a reader can tell a real effect from timing noise.
+  const bandLow=[null], bandHigh=[null];
+  for(const t of trail){
+    const rb=t.ratio_band, incg=t.incumbent_geomean;
+    if(rb && finiteLatency(incg) && Number.isFinite(rb.min) && Number.isFinite(rb.max)){
+      bandLow.push(toMs(incg*rb.min)); bandHigh.push(toMs(incg*rb.max));
+    } else { bandLow.push(null); bandHigh.push(null); }
+  }
+  if(bandLow.some(v=>v!=null)){
+    data.datasets.push(
+      { label:'paired-run noise band', data:bandHigh, borderColor:'#0000',
+        backgroundColor:acc+'26', pointRadius:0, borderWidth:0, tension:0,
+        fill:false, spanGaps:false },
+      { label:'_band_low', data:bandLow, borderColor:'#0000',
+        backgroundColor:acc+'26', pointRadius:0, borderWidth:0, tension:0,
+        fill:'-1', spanGaps:false });
+  }
   const opts = { responsive:true, maintainAspectRatio:true, aspectRatio:3.2,
     interaction:{mode:'nearest', intersect:false},
-    plugins:{ legend:{labels:{color:ink, boxWidth:12, font:{size:11}}},
+    plugins:{ legend:{labels:{color:ink, boxWidth:12, font:{size:11},
+        filter:item=>!String(item.text||'').startsWith('_')}},
       tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':c.parsed.y.toFixed(3)+' ms')}}},
     scales:{ y:{title:{display:true,text:'geomean latency (ms)',color:ink},
         grid:{color:grid}, ticks:{color:ink}, beginAtZero:false},
@@ -477,10 +497,22 @@ async function load(){
   const exposedControls = controls.programmer_controls||[];
   const runnerOnly = controls.runner_only_knobs||[];
   const pendingBaseline = b.objective_stale && ev.objective_scope===b.required_objective_scope;
+  // Correctness-replay: the state's current_geomean_s can be stale after a manual
+  // restore of a kept round; the replayed envelope (which honors post-run-invalid
+  // taints) is authoritative for DISPLAY. Flag any divergence explicitly.
+  const finiteMs = v => Number.isFinite(v) && v>0;
+  const replayed = inc.replayed_geomean_s;
+  const headlineGeo = pendingBaseline ? ev.search_geomean_s
+    : (finiteMs(replayed) ? replayed : inc.current_geomean_s);
+  const replayDiverged = !pendingBaseline && finiteMs(replayed) &&
+    finiteMs(inc.current_geomean_s) &&
+    Math.abs(replayed-inc.current_geomean_s)/inc.current_geomean_s > 1e-9;
   document.getElementById('stats').innerHTML = [
     [pendingBaseline?'rebaseline candidate':'incumbent geomean',
-      ms(pendingBaseline?ev.search_geomean_s:inc.current_geomean_s),
-      pendingBaseline?'measured and verified; adopt after committing code':'paired three-model objective'],
+      ms(headlineGeo),
+      pendingBaseline?'measured and verified; adopt after committing code'
+        :(replayDiverged?'replayed envelope (state value '+ms(inc.current_geomean_s)+
+          ' diverges — a kept round was invalidated; rebaseline)':'paired three-model objective')],
     ['design choices', pendingBaseline?(ev.n_choices??'—'):(inc.choices!=null?inc.choices:'—'),
       'deployable configs across the suite'],
     ['round', inc.round!=null? inc.round : 0, 'KEEP bar > '+(inc.target_pct??2)+'% · '+(b.n_rounds||0)+' run'],

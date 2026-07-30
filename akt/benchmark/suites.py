@@ -130,6 +130,12 @@ def _validate_case_contract(case, refs, expected_input_args: tuple) -> None:
         errors.append("check_out is not the frozen output projection")
     if case.native_test != refs.NATIVE_TEST:
         errors.append(f"native_test changed: {case.native_test!r}")
+    expected_bitexact = bool(getattr(refs, "BITEXACT_INVARIANT", False))
+    if bool(getattr(case, "bitexact_invariant", False)) != expected_bitexact:
+        errors.append(
+            f"bitexact_invariant changed: expected={expected_bitexact!r}, "
+            f"actual={getattr(case, 'bitexact_invariant', False)!r}"
+        )
     expected_regime = EXPECTED_REGIME_PREFS.get(case.case_id)
     if case.regime_pref != expected_regime:
         errors.append(

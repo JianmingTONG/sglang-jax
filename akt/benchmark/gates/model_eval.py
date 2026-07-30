@@ -52,6 +52,7 @@ from akt.benchmark.model_workloads import (  # noqa: E402
     validate_workloads,
 )
 from akt.benchmark.runtime import (  # noqa: E402
+    _register_probe_code,
     _report_probed_backend_execution,
     capture_runtime_events,
     runtime_scope,
@@ -252,6 +253,8 @@ def _install_backend_probes(cases, capability: str | None) -> list[dict]:
                     )
             return __target(*call_args, **call_kwargs)
 
+        # authenticate the wrapper to the frozen reporter by code-object identity
+        _register_probe_code(observed_backend.__code__)
         aliases = []
         for candidate_module in runner_modules | {module}:
             for name, value in list(vars(candidate_module).items()):
@@ -299,13 +302,19 @@ def _search_case(case, inputs, reference, runs: int, max_configs: int) -> dict:
             "no truncated optimum is accepted"
         )
 
+    bitexact = bool(getattr(case, "bitexact_invariant", False))
     correct_entries = []
     failures = []
+    output_hashes: dict[str, list] = {}
     for index, config in enumerate(configs, 1):
         try:
             output = case.run(inputs, config)
             jax.block_until_ready(output)
             correct, detail = _compare(case, output, reference)
+            if correct and bitexact:
+                output_hashes.setdefault(
+                    _hash_tree(case.check_out(output)), []
+                ).append(config)
         except Exception as error:  # noqa: BLE001
             correct = False
             detail = f"{type(error).__name__}: {str(error)[:120]}"
@@ -317,6 +326,47 @@ def _search_case(case, inputs, reference, runs: int, max_configs: int) -> dict:
                 "config": config,
                 "latency_samples_s": [],
             }
+        )
+    if bitexact:
+        # The invariant claims the kernel's AXES cannot change the math, so it is
+        # checked over the FULL RESEARCH space (runner-only knob values included),
+        # not just the deployment space — which collapses runner-only knobs to
+        # their defaults and can shrink to a single config (making a deployment-
+        # only check vacuous). Research-only configs are hashed and correctness-
+        # checked here but never timed and never enter the DP.
+        research_configs = list(
+            itertools.islice(case.space.enumerate(cap=None), max_configs + 1)
+        )
+        if len(research_configs) > max_configs:
+            raise ValueError(
+                f"{case.case_id} research space exceeds {max_configs} configs; "
+                "the bit-exact invariant sweep must be exhaustive"
+            )
+        for config in research_configs:
+            if config in configs:
+                continue                    # already executed + hashed above
+            output = case.run(inputs, config)
+            jax.block_until_ready(output)
+            correct, detail = _compare(case, output, reference)
+            if not correct:
+                raise ValueError(
+                    f"{case.case_id} violates its BITEXACT_INVARIANT contract: "
+                    f"research config {config} is not even allclose-correct "
+                    f"({detail}) though the axes are declared config-independent"
+                )
+            output_hashes.setdefault(
+                _hash_tree(case.check_out(output)), []
+            ).append(config)
+    if bitexact and len(output_hashes) > 1:
+        # The frozen refs contract declares this kernel's knobs config-independent
+        # (pure data movement): any bit-level divergence across correct configs is a
+        # semantic drift the family allclose tolerance would hide. Fail closed.
+        groups = {
+            digest[:12]: configs_[:3] for digest, configs_ in output_hashes.items()
+        }
+        raise ValueError(
+            f"{case.case_id} violates its BITEXACT_INVARIANT contract: correct "
+            f"configs produced {len(output_hashes)} distinct output hashes: {groups}"
         )
 
     if runs < 1:
@@ -356,11 +406,16 @@ def _search_case(case, inputs, reference, runs: int, max_configs: int) -> dict:
     return {
         "case": case.case_id,
         "space_size": space.size(),
+        # the FULL research space (runner-only knob values included) — the funnel's
+        # top tier; space_size above is the deployment-space total.
+        "research_space_size": case.space.size(),
         "valid_configs": len(configs),
         "correct_configs": len(measurements),
         "all_configs_correct": len(measurements) == len(configs),
         "failures": failures[:16],
         "measurements": measurements,
+        "bitexact_invariant": bitexact,
+        "bitexact_output_hash": next(iter(output_hashes), None) if bitexact else None,
         "timing_protocol": _local_timing_protocol(runs),
         "knobs": [
             {
@@ -1005,6 +1060,26 @@ def evaluate(args) -> dict:
         selected_correct, selected_errors = _check_model_outputs(
             workload, selected_outputs, prepared
         )
+        # DEFAULT-REPRODUCES-INCUMBENT evidence: execute the incumbent plan once and
+        # record per-callsite output hashes (plus the selected plan's, which becomes
+        # the pin after a KEEP). The loop pins these in campaign state and rejects a
+        # later round whose incumbent-plan outputs drift bit-wise — a default-path
+        # semantic change hiding inside the family allclose tolerance fails closed.
+        incumbent_outputs, _ = _execute_model(workload, incumbent_plan, prepared)
+        incumbent_correct, incumbent_errors = _check_model_outputs(
+            workload, incumbent_outputs, prepared
+        )
+
+        def _plan_output_hashes(outputs):
+            return {
+                callsite_id(workload, call): _hash_tree(
+                    prepared[callsite_id(workload, call)][0].check_out(output)
+                )
+                for call, output in zip(workload.calls, outputs)
+            }
+
+        incumbent_output_hashes = _plan_output_hashes(incumbent_outputs)
+        selected_output_hashes = _plan_output_hashes(selected_outputs)
         empirical = _evaluate_empirical_panel(
             workload,
             panel,
@@ -1036,11 +1111,19 @@ def evaluate(args) -> dict:
                 "model": workload.model_id,
                 "description": workload.description,
                 "callsites": [callsite_id(workload, call) for call in workload.calls],
+                "callsite_cases": {
+                    callsite_id(workload, call): call.case_id
+                    for call in workload.calls
+                },
                 "phases": [call.phase for call in workload.calls],
                 "selected_plan": selected_plan,
                 "incumbent_plan": incumbent_plan,
                 "selected_correct": selected_correct,
                 "correctness_errors": selected_errors,
+                "incumbent_correct": incumbent_correct,
+                "incumbent_correctness_errors": incumbent_errors,
+                "incumbent_output_hashes": incumbent_output_hashes,
+                "selected_output_hashes": selected_output_hashes,
                 "certificate": certificate,
                 "empirical_dp_certificate": empirical,
                 "runtime_events": events,
@@ -1098,6 +1181,7 @@ def evaluate(args) -> dict:
         and summary["n_deferred"] == 0
         and all(result["all_configs_correct"] for result in case_search.values())
         and all(model["selected_correct"] for model in model_results)
+        and all(model["incumbent_correct"] for model in model_results)
         and certificates_ok
         and summary["empirical_dp_certificate"]["ok"]
         and runtime_evidence["ok"]

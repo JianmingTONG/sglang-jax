@@ -671,3 +671,35 @@ def test_search_dimension_rejects_redundant_derived_fields():
 
     assert evidence["ok"] is False
     assert any("must contain exactly" in error for error in evidence["errors"])
+
+
+def test_static_only_precheck_skips_exactly_the_eval_dependent_legs():
+    """The fail-cheap pre-check must skip ONLY eval-dependent errors, never add new ones."""
+    manifest = _moe_manifest()
+    head = _head()
+    full = validate_capability_contract(manifest, {}, ROOT, head)
+    static = validate_capability_contract(manifest, {}, ROOT, head, static_only=True)
+    assert full["static_only"] is False and static["static_only"] is True
+    eval_markers = (
+        "newly elevated model-planner dimension",
+        "every and only affected model callsite",
+    )
+    assert any(
+        any(marker in error for marker in eval_markers) for error in full["errors"]
+    )  # full mode with an empty summary DOES flag the eval-dependent legs
+    assert not any(
+        any(marker in error for marker in eval_markers) for error in static["errors"]
+    )  # static mode skips them...
+    assert set(static["errors"]) <= set(full["errors"])  # ...and invents nothing new
+
+    from akt.core.evolve.exposure import validate_programmer_exposure
+
+    full_exposure = validate_programmer_exposure(manifest, {}, ROOT)
+    static_exposure = validate_programmer_exposure(manifest, {}, ROOT, static_only=True)
+    assert any(
+        "newly elevated runner controls" in error for error in full_exposure["errors"]
+    )
+    assert not any(
+        "newly elevated runner controls" in error for error in static_exposure["errors"]
+    )
+    assert set(static_exposure["errors"]) <= set(full_exposure["errors"])

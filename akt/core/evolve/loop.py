@@ -296,6 +296,15 @@ def _adapter_json(sub, tag):
         return None
 
 
+def gate_contract():
+    """The adapter's self-describing metric contract (AKT_GATE), or None.
+
+    Stored in campaign state at init/rebaseline; gate_capability reads the
+    objective's summary keys and direction from it (with the current literals as
+    fallback), so a benchmark-objective swap is adapter-side only."""
+    return _adapter_json("gate", "GATE")
+
+
 def bottleneck_block():
     d = _adapter_json("bottleneck", "BOTTLENECK")
     if not d:
@@ -339,11 +348,58 @@ def action_contract_block():
     context = action_catalog_context(ROOT)
     actions = context.get("actions") or []
     if not actions:
-        raise RuntimeError("validated flexibility graph has no executable actions")
+        raise RuntimeError(
+            "validated flexibility graph has no executable actions — the campaign "
+            "is CONVERGED under this objective (see loop.py run / status)"
+        )
     return (
         "== FROZEN FLEXIBILITY-GRAPH ACTION CONTRACT\n"
         + json.dumps(context, indent=2, sort_keys=True, allow_nan=False)
     )
+
+
+def action_catalog_convergence() -> tuple[bool, int]:
+    """(converged, n_open_actions) for the CURRENT validated catalog.
+
+    Raises when the catalog is invalid/stale — an EMPTY-but-valid catalog is the
+    principled stopping signal (every source-proven red link closed), which must be
+    distinguishable from a broken graph.
+    """
+    from akt.core.evolve.action_catalog import action_catalog_context
+
+    context = action_catalog_context(ROOT)
+    actions = context.get("actions") or []
+    return (not actions, len(actions))
+
+
+def _maybe_stop_converged(current) -> bool:
+    """CONVERGENCE VERDICT — record + surface an empty-but-valid catalog and tell
+    the caller to stop. Checked before EVERY oracle round (not just at `run`
+    startup), because the canonical way the catalog empties is a mid-run KEEP
+    closing the last open action. Heals a stale flag when actions reappear.
+    Raises like action_catalog_convergence when the catalog itself is invalid."""
+    converged, _n_open = action_catalog_convergence()
+    if not converged:
+        if current.get("space_exhausted"):
+            current["space_exhausted"] = False       # actions reappeared -> heal
+            save(current)
+        return False
+    current["space_exhausted"] = True
+    save(current)
+    write_status("idle", round=current.get("round", 0), last={
+        "round": current.get("round", 0), "capability": None,
+        "decision": "converged",
+        "reason": "action catalog is empty — every source-proven red-link "
+                  "action closed under this objective",
+        "finished_ts": time.time()})
+    write_board()
+    print(
+        "[evolve] CONVERGED: the validated action catalog has ZERO open "
+        "actions — every source-proven flexibility has been elevated or "
+        "closed under this objective. No oracle round started. Widen the "
+        "objective (new workloads/backends/graph findings) or end the campaign."
+    )
+    return True
 
 
 def current_action_graph_fingerprint():
@@ -1073,6 +1129,13 @@ def cmd_init(args):
           "incumbent_geomean": geo, "incumbent_choices": summary.get("n_choices"),
           "base_search_geomean": geo, "incumbent_plans": incumbent_plans,
           "incumbent_case_spaces": _case_space_inventory(summary),
+          # per-callsite output hashes of the plan that becomes the incumbent; every
+          # later round must reproduce them bit-exactly on its incumbent-plan run
+          # (default-path drift detection — see model_eval incumbent_output_hashes).
+          "incumbent_output_hashes": {
+              model["model"]: model.get("selected_output_hashes") or {}
+              for model in models
+          },
           "incumbent_commit": git_head(),
           "expected_models": sorted(model["model"] for model in models),
           "expected_callsites": expected_callsites,
@@ -1080,6 +1143,7 @@ def cmd_init(args):
           "model_contract_fingerprint": summary.get("model_contract_fingerprint"),
           "action_graph_fingerprint": current_action_graph_fingerprint(),
           "target_hardware_fingerprint": (summary.get("target_hardware") or {}).get("fingerprint"),
+          "gate_contract": gate_contract(),
           "objective_name": "paired_model_geomean_s", "objective_unit": "s",
           "objective_scope": summary.get("objective_scope"),
           "objective_baseline_geomean": geo,
@@ -1129,6 +1193,10 @@ def cmd_rebaseline(args):
         incumbent_choices=summary.get("n_choices"),
         incumbent_plans={model["model"]: model["selected_plan"] for model in models},
         incumbent_case_spaces=_case_space_inventory(summary),
+        incumbent_output_hashes={
+            model["model"]: model.get("selected_output_hashes") or {}
+            for model in models
+        },
         expected_models=sorted(model["model"] for model in models),
         expected_callsites=sorted(
             site for model in models for site in model.get("callsites") or []
@@ -1137,6 +1205,7 @@ def cmd_rebaseline(args):
         model_contract_fingerprint=summary.get("model_contract_fingerprint"),
         action_graph_fingerprint=current_action_graph_fingerprint(),
         target_hardware_fingerprint=(summary.get("target_hardware") or {}).get("fingerprint"),
+        gate_contract=gate_contract(),
         objective_name="paired_model_geomean_s",
         objective_scope=summary.get("objective_scope"),
         objective_baseline_geomean=geo,
@@ -1144,8 +1213,14 @@ def cmd_rebaseline(args):
         deadline_ts=time.time() + args.hours * 3600,
         incumbent_commit=git_head(),
         target_improvement=max(st.get("target_improvement", 0.02), 0.02),
+        # a rebaseline re-pins the (possibly widened) action graph: a previously
+        # converged verdict is stale until run/status re-derives it.
+        space_exhausted=False,
     )
     save(st)
+    # Correctness-replay: downgrade keeps that were reverted in git before this
+    # rebaseline, so the rebuilt board cannot credit their measurements.
+    _downgrade_reverted_keeps()
     write_status("idle", round=st.get("round", 0))
     write_board()
     print(
@@ -1153,6 +1228,60 @@ def cmd_rebaseline(args):
         f"three-model geomean={geo * 1e3:.2f}ms, "
         f"measured local configs={summary.get('n_choices')}. Earlier measurements are legacy."
     )
+
+
+# Tokens that reach the frozen runtime-evidence channel. Editable code has no
+# legitimate reason to reference the reporter/registrar: the only in-process way
+# to forge a verified_backend_probe event is via this module, so a manifest-
+# declared edit mentioning it is rejected statically (layer 2 of the probe
+# authentication — see akt/benchmark/runtime.py's honest-residual note).
+_PROBE_FORGERY_TOKENS = (
+    "akt.benchmark.runtime",
+    "_report_probed_backend_execution",
+    "_register_probe_code",
+)
+
+
+def _scan_probe_forgery(manifest) -> list[str]:
+    errors = []
+    for rel in manifest.get("files_touched") or []:
+        path = ROOT / rel
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        hits = [token for token in _PROBE_FORGERY_TOKENS if token in text]
+        if hits:
+            errors.append(
+                f"{rel} references the frozen probe-evidence channel {hits} — "
+                "editable capability code may not touch runtime evidence"
+            )
+    return errors
+
+
+def _incumbent_output_drift(pinned: dict, models: list[dict]) -> dict:
+    """Per-model callsites whose incumbent-plan output hash no longer matches the pin.
+
+    An empty ``pinned`` (a campaign predating the pin — requires rebaseline anyway)
+    checks nothing; otherwise every pinned OR observed callsite must agree exactly,
+    so both a drifted hash and a missing/added callsite hash surface as drift.
+    """
+    if not pinned:
+        return {}
+    drift = {}
+    for model in models:
+        expected_hashes = pinned.get(model.get("model")) or {}
+        observed_hashes = model.get("incumbent_output_hashes") or {}
+        drifted = sorted(
+            site
+            for site in set(expected_hashes) | set(observed_hashes)
+            if expected_hashes.get(site) != observed_hashes.get(site)
+        )
+        if drifted:
+            drift[model.get("model")] = drifted
+    return drift
 
 
 def gate_capability(st, m, mpath, args):
@@ -1184,6 +1313,44 @@ def gate_capability(st, m, mpath, args):
         key: value for key, value in graph_closure.items() if key != "_graph"
     }
 
+    # FAIL-CHEAP-FIRST: run the eval-independent (static) halves of the programmer-
+    # exposure and capability-contract guards BEFORE the expensive target-HW eval.
+    # These need only the manifest, source tree, and incumbent git revision; a broken
+    # round rejects here without paying for the full three-model measurement. The
+    # FULL validators (including their eval-dependent legs) still run after the eval.
+    static_precheck = {"ran": False, "ok": True, "errors": []}
+    if graph_closure.get("ok"):
+        write_status(
+            "running",
+            round=rnd,
+            capability=m["name"],
+            phase="static contract pre-check (fail-cheap)",
+        )
+        from akt.core.evolve.capability_contract import validate_capability_contract
+        from akt.core.evolve.exposure import validate_programmer_exposure
+
+        try:
+            pre_exposure = validate_programmer_exposure(m, {}, ROOT, static_only=True)
+            pre_contract = validate_capability_contract(
+                m, {}, ROOT, st["incumbent_commit"], static_only=True
+            )
+            static_errors = list(pre_exposure.get("errors") or []) + list(
+                pre_contract.get("errors") or []
+            )
+            static_errors += _scan_probe_forgery(m)
+        except Exception as error:  # noqa: BLE001
+            static_errors = [f"static pre-check crashed: {error}"]
+        static_precheck = {
+            "ran": True,
+            "ok": not static_errors,
+            "errors": static_errors,
+        }
+        if static_errors:
+            print(
+                "[evolve] static contract pre-check FAILED (skipping target-HW eval): "
+                + "; ".join(static_errors)
+            )
+
     # (3) enlarged-space enumeration evidence for the affected kernel family
     audit_tail = ""
     if args.audit and m.get("audit_case"):
@@ -1200,17 +1367,20 @@ def gate_capability(st, m, mpath, args):
         capability=m["name"],
         phase="target-HW three-model search and paired evaluation",
     )
-    if graph_closure.get("ok"):
+    if graph_closure.get("ok") and static_precheck["ok"]:
         summary = model_hw_eval(
             args.runs,
             incumbent_plans=st.get("incumbent_plans"),
             capability=m["name"],
         )
     else:
-        print(
-            "[evolve] target-HW evaluation skipped: graph closure failed: "
-            + "; ".join(graph_closure.get("errors") or [])
+        skip_cause = (
+            "graph closure failed: " + "; ".join(graph_closure.get("errors") or [])
+            if not graph_closure.get("ok")
+            else "static contract pre-check failed: "
+            + "; ".join(static_precheck["errors"])
         )
+        print(f"[evolve] target-HW evaluation skipped: {skip_cause}")
         summary = {
             "all_correct": False,
             "target_hardware_ok": False,
@@ -1221,22 +1391,37 @@ def gate_capability(st, m, mpath, args):
             "runtime_evidence": {
                 "required": True,
                 "ok": False,
-                "errors": ["not evaluated after graph-closure failure"],
+                "errors": [f"not evaluated: {skip_cause}"],
             },
-            "error": "post-implementation flexibility graph did not close",
+            "error": skip_cause,
         }
     models = summary.get("models") or []
-    geo = summary.get("candidate_geomean_s")
-    paired_ratio = summary.get("paired_ratio_geomean")
+    # Metric coupling comes from the SELF-DESCRIBING gate contract, fetched LIVE
+    # from the FROZEN adapter at gate time — never from campaign state, which is
+    # editable bookkeeping an oracle round could rewrite (flipping lower_is_better
+    # there would invert the KEEP gate). The state copy stored at init/rebaseline
+    # is a record only; the literals below are the fallback when the adapter is
+    # unavailable, and match the current contract exactly.
+    contract = gate_contract() or {}
+    summary_keys = contract.get("summary_keys") or {}
+    geo = summary.get(summary_keys.get("candidate", "candidate_geomean_s"))
+    paired_ratio = summary.get(summary_keys.get("paired_ratio", "paired_ratio_geomean"))
+    lower_is_better = contract.get("lower_is_better", True)
     tgt = st["target_improvement"]
     delta_pct = (
         round((paired_ratio - 1) * 100, 2)
         if isinstance(paired_ratio, (int, float)) and math.isfinite(paired_ratio)
         else None
     )
-    improvement_pct = -delta_pct if delta_pct is not None else None
+    # improvement is direction-aware: for lower-is-better a ratio < 1 improves;
+    # for higher-is-better a ratio > 1 improves (and absolute flips likewise).
+    improvement_pct = (
+        (-delta_pct if lower_is_better else delta_pct)
+        if delta_pct is not None
+        else None
+    )
     absolute_improvement_pct = (
-        round((1 - geo / incumbent) * 100, 2)
+        round(((1 - geo / incumbent) if lower_is_better else (geo / incumbent - 1)) * 100, 2)
         if isinstance(geo, (int, float))
         and math.isfinite(geo)
         and isinstance(incumbent, (int, float))
@@ -1307,6 +1492,13 @@ def gate_capability(st, m, mpath, args):
     added_models = sorted(present_models - expected_models)
     missing_callsites = sorted(expected_callsites - present_callsites)
     added_callsites = sorted(present_callsites - expected_callsites)
+    # DEFAULT-REPRODUCES-INCUMBENT guard: the incumbent plan re-executed on the
+    # POST-edit tree must reproduce the pinned per-callsite output hashes bit-exactly.
+    # A capability whose edit changes the default path's semantics *within* the family
+    # allclose tolerance is invisible to every other correctness check — not to this.
+    incumbent_hash_drift = _incumbent_output_drift(
+        st.get("incumbent_output_hashes") or {}, models
+    )
     certificates = {
         model.get("model"): model.get("certificate") or {}
         for model in models
@@ -1347,6 +1539,7 @@ def gate_capability(st, m, mpath, args):
     )
     guard_ok = (
         bool(graph_closure.get("ok"))
+        and static_precheck["ok"]
         and bool(summary.get("all_correct"))
         and bool(summary.get("target_hardware_ok"))
         and summary.get("n_deferred") == 0
@@ -1356,6 +1549,7 @@ def gate_capability(st, m, mpath, args):
         and not added_models
         and not missing_callsites
         and not added_callsites
+        and not incumbent_hash_drift
         and not bad_certificates
         and empirical_dp_ok
         and live_model_ok
@@ -1378,6 +1572,11 @@ def gate_capability(st, m, mpath, args):
                 "FLEXIBILITY-GRAPH CLOSURE GUARD FAILED: "
                 + "; ".join(graph_closure.get("errors") or [])
             )
+        elif not static_precheck["ok"]:
+            reason = (
+                "STATIC CONTRACT PRE-CHECK FAILED (target-HW eval skipped): "
+                + "; ".join(static_precheck["errors"])
+            )
         elif not summary.get("target_hardware_ok"):
             reason = "TARGET-HARDWARE GUARD FAILED: " + str(
                 summary.get("error") or target_hardware
@@ -1398,6 +1597,12 @@ def gate_capability(st, m, mpath, args):
             reason = "FROZEN-WORKLOAD FINGERPRINT CHANGED"
         elif not hardware_matches:
             reason = "TARGET-HARDWARE FINGERPRINT CHANGED FROM INCUMBENT"
+        elif incumbent_hash_drift:
+            reason = (
+                "INCUMBENT-REPRODUCTION GUARD FAILED: the incumbent plan on the "
+                "post-edit tree no longer reproduces its pinned outputs bit-exactly "
+                f"(default-path semantic drift): {incumbent_hash_drift}"
+            )
         elif bad_certificates:
             reason = "DP/BRUTE OPTIMALITY GUARD FAILED: " + ", ".join(bad_certificates)
         elif not empirical_dp_ok:
@@ -1496,6 +1701,11 @@ def gate_capability(st, m, mpath, args):
                     model["model"]: model["selected_plan"] for model in models
                 },
                 incumbent_case_spaces=_case_space_inventory(summary),
+                # the kept selected plan is the next incumbent -> pin ITS outputs
+                incumbent_output_hashes={
+                    model["model"]: model.get("selected_output_hashes") or {}
+                    for model in models
+                },
                 action_graph_fingerprint=graph_closure.get(
                     "candidate_action_graph_fingerprint"
                 ),
@@ -1526,6 +1736,32 @@ def gate_capability(st, m, mpath, args):
     (ROOT / "akt/optimization_history/.evolve_eval.json").write_text(
         json.dumps(summary, indent=1, allow_nan=False)
     )
+    # ARCHIVE the full augmented eval per round: .evolve_eval.json is overwritten
+    # every round, which used to discard the complete measurement tables (per-config
+    # latency samples, paired ratios, certificates). The archive preserves cross-
+    # round trajectory evidence for replay/audit at ~one file per gated round.
+    archive_dir = ROOT / "akt/optimization_history/evals"
+    archive_dir.mkdir(exist_ok=True)
+    # campaign discriminator: init resets the round counter without clearing the
+    # archive, so a bare round number would overwrite an earlier campaign's file.
+    campaign_id = int(st.get("start_ts") or 0)
+    (archive_dir / f"c{campaign_id}_round_{rnd:03d}_{m['name']}.json").write_text(
+        json.dumps(summary, indent=1, allow_nan=False)
+    )
+    # Run-to-run NOISE BAND: the spread of the paired candidate/incumbent ratios
+    # across all models' balanced pairs this round — the board draws it so a reader
+    # can tell a real effect from timing noise.
+    _pair_ratios = [
+        math.exp(sample)
+        for model in models
+        for sample in (model.get("paired_log_ratios") or [])
+        if isinstance(sample, (int, float)) and math.isfinite(sample)
+    ]
+    ratio_band = (
+        {"min": min(_pair_ratios), "max": max(_pair_ratios), "n": len(_pair_ratios)}
+        if _pair_ratios
+        else None
+    )
     rec = {
         "round": rnd,
         "capability": m["name"],
@@ -1541,6 +1777,7 @@ def gate_capability(st, m, mpath, args):
         "accuracy": model_accuracy,
         "geomean_s": geo,
         "incumbent_geomean": incumbent,
+        "ratio_band": ratio_band,
         "improvement_pct": improvement_pct,
         "absolute_improvement_pct": absolute_improvement_pct,
         "n_verified": len(present_callsites),
@@ -1551,6 +1788,8 @@ def gate_capability(st, m, mpath, args):
         "live_model_gate": live_model_gate,
         "runtime_evidence": runtime_evidence,
         "graph_closure": graph_closure_record,
+        "static_precheck": static_precheck,
+        "incumbent_hash_drift": incumbent_hash_drift,
         "programmer_exposure": exposure,
         "capability_contract": capability_contract,
         "space_extension": space_extension,
@@ -1598,12 +1837,121 @@ def cmd_submit(args):
     gate_capability(st, m, mpath, args)
 
 
+def _taint_restored_rounds(
+    capability: str, reason: str = "keep reverted outside the loop"
+) -> int:
+    """Mark every KEEP round of `capability` as post-run-invalid in the history.
+
+    The board's incumbent envelope honors performance_status='post-run-invalid'
+    (a tainted KEEP stays visible but can no longer advance/hold the displayed
+    incumbent); the producer is `rebaseline`'s reverted-keep detection. Atomic
+    rewrite; callers must not run concurrently with a gating round."""
+    if not HIST.exists():
+        return 0
+    tainted = 0
+    lines = []
+    for line in HIST.read_text().splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            lines.append(line)
+            continue
+        if record.get("capability") == capability and record.get("decision") == "keep":
+            record["performance_status"] = "post-run-invalid"
+            record["performance_status_reason"] = reason
+            record["restored_ts"] = time.time()
+            tainted += 1
+            line = json.dumps(record, allow_nan=False)
+        lines.append(line)
+    if tainted:
+        tmp = HIST.with_suffix(".jsonl.tmp")
+        tmp.write_text("\n".join(lines) + "\n")
+        tmp.replace(HIST)
+    return tainted
+
+
 def cmd_restore(args):
     st = load()
+    # refuse to race a live gate: the taint rewrite + board rebuild below would
+    # clobber a concurrently appended round record.
+    status_now = {}
+    status_path = ROOT / "akt/board/evolve_status.json"
+    if status_path.exists():
+        try:
+            status_now = json.loads(status_path.read_text())
+        except json.JSONDecodeError:
+            status_now = {}
+    if status_now.get("state") == "running":
+        print("[evolve] restore refused: a round is currently running (evolve_status "
+              "state=running). Wait for it to finish or stop the loop first.")
+        return
     validate_incumbent_head(st)
-    m, _p = load_manifest(args.capability)
+    m, mpath = load_manifest(args.capability)
+    if m.get("status") == "kept":
+        # A kept capability's code IS the incumbent commit (KEEP advanced
+        # incumbent_commit to the commit containing it), so checking files out at
+        # that commit is a guaranteed no-op — 'restoring' it here would leave the
+        # code active while every surface claims it was removed. Refuse with the
+        # real procedure; `rebaseline` then detects the reverted keep commit and
+        # taints its history rounds (correctness-replay).
+        print(
+            f"[evolve] restore refused: capability '{m['name']}' is KEPT — its code "
+            f"is the incumbent commit {str(st.get('incumbent_commit'))[:8]} and a "
+            "checkout at that commit cannot remove it.\n"
+            "         To actually revert it: git log --grep "
+            f"'KEEP capability={m['name']}' to find the keep commit, git revert it "
+            "(or edit + commit), then run `loop.py rebaseline` — rebaseline "
+            "downgrades reverted keeps and taints their history rounds."
+        )
+        return
     restore_capability(m, st["incumbent_commit"])
+    write_board()
     print(f"[evolve] manually restored capability '{m['name']}'.")
+
+
+def _downgrade_reverted_keeps() -> int:
+    """Correctness-replay producer: a kept manifest whose keep was undone in git
+    (a `Revert "... KEEP capability=<name> ..."` commit, or the keep commit gone
+    from HEAD's ancestry after a rebase/reset) is downgraded and its history rounds
+    tainted, so the board's incumbent envelope stops crediting its measurement."""
+    rc, subjects_text = sh("git log --format=%s HEAD", timeout=60)
+    if rc != 0:
+        return 0
+    subjects = subjects_text.splitlines()
+    downgraded = 0
+    for path in sorted(CAPS.glob("*.json")) if CAPS.is_dir() else []:
+        try:
+            manifest = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        if manifest.get("status") != "kept":
+            continue
+        name = manifest.get("name") or path.stem
+        marker = f"KEEP capability={name}"
+        has_keep = any(
+            subject.startswith("akt evolve R") and marker in subject
+            for subject in subjects
+        )
+        has_revert = any(
+            subject.startswith("Revert") and marker in subject for subject in subjects
+        )
+        if has_keep and not has_revert:
+            continue                                  # keep still active in history
+        cause = (
+            "a git revert of the keep commit is in HEAD's history"
+            if has_revert
+            else "the keep commit is no longer in HEAD's history"
+        )
+        manifest["status"] = "reverted"
+        manifest["reverted_reason"] = cause
+        path.write_text(json.dumps(manifest, indent=1))
+        tainted = _taint_restored_rounds(name, reason=cause)
+        downgraded += 1
+        print(
+            f"[evolve] kept capability '{name}' was reverted outside the loop "
+            f"({cause}) — downgraded ({tainted} history round(s) tainted)."
+        )
+    return downgraded
 
 
 # ---------------------------------------------------------------- oracle driver
@@ -1934,6 +2282,8 @@ def cmd_run(args):
         return
     try:
         validate_campaign_action_graph(current)
+        if _maybe_stop_converged(current):
+            return
         action_contract_block()
     except Exception as error:  # noqa: BLE001
         print(
@@ -1959,6 +2309,17 @@ def cmd_run(args):
         st = load()
         if time.time() >= st["deadline_ts"]:
             print(f"[evolve] deadline reached after {gated} gated round(s) — stopping."); break
+        # Re-check convergence EVERY round: a KEEP that closed the LAST open action
+        # must end the campaign with the CONVERGED verdict, not crash the next
+        # invoke_oracle on an empty action contract.
+        try:
+            if _maybe_stop_converged(st):
+                break
+        except Exception as error:  # noqa: BLE001
+            print(f"[evolve] stopping: flexibility-graph guardrail became invalid "
+                  f"mid-run: {error}")
+            write_status("idle", round=st.get("round", 0))
+            break
         nxt = st["round"] + 1
         print(f"\n{'#'*70}\n# AUTONOMOUS ROUND {nxt} — oracle={args.oracle_cmd or args.oracle}\n{'#'*70}")
         write_status("running", round=nxt, phase=f"oracle ({args.oracle}) implementing")

@@ -70,6 +70,15 @@ RTOL = 1e-5
 # CPU shim — it does NOT exercise the Pallas kernel this case tunes. See docstring.
 NATIVE_TEST = None
 
+# The kernel is a pure DMA scatter-copy: the tuning knobs (num_slices_per_block,
+# page_size) change only the copy SCHEDULE, never the written bytes ("The DMA copy
+# is bit-exact" — tolerance note above). Every correct config's projected output
+# must therefore be BIT-IDENTICAL; the model evaluator enforces output-hash
+# equality across the FULL RESEARCH space (runner-only values included, so the
+# check is not vacuous when the deployment space collapses to one config),
+# far tighter than the allclose tolerance.
+BITEXACT_INVARIANT = True
+
 # Contiguous write base into the cache (leaves a sentinel prefix untouched). Mirrors
 # the test's `loc = arange(total_tokens) + base` contiguous mapping (test uses 10).
 _OFFSET = 16

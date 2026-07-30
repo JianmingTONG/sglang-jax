@@ -505,8 +505,17 @@ def validate_capability_contract(
     eval_summary: dict,
     repo: Path,
     incumbent_commit: str,
+    *,
+    static_only: bool = False,
 ) -> dict:
-    """Validate gap identity, prior inaccessibility, estimate, and planner dimensions."""
+    """Validate gap identity, prior inaccessibility, estimate, and planner dimensions.
+
+    ``static_only=True`` runs every check derivable from the manifest, the source
+    tree, and the incumbent git revision alone — skipping only the legs that need
+    the target-HW eval summary (elevated-dimension observation and runtime backend
+    events). The loop uses it as a fail-cheap pre-check BEFORE the expensive eval;
+    the full validation still runs afterwards on the real summary.
+    """
 
     action_reference = validate_action_reference(manifest, repo)
     action_reference, dimensions, errors = derive_search_dimensions(
@@ -557,25 +566,29 @@ def validate_capability_contract(
         values = dimension["candidate_values"]
         default = dimension["default"]
         knob_name = dimension["knob"]
-        observed = eval_dimensions.get(control) or []
-        if not observed:
-            errors.append(f"{control!r} is not a newly elevated model-planner dimension")
-        for knob in observed:
-            if knob.get("name") != knob_name:
-                errors.append(f"{control} runner knob does not match {knob_name!r}")
-            if not _same_typed_values(knob.get("values"), values) or not _same_typed_value(
-                knob.get("default"), default
-            ):
+        if not static_only:
+            observed = eval_dimensions.get(control) or []
+            if not observed:
                 errors.append(
-                    f"{control} runner values/default do not match the graph-derived dimension"
+                    f"{control!r} is not a newly elevated model-planner dimension"
                 )
-        observed_sites = {item["callsite"] for item in observed}
-        if observed_sites != set(affected):
-            errors.append(
-                f"{control} must occur at every and only affected model callsite: "
-                f"missing={sorted(set(affected) - observed_sites)}, "
-                f"extra={sorted(observed_sites - set(affected))}"
-            )
+            for knob in observed:
+                if knob.get("name") != knob_name:
+                    errors.append(f"{control} runner knob does not match {knob_name!r}")
+                if not _same_typed_values(
+                    knob.get("values"), values
+                ) or not _same_typed_value(knob.get("default"), default):
+                    errors.append(
+                        f"{control} runner values/default do not match the "
+                        "graph-derived dimension"
+                    )
+            observed_sites = {item["callsite"] for item in observed}
+            if observed_sites != set(affected):
+                errors.append(
+                    f"{control} must occur at every and only affected model callsite: "
+                    f"missing={sorted(set(affected) - observed_sites)}, "
+                    f"extra={sorted(observed_sites - set(affected))}"
+                )
 
         kernel_path = dimension["kernel_path"]
         kernel_function = dimension["kernel_function"]
@@ -589,16 +602,18 @@ def validate_capability_contract(
         ):
             errors.append(f"{label}.kernel_path must name a production kernel source")
             continue
-        runtime_record = runtime_controls.get(control) or {}
-        mismatched_backends = [
-            event.get("backend")
-            for event in runtime_record.get("matched") or []
-            if event.get("backend") != kernel_function
-        ]
-        if mismatched_backends:
-            errors.append(
-                f"{control} runtime event named a different backend: {mismatched_backends}"
-            )
+        if not static_only:
+            runtime_record = runtime_controls.get(control) or {}
+            mismatched_backends = [
+                event.get("backend")
+                for event in runtime_record.get("matched") or []
+                if event.get("backend") != kernel_function
+            ]
+            if mismatched_backends:
+                errors.append(
+                    f"{control} runtime event named a different backend: "
+                    f"{mismatched_backends}"
+                )
         old_source = _git_text(repo, incumbent_commit, kernel_path)
         try:
             current_source = path.read_text()
@@ -707,6 +722,7 @@ def validate_capability_contract(
 
     return {
         "ok": not errors,
+        "static_only": static_only,
         "gap_id": gap_id,
         "gap": gap,
         "action_edge": action_reference.get("action_edge"),

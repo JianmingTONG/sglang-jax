@@ -134,7 +134,16 @@ def _auto_gap_lines():
     context = action_catalog_context(REPO)
     actions = context["actions"]
     if not actions:
-        return None
+        # A VALID catalog with zero open actions is CONVERGENCE, not an error: every
+        # source-proven red link has been closed (or none exists). Distinct from an
+        # invalid/stale catalog, which raises above and reports "missing".
+        note = (
+            "CONVERGED: the validated action catalog is EMPTY — every source-proven "
+            "red-link action has been closed or none remains discoverable. There is "
+            "no executable gap left to elevate under this objective; widen the "
+            "objective (new workloads/backends) or stop the campaign."
+        )
+        return [], note, context
     lines = []
     for gap in actions:
         sites = gap["model_callsites"]
@@ -156,8 +165,7 @@ def _auto_gap_lines():
 
 def cmd_gaps(_args):
     try:
-        auto = _auto_gap_lines()
-        lines, note, context = auto
+        lines, note, context = _auto_gap_lines()
     except Exception as error:  # noqa: BLE001
         print("AKT_GAPS " + json.dumps({
             "missing": f"generated red-link action catalog is invalid: {error}"
@@ -167,9 +175,34 @@ def cmd_gaps(_args):
     print("AKT_GAPS " + json.dumps({
         "title": title,
         "lines": lines,
+        "n_actions": len(lines),
+        "converged": not lines,
         "action_graph_fingerprint": context["fingerprint"],
         "action_context_version": context["version"],
         "note": note,
+    }, allow_nan=False))
+
+
+# ------------------------------------------------------------------ gate contract
+def cmd_gate(_args):
+    """Self-describing gate metric contract — AKT_GATE {json}.
+
+    The loop stores this at init/rebaseline and reads the objective's summary keys
+    and direction from it instead of hardwired literals, so swapping the benchmark
+    objective (e.g. a throughput metric where higher is better) is an adapter-side
+    change; the frozen loop needs no edit. The values below mirror the current
+    model_eval objective exactly."""
+    print("AKT_GATE " + json.dumps({
+        "objective_name": "paired_model_geomean_s",
+        "objective_unit": "s",
+        "objective_scope": "model-serving-empirical-dp-v2",
+        "lower_is_better": True,
+        "summary_keys": {
+            "candidate": "candidate_geomean_s",
+            "incumbent": "incumbent_geomean_s",
+            "paired_ratio": "paired_ratio_geomean",
+        },
+        "eval_script": "akt/benchmark/gates/model_eval.py",
     }, allow_nan=False))
 
 
@@ -199,10 +232,12 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("bottleneck", help="emit AKT_BOTTLENECK json for the QUERY")
     sub.add_parser("gaps", help="emit AKT_GAPS json (canonical red-link action space)")
+    sub.add_parser("gate", help="emit AKT_GATE json (self-describing metric contract)")
     ps = sub.add_parser("space", help="design-space size/knobs report (search evidence)")
     ps.add_argument("--kernel", default=None)
     args = ap.parse_args()
-    {"bottleneck": cmd_bottleneck, "gaps": cmd_gaps, "space": cmd_space}[args.cmd](args)
+    {"bottleneck": cmd_bottleneck, "gaps": cmd_gaps, "gate": cmd_gate,
+     "space": cmd_space}[args.cmd](args)
 
 
 if __name__ == "__main__":

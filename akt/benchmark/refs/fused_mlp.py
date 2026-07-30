@@ -57,6 +57,14 @@ RTOL = 2e-2
 # no maintainer-authored fused_mlp test exists at all). See module docstring.
 NATIVE_TEST = None
 
+# NOT declared bit-exact across configs, deliberately: the module docstring's
+# "reproduces this reference bit-exactly for every b_inter" was verified in NUMPY,
+# but on the MXU a K-wide matmul split into b_inter-sized blocks accumulates partial
+# sums in a different order — float addition is non-associative, so cross-config
+# bit-identity is NOT structurally guaranteed on real hardware. The family allclose
+# tolerance above remains the correctness contract; flip this only with TPU evidence.
+BITEXACT_INVARIANT = False
+
 
 def make_inputs(seq: int, hidden: int, inter: int, seed: int = 0) -> dict:
     """Canonical SwiGLU-MLP inputs. `w_gu` is stored in the config-independent

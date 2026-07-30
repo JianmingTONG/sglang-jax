@@ -539,3 +539,132 @@ def test_live_model_gate_accepts_clean_non_applicability():
 
     assert evidence["ok"] is True
     assert evidence["not_applicable_candidates"] == 1
+
+
+def test_incumbent_output_drift_detects_bitwise_default_path_change():
+    """The default-reproduces-incumbent pin: exact match passes; any drifted,
+    missing, or added callsite hash fails; an unpinned campaign checks nothing."""
+    pinned = {
+        "tiny-linear-serving": {"tiny-linear-serving/gla-short": "a" * 64},
+        "tiny-dense-serving": {"tiny-dense-serving/dense-mlp": "b" * 64},
+    }
+    exact = [
+        {
+            "model": "tiny-linear-serving",
+            "incumbent_output_hashes": {"tiny-linear-serving/gla-short": "a" * 64},
+        },
+        {
+            "model": "tiny-dense-serving",
+            "incumbent_output_hashes": {"tiny-dense-serving/dense-mlp": "b" * 64},
+        },
+    ]
+    assert loop._incumbent_output_drift(pinned, exact) == {}
+
+    drifted = [dict(exact[0]), dict(exact[1])]
+    drifted[1] = {
+        "model": "tiny-dense-serving",
+        "incumbent_output_hashes": {"tiny-dense-serving/dense-mlp": "c" * 64},
+    }
+    assert loop._incumbent_output_drift(pinned, drifted) == {
+        "tiny-dense-serving": ["tiny-dense-serving/dense-mlp"]
+    }
+
+    missing = [exact[0], {"model": "tiny-dense-serving", "incumbent_output_hashes": {}}]
+    assert loop._incumbent_output_drift(pinned, missing) == {
+        "tiny-dense-serving": ["tiny-dense-serving/dense-mlp"]
+    }
+
+    assert loop._incumbent_output_drift({}, drifted) == {}  # unpinned -> no check
+
+
+def test_empty_but_valid_catalog_is_convergence_not_error(monkeypatch):
+    """Zero open actions must present as a CONVERGED verdict, not a broken graph."""
+    import akt.core.evolve.action_catalog as action_catalog
+
+    real_context = action_catalog.action_catalog_context(loop.ROOT)
+    assert loop.action_catalog_convergence() == (False, len(real_context["actions"]))
+
+    empty = dict(real_context, actions=[])
+    monkeypatch.setattr(
+        loop, "action_contract_block", loop.action_contract_block  # keep import shape
+    )
+    monkeypatch.setattr(
+        action_catalog, "action_catalog_context", lambda _repo: empty
+    )
+    assert loop.action_catalog_convergence() == (True, 0)
+    # the oracle contract itself still refuses to run with zero actions
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError, match="CONVERGED"):
+        loop.action_contract_block()
+
+
+def test_manual_restore_of_a_kept_round_taints_its_history(tmp_path, monkeypatch):
+    """A restored KEEP must be downgraded and its rounds marked post-run-invalid,
+    so the board's incumbent envelope stops crediting its measurement."""
+    hist = tmp_path / "evolve_history.jsonl"
+    hist.write_text(
+        "\n".join(
+            json.dumps(record)
+            for record in [
+                {"round": 1, "capability": "cap_a", "decision": "keep",
+                 "geomean_s": 1.0, "correct": True},
+                {"round": 2, "capability": "cap_b", "decision": "reject"},
+                {"round": 3, "capability": "cap_a", "decision": "keep",
+                 "geomean_s": 0.9, "correct": True},
+            ]
+        )
+        + "\n"
+    )
+    monkeypatch.setattr(loop, "HIST", hist)
+
+    assert loop._taint_restored_rounds("cap_a") == 2
+    records = [json.loads(line) for line in hist.read_text().splitlines()]
+    assert [r.get("performance_status") for r in records] == [
+        "post-run-invalid", None, "post-run-invalid"
+    ]
+    assert records[1] == {"round": 2, "capability": "cap_b", "decision": "reject"}
+    assert loop._taint_restored_rounds("cap_missing") == 0
+
+
+def test_gate_contract_is_self_describing_and_matches_the_frozen_literals():
+    """The adapter's AKT_GATE contract must mirror the loop's fallback literals
+    exactly, so contract-driven and legacy-state gating are byte-identical."""
+    import subprocess
+    import sys
+
+    out = subprocess.check_output(
+        [sys.executable, str(loop.ROOT / "akt/benchmark/adapter.py"), "gate"],
+        text=True, cwd=loop.ROOT,
+    )
+    line = [l for l in out.splitlines() if l.startswith("AKT_GATE ")][-1]
+    contract = json.loads(line[len("AKT_GATE "):])
+    assert contract["objective_name"] == "paired_model_geomean_s"
+    assert contract["objective_unit"] == "s"
+    assert contract["lower_is_better"] is True
+    assert contract["summary_keys"] == {
+        "candidate": "candidate_geomean_s",
+        "incumbent": "incumbent_geomean_s",
+        "paired_ratio": "paired_ratio_geomean",
+    }
+    assert contract["objective_scope"] == loop.OBJECTIVE_SCOPE
+
+
+def test_probe_forgery_scan_rejects_manifest_files_touching_runtime(tmp_path, monkeypatch):
+    """Layer 2 of probe authentication: an edited file referencing the frozen
+    runtime-evidence channel must fail the static pre-check."""
+    (tmp_path / "python").mkdir()
+    clean = tmp_path / "python/clean_kernel.py"
+    clean.write_text("def kernel():\n    return 1\n")
+    dirty = tmp_path / "python/forging_kernel.py"
+    dirty.write_text(
+        "from akt.benchmark.runtime import _report_probed_backend_execution\n"
+    )
+    monkeypatch.setattr(loop, "ROOT", tmp_path)
+
+    assert loop._scan_probe_forgery({"files_touched": ["python/clean_kernel.py"]}) == []
+    errors = loop._scan_probe_forgery(
+        {"files_touched": ["python/clean_kernel.py", "python/forging_kernel.py"]}
+    )
+    assert len(errors) == 1 and "forging_kernel.py" in errors[0]
+    assert loop._scan_probe_forgery({"files_touched": ["missing.py"]}) == []

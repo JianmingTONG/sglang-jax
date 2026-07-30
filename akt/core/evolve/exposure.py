@@ -176,8 +176,17 @@ def validate_programmer_exposure(
     manifest: dict,
     eval_results: list[dict] | dict,
     repo: Path,
+    *,
+    static_only: bool = False,
 ) -> dict:
-    """Return auditable evidence that a capability reaches programmer level."""
+    """Return auditable evidence that a capability reaches programmer level.
+
+    ``static_only=True`` runs the registry / typed-API / consumer-forwarding checks
+    (all derivable from the source tree alone) and skips only the runner-control
+    equality that needs the eval's recorded deployment spaces. Used by the loop as
+    a fail-cheap pre-check before the target-HW eval; the full check still runs on
+    the real summary afterwards.
+    """
 
     action_reference, dimensions, errors = derive_search_dimensions(manifest, repo)
     capability = manifest.get("name")
@@ -255,7 +264,7 @@ def validate_programmer_exposure(
                     f"{dimension['kernel_function']}.{kernel_argument}"
                 )
 
-    if set(declared_controls) != runner_controls:
+    if not static_only and set(declared_controls) != runner_controls:
         errors.append(
             "declared controls do not exactly match newly elevated runner controls: "
             f"declared={sorted(set(declared_controls))}, runner={sorted(runner_controls)}"
@@ -263,6 +272,7 @@ def validate_programmer_exposure(
 
     return {
         "ok": not errors,
+        "static_only": static_only,
         "gap_id": action_reference.get("gap_id"),
         "source_evidence": action_reference.get("source_evidence"),
         "affected_model_callsites": action_reference.get("affected_model_callsites") or [],

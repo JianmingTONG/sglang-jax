@@ -313,3 +313,64 @@ def test_board_keeps_compact_gate_ui_without_latent_audit_redesign():
     assert 'id="provenanceaudit"' not in html
     assert "agentic_chart" not in html
     assert "live_model_evaluation" not in html
+
+
+def test_design_funnel_attributes_selection_to_cases_and_knobs():
+    summary = {
+        "case_search": {
+            "gla:seq512_h8": {
+                "research_space_size": 12,
+                "space_size": 6,
+                "valid_configs": 5,
+                "correct_configs": 5,
+                "knobs": [
+                    {"name": "chunk_size", "values": [64, 128, 256],
+                     "programmer_control": "gla.chunk_size", "elevated_by": "cap_a"},
+                    {"name": "variant", "values": [0, 1],
+                     "programmer_control": None, "elevated_by": None},
+                ],
+            },
+            "fused_mlp:s128_h256_i512": {
+                "research_space_size": 4,
+                "space_size": 4,
+                "valid_configs": 4,
+                "correct_configs": 4,
+                "knobs": [],
+            },
+        },
+        "models": [
+            {
+                "model": "tiny-linear-serving",
+                "callsite_cases": {
+                    "tiny-linear-serving/gla-short": "gla:seq512_h8",
+                    "tiny-linear-serving/gla-long": "gla:seq512_h8",
+                },
+                "selected_plan": {
+                    "tiny-linear-serving/gla-short": {"chunk_size": 128},
+                    "tiny-linear-serving/gla-long": {"chunk_size": 256},
+                },
+            },
+            {
+                "model": "tiny-dense-serving",
+                "callsite_cases": {
+                    "tiny-dense-serving/dense-mlp": "fused_mlp:s128_h256_i512"
+                },
+                "selected_plan": {
+                    "tiny-dense-serving/dense-mlp": {"b_inter": 128},
+                },
+            },
+        ],
+    }
+    funnel = board_build._design_funnel(summary)
+    by_case = {row["case"]: row for row in funnel["cases"]}
+    gla = by_case["gla:seq512_h8"]
+    assert (gla["research"], gla["deployable"], gla["valid"]) == (12, 6, 5)
+    assert gla["selected"] == 2          # two DISTINCT configs across its callsites
+    assert gla["deployable_over_research"] == 0.5
+    assert gla["knobs"][0]["deployable_values"] == 3    # programmer-controlled
+    assert gla["knobs"][1]["deployable_values"] == 1    # runner-only -> default-anchored
+    mlp = by_case["fused_mlp:s128_h256_i512"]
+    assert mlp["selected"] == 1
+    totals = funnel["totals"]
+    assert totals["research"] == 16 and totals["selected"] == 3
+    assert board_build._design_funnel({}) == {"cases": [], "totals": {}}

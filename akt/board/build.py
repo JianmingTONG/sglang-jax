@@ -96,7 +96,9 @@ def _kernels_from_eval():
                     else None
                 ),
                 "space_size": result.get("valid_configs"),
-                "research_space_size": result.get("space_size"),
+                "research_space_size": (
+                    result.get("research_space_size") or result.get("space_size")
+                ),
                 "best_config": (best or {}).get("config"),
                 "correct": result.get("all_configs_correct"),
                 "native_test": None,
@@ -314,6 +316,71 @@ def _valid_latency(value):
     )
 
 
+def _design_funnel(eval_summary):
+    """Research -> deployable -> valid -> measured -> selected funnel per case.
+
+    Localizes WHERE the design space grows and how much of it the DP actually
+    uses: `deployable_over_research` measures programmer exposure of the runner
+    space, `selected_over_valid` measures utilization of the deployable space.
+    Per-knob rows attribute both to individual axes. Case attribution of the
+    selected plans uses the evaluator's exact callsite->case mapping."""
+    summary = eval_summary or {}
+    case_search = summary.get("case_search") or {}
+    if not case_search:
+        return {"cases": [], "totals": {}}
+    selected_by_case = {}
+    for model in summary.get("models") or []:
+        cases_by_site = model.get("callsite_cases") or {}
+        for site, config in (model.get("selected_plan") or {}).items():
+            case_id = cases_by_site.get(site)
+            if case_id is not None and isinstance(config, dict):
+                selected_by_case.setdefault(case_id, []).append(config)
+    cases = []
+    totals = {"research": 0, "deployable": 0, "valid": 0, "measured": 0, "selected": 0}
+    for case_id, result in sorted(case_search.items()):
+        research = result.get("research_space_size") or result.get("space_size") or 0
+        deployable = result.get("space_size") or 0
+        valid = result.get("valid_configs") or 0
+        measured = result.get("correct_configs") or 0
+        selected = len({
+            json.dumps(config, sort_keys=True, default=str)
+            for config in selected_by_case.get(case_id, [])
+        })
+        knobs = [
+            {
+                "name": knob.get("name"),
+                "research_values": len(knob.get("values") or []),
+                "deployable_values": (
+                    len(knob.get("values") or [])
+                    if knob.get("programmer_control")
+                    else 1
+                ),
+                "programmer_control": knob.get("programmer_control"),
+                "elevated_by": knob.get("elevated_by"),
+            }
+            for knob in result.get("knobs") or []
+        ]
+        cases.append({
+            "case": case_id,
+            "research": research, "deployable": deployable, "valid": valid,
+            "measured": measured, "selected": selected,
+            "deployable_over_research": (deployable / research) if research else None,
+            "selected_over_valid": (selected / valid) if valid else None,
+            "knobs": knobs,
+        })
+        for key, value in (("research", research), ("deployable", deployable),
+                           ("valid", valid), ("measured", measured),
+                           ("selected", selected)):
+            totals[key] += value
+    totals["deployable_over_research"] = (
+        totals["deployable"] / totals["research"] if totals["research"] else None
+    )
+    totals["selected_over_valid"] = (
+        totals["selected"] / totals["valid"] if totals["valid"] else None
+    )
+    return {"cases": cases, "totals": totals}
+
+
 def _trail_record(record, manifest):
     """Normalize current and historical round schemas into one compact board row."""
 
@@ -383,6 +450,8 @@ def _trail_record(record, manifest):
         "n_deferred": record.get("n_deferred"),
         "missing_cases": record.get("missing_cases") or [],
         "truncated_cases": record.get("truncated_cases") or [],
+        "ratio_band": record.get("ratio_band"),
+        "space_extension": record.get("space_extension"),
         "best_configs": best_configs,
         "programmer_exposure": record.get("programmer_exposure"),
         "empirical_dp": _compact_empirical_status(record),
@@ -456,6 +525,32 @@ def build():
     except Exception:  # noqa: BLE001
         FRONTIER = []
 
+    fg = _flexgraph(eval_summary, st)
+    models_compact = _compact_models(eval_summary)
+    open_actions = (
+        fg.get("n_open_action_edges")
+        if fg.get("kind") != "unavailable"
+        else None
+    )
+    convergence = {
+        # the loop's recorded verdict (set by `run` when the catalog empties)
+        "space_exhausted": bool(st.get("space_exhausted")),
+        "open_actions": open_actions,
+        "dp_ok_all_models": bool(models_compact)
+        and all(model.get("dp_ok") for model in models_compact),
+        # LIVE open_actions wins over the recorded flag: a stale space_exhausted
+        # (e.g. rebaseline widened the graph) must not present as converged when
+        # actions are visibly open. The flag only decides when the live count is
+        # unavailable.
+        "verdict": (
+            "converged"
+            if open_actions == 0
+            else "open"
+            if isinstance(open_actions, int) and open_actions > 0
+            else ("converged" if st.get("space_exhausted") else "unknown")
+        ),
+    }
+
     board = {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "objective": "paired latency across three frozen serving traces on target TPU",
@@ -496,12 +591,13 @@ def build():
         "objective_stale": st.get("objective_scope") != CURRENT_OBJECTIVE_SCOPE,
         "kernels": kernels,
         "controls": _control_inventory(),
+        "funnel": _design_funnel(eval_summary),
+        "convergence": convergence,
         "frontier": FRONTIER,
         "trail": trail, "kept": kept, "rejected": rejected,
         "n_rounds": len(trail),
     }
     (BOARD / "board.json").write_text(json.dumps(_clean(board), indent=1, allow_nan=False))
-    fg = _flexgraph(eval_summary, st)
     (BOARD / "flexgraph.json").write_text(json.dumps(_clean(fg), indent=1, allow_nan=False))
     n_run = sum(1 for k in kernels if k.get("best_s"))
     print(f"akt-board: {len(kernels)} kernels ({n_run} runnable, {len(kernels)-n_run} deferred), "

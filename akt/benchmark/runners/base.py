@@ -123,6 +123,13 @@ class KernelCase:
     # kernel test that runs in interpret here (or None if TPU-only / no repo test).
     # eval.py runs it once per case as an independent maintainer-authored verification.
     native_test: str | None = None
+    # True when the design-space knobs provably CANNOT change the math (pure data
+    # movement / exact re-blocking, e.g. kv_cache's DMA copy and fused_mlp's
+    # per-b_inter weight re-interleave): every correct config's projected output
+    # must then be BIT-IDENTICAL, and the model evaluator enforces it with output
+    # hashes — far tighter than the family allclose tolerance. Declared by the
+    # FROZEN refs module (BITEXACT_INVARIANT) and pinned by the suite contract.
+    bitexact_invariant: bool = False
     note: str = ""
 
     @property

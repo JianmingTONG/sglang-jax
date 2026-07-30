@@ -309,6 +309,13 @@ def test_complete_plan_pairs_use_deterministic_balanced_order(monkeypatch):
 
 
 def test_runtime_event_is_bound_to_the_frozen_model_callsite_scope():
+    import sys
+
+    from akt.benchmark.runtime import _register_probe_code
+
+    # register THIS test function's code object (frozen-tree caller) so the
+    # identity-authenticated reporter accepts the direct call below.
+    _register_probe_code(sys._getframe().f_code)
     with capture_runtime_events() as events:
         with runtime_scope("tiny-linear-serving", "tiny-linear-serving/gla-short"):
             _report_probed_backend_execution(
@@ -436,3 +443,253 @@ def test_next_round_bottleneck_uses_retained_plan_after_rejection(
 
     assert "RETAINED INCUMBENT MODEL tiny-linear-serving: 2.000ms" in rendered
     assert "selected={'tile': 1}" in rendered
+
+
+# ---- negative controls: the v2 correctness comparator must be able to FAIL ----
+# These guard against a comparator that silently always passes (e.g. a regression
+# that drops the allclose, or reference/run sharing a projection bug): a wrong
+# output, a wrong shape, and a wrong leaf count must each be rejected, and
+# _search_case must exclude a wrong config from the measured (DP-visible) set.
+
+
+def _comparator_case(atol=1e-3):
+    return SimpleNamespace(
+        case_id="fake:compare",
+        check_out=lambda output: output,
+        atol=atol,
+        rtol=0.0,
+    )
+
+
+def test_compare_rejects_wrong_output_shape_and_leafcount():
+    import numpy as np
+
+    case = _comparator_case(atol=1e-3)
+    reference = np.zeros((4, 4), dtype=np.float32)
+
+    ok, detail = model_eval._compare(case, reference.copy(), reference)
+    assert ok  # positive control: identical output passes
+
+    wrong = reference + 10 * case.atol
+    ok, detail = model_eval._compare(case, wrong, reference)
+    assert not ok and "maxabs" in detail
+
+    ok, detail = model_eval._compare(case, np.zeros((2, 8), np.float32), reference)
+    assert not ok and "shape" in detail
+
+    ok, detail = model_eval._compare(case, [reference, reference], reference)
+    assert not ok and "nleaves" in detail
+
+
+def test_search_case_excludes_wrong_config_from_measurements(monkeypatch):
+    import numpy as np
+
+    reference = np.zeros((4,), dtype=np.float32)
+
+    class FakeSpace:
+        knobs = []
+
+        def deployment_space(self):
+            return self
+
+        def enumerate(self, cap=None):
+            del cap
+            yield {"variant": 0}
+            yield {"variant": 1}
+
+        def size(self):
+            return 2
+
+    def run(_inputs, config):
+        if config["variant"] == 1:
+            return reference + 1.0  # far beyond atol -> must be rejected
+        return reference.copy()
+
+    case = SimpleNamespace(
+        case_id="fake:negctl",
+        space=FakeSpace(),
+        run=run,
+        check_out=lambda output: output,
+        atol=1e-3,
+        rtol=0.0,
+    )
+    ticks = iter(float(value) for value in range(64))
+    monkeypatch.setattr(model_eval.jax, "block_until_ready", lambda value: value)
+    monkeypatch.setattr(model_eval.time, "perf_counter", lambda: next(ticks))
+
+    result = model_eval._search_case(case, {}, reference, runs=2, max_configs=4)
+
+    assert not result["all_configs_correct"]
+    assert result["correct_configs"] == 1
+    assert [entry["config"] for entry in result["measurements"]] == [{"variant": 0}]
+    assert [failure["config"] for failure in result["failures"]] == [{"variant": 1}]
+    assert "maxabs" in result["failures"][0]["reason"]
+
+
+def test_check_model_outputs_rejects_wrong_output():
+    import numpy as np
+
+    case = _comparator_case(atol=1e-3)
+    reference = np.zeros((3,), dtype=np.float32)
+    workload = SimpleNamespace(
+        model_id="fake-model",
+        calls=[SimpleNamespace(call_id="c0", case_id="fake:compare")],
+    )
+    prepared = {"fake-model/c0": (case, {}, reference)}
+
+    ok, errors = model_eval._check_model_outputs(workload, [reference.copy()], prepared)
+    assert ok and not errors  # positive control
+
+    ok, errors = model_eval._check_model_outputs(workload, [reference + 1.0], prepared)
+    assert not ok
+    assert errors and "fake-model/c0" in errors[0] and "maxabs" in errors[0]
+
+
+def test_probe_reporter_rejects_forged_report_from_editable_code(tmp_path):
+    """Editable (non-frozen) code must not be able to forge a verified probe event."""
+    forger = tmp_path / "editable_forger.py"
+    forger.write_text(
+        "from akt.benchmark.runtime import _report_probed_backend_execution\n"
+        "def forge():\n"
+        "    _report_probed_backend_execution(\n"
+        "        capability='new_tile', control='gla.new_tile',\n"
+        "        value=64, backend='chunk_simple_gla_fwd_varlen')\n"
+    )
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("editable_forger", forger)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with capture_runtime_events() as events:
+        with runtime_scope("tiny-linear-serving", "tiny-linear-serving/gla-short"):
+            with pytest.raises(PermissionError, match="evaluator-registered frozen probes"):
+                module.forge()
+    assert events == []  # the forged event was NOT recorded
+
+
+def test_bitexact_invariant_rejects_cross_config_output_divergence(monkeypatch):
+    """A kernel declared config-independent must produce BIT-IDENTICAL outputs for
+    every correct config; a within-tolerance drift (invisible to allclose) fails."""
+    import numpy as np
+
+    reference = np.zeros((4,), dtype=np.float32)
+
+    class FakeSpace:
+        knobs = []
+
+        def deployment_space(self):
+            return self
+
+        def enumerate(self, cap=None):
+            del cap
+            yield {"variant": 0}
+            yield {"variant": 1}
+
+        def size(self):
+            return 2
+
+    def drifting_run(_inputs, config):
+        # variant 1 drifts by atol/10: allclose-correct but NOT bit-identical.
+        return reference + (1e-4 if config["variant"] == 1 else 0.0)
+
+    def stable_run(_inputs, config):
+        del config
+        return reference.copy()
+
+    def case_with(run):
+        return SimpleNamespace(
+            case_id="fake:bitexact",
+            space=FakeSpace(),
+            run=run,
+            check_out=lambda output: output,
+            atol=1e-3,
+            rtol=0.0,
+            bitexact_invariant=True,
+        )
+
+    ticks = iter(float(value) for value in range(64))
+    monkeypatch.setattr(model_eval.jax, "block_until_ready", lambda value: value)
+    monkeypatch.setattr(model_eval.time, "perf_counter", lambda: next(ticks))
+
+    with pytest.raises(ValueError, match="BITEXACT_INVARIANT"):
+        model_eval._search_case(case_with(drifting_run), {}, reference, runs=2, max_configs=4)
+
+    result = model_eval._search_case(case_with(stable_run), {}, reference, runs=2, max_configs=4)
+    assert result["bitexact_invariant"] is True
+    assert isinstance(result["bitexact_output_hash"], str)
+    assert result["all_configs_correct"]
+
+
+def test_probe_registration_is_refused_outside_the_frozen_tree(tmp_path):
+    """Editable code must not be able to register its own code object either."""
+    registrar = tmp_path / "editable_registrar.py"
+    registrar.write_text(
+        "import sys\n"
+        "from akt.benchmark.runtime import _register_probe_code\n"
+        "def register():\n"
+        "    _register_probe_code(sys._getframe().f_code)\n"
+    )
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("editable_registrar", registrar)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with pytest.raises(PermissionError, match="reserved for the frozen"):
+        module.register()
+
+
+def test_bitexact_invariant_sweeps_the_full_research_space(monkeypatch):
+    """A runner-only knob (absent from the deployment space) must still be covered:
+    the invariant check must not be vacuous when deployment collapses to 1 config."""
+    import numpy as np
+
+    reference = np.zeros((4,), dtype=np.float32)
+
+    class ResearchSpace:
+        """Deployment space = 1 config; research space = 2 (runner-only axis)."""
+
+        knobs = []
+
+        def deployment_space(self):
+            outer = self
+
+            class Collapsed:
+                knobs = []
+
+                def enumerate(self, cap=None):
+                    del cap
+                    yield {"runner_axis": 0}
+
+                def size(self):
+                    return 1
+
+            return Collapsed()
+
+        def enumerate(self, cap=None):
+            del cap
+            yield {"runner_axis": 0}
+            yield {"runner_axis": 1}
+
+        def size(self):
+            return 2
+
+    def drifting_run(_inputs, config):
+        # drift ONLY on the runner-only value invisible to the deployment space
+        return reference + (1e-4 if config["runner_axis"] == 1 else 0.0)
+
+    case = SimpleNamespace(
+        case_id="fake:research-bitexact",
+        space=ResearchSpace(),
+        run=drifting_run,
+        check_out=lambda output: output,
+        atol=1e-3,
+        rtol=0.0,
+        bitexact_invariant=True,
+    )
+    ticks = iter(float(value) for value in range(64))
+    monkeypatch.setattr(model_eval.jax, "block_until_ready", lambda value: value)
+    monkeypatch.setattr(model_eval.time, "perf_counter", lambda: next(ticks))
+
+    with pytest.raises(ValueError, match="BITEXACT_INVARIANT"):
+        model_eval._search_case(case, {}, reference, runs=2, max_configs=8)

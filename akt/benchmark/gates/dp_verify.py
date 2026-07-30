@@ -26,6 +26,46 @@ def _cost(site: str, variant: int) -> float:
     return 1e-6 * (1 + value % 1000)
 
 
+# GOLDEN regression pin. The synthetic costs above are pure SHA-256 functions of the
+# frozen callsite ids, so the optimal plan and its cost are CONSTANTS of the frozen
+# model contract. Pinning them turns this preflight into a golden regression: a bug
+# in the DP, in PlanCandidate ordering, or a silent change to the callsite inventory
+# shifts the selected plan/cost and fails here even though DP==brute still holds
+# (both searches would agree on the *wrong* space).
+_GOLDEN = {
+    "tiny-linear-serving": {
+        "cost_s": 1.368e-3,
+        "plan": {
+            "tiny-linear-serving/input-projection": 1,
+            "tiny-linear-serving/gla-short": 1,
+            "tiny-linear-serving/kda-short": 0,
+            "tiny-linear-serving/gla-long": 1,
+            "tiny-linear-serving/kda-long": 1,
+        },
+    },
+    "tiny-dense-serving": {
+        "cost_s": 1.390e-3,
+        "plan": {
+            "tiny-dense-serving/dense-projection": 0,
+            "tiny-dense-serving/dense-mlp": 1,
+            "tiny-dense-serving/paged-attention": 1,
+            "tiny-dense-serving/cache-update": 0,
+        },
+    },
+    "tiny-moe-serving": {
+        "cost_s": 0.855e-3,
+        "plan": {
+            "tiny-moe-serving/router-projection": 0,
+            "tiny-moe-serving/expert-v1": 1,
+            "tiny-moe-serving/expert-v2": 1,
+            "tiny-moe-serving/expert-mlp": 1,
+            "tiny-moe-serving/paged-attention": 1,
+            "tiny-moe-serving/cache-update": 1,
+        },
+    },
+}
+
+
 def verify_models() -> list[dict]:
     reports = []
     for workload in MODEL_WORKLOADS:
@@ -45,10 +85,30 @@ def verify_models() -> list[dict]:
         certificate = certify(stages)
         if not certificate["bounded_dp_matches_bruteforce"]:
             raise AssertionError(f"DP differs from brute force for {workload.model_id}")
+        golden = _GOLDEN.get(workload.model_id)
+        if golden is None:
+            raise AssertionError(
+                f"{workload.model_id} has no golden plan pin; add it to _GOLDEN"
+            )
+        selected = {
+            site: choice["bounded_variant"]
+            for site, choice in certificate["full_plan"].items()
+        }
+        if selected != golden["plan"]:
+            raise AssertionError(
+                f"{workload.model_id} DP plan drifted from the golden pin: "
+                f"got {selected}, expected {golden['plan']}"
+            )
+        if abs(certificate["full_dp_cost_s"] - golden["cost_s"]) > 1e-12:
+            raise AssertionError(
+                f"{workload.model_id} DP cost drifted from the golden pin: "
+                f"got {certificate['full_dp_cost_s']!r}, expected {golden['cost_s']!r}"
+            )
         reports.append(
             {
                 "model": workload.model_id,
                 "calls": len(workload.calls),
+                "golden_plan_match": True,
                 **certificate,
             }
         )
