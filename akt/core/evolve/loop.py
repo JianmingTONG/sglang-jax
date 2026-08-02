@@ -255,18 +255,21 @@ def _tracked_at_commit(commit, relative):
     return relative in output.split("\0")
 
 
+def _read_status() -> dict:
+    """Current run-status heartbeat ({} when absent/corrupt)."""
+    try:
+        return json.loads(STATUS.read_text())
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def write_status(state, round=None, capability=None, phase=None, last=None, reset=False):
     """Live run-status heartbeat for the board's WIP time bar. `state` is
     'running' | 'idle'. Preserves init_ts (loop age) and the started_ts of the
     CURRENT running round across mid-round phase updates. `reset=True` (on init)
     starts a fresh campaign clock."""
     now = time.time()
-    cur = {}
-    if not reset:
-        try:
-            cur = json.loads(STATUS.read_text())
-        except Exception:
-            cur = {}
+    cur = {} if reset else _read_status()
     init_ts = cur.get("init_ts", now)
     # keep the round's start across phase updates; new start when idle->running
     started = (cur.get("started_ts") if (state == "running" and cur.get("state") == "running")
@@ -1120,22 +1123,15 @@ def cmd_init(args):
         )
         return
     CAPS.mkdir(exist_ok=True)
-    incumbent_plans = {model["model"]: model["selected_plan"] for model in models}
     expected_callsites = sorted(
         site for model in models for site in model.get("callsites") or []
     )
     st = {"start_ts": time.time(), "deadline_ts": time.time() + args.hours * 3600,
           "round": 0, "target_improvement": max(args.target, 0.02),
           "incumbent_geomean": geo, "incumbent_choices": summary.get("n_choices"),
-          "base_search_geomean": geo, "incumbent_plans": incumbent_plans,
+          "base_search_geomean": geo,
           "incumbent_case_spaces": _case_space_inventory(summary),
-          # per-callsite output hashes of the plan that becomes the incumbent; every
-          # later round must reproduce them bit-exactly on its incumbent-plan run
-          # (default-path drift detection — see model_eval incumbent_output_hashes).
-          "incumbent_output_hashes": {
-              model["model"]: model.get("selected_output_hashes") or {}
-              for model in models
-          },
+          **_incumbent_pins(models),
           "incumbent_commit": git_head(),
           "expected_models": sorted(model["model"] for model in models),
           "expected_callsites": expected_callsites,
@@ -1191,12 +1187,8 @@ def cmd_rebaseline(args):
     st.update(
         incumbent_geomean=geo,
         incumbent_choices=summary.get("n_choices"),
-        incumbent_plans={model["model"]: model["selected_plan"] for model in models},
         incumbent_case_spaces=_case_space_inventory(summary),
-        incumbent_output_hashes={
-            model["model"]: model.get("selected_output_hashes") or {}
-            for model in models
-        },
+        **_incumbent_pins(models),
         expected_models=sorted(model["model"] for model in models),
         expected_callsites=sorted(
             site for model in models for site in model.get("callsites") or []
@@ -1261,6 +1253,23 @@ def _scan_probe_forgery(manifest) -> list[str]:
     return errors
 
 
+def _incumbent_pins(models: list[dict]) -> dict:
+    """The per-model incumbent pins shared by init, rebaseline, and KEEP.
+
+    Whatever selected plan becomes the incumbent, its per-callsite output hashes
+    become the drift pin `_incumbent_output_drift` checks every later round
+    (default-path drift detection — see model_eval incumbent_output_hashes)."""
+    return {
+        "incumbent_plans": {
+            model["model"]: model["selected_plan"] for model in models
+        },
+        "incumbent_output_hashes": {
+            model["model"]: model.get("selected_output_hashes") or {}
+            for model in models
+        },
+    }
+
+
 def _incumbent_output_drift(pinned: dict, models: list[dict]) -> dict:
     """Per-model callsites whose incumbent-plan output hash no longer matches the pin.
 
@@ -1286,6 +1295,14 @@ def _incumbent_output_drift(pinned: dict, models: list[dict]) -> dict:
 
 def gate_capability(st, m, mpath, args):
     """Run every proof required for one model-level capability round."""
+    # single lazy import for both the static pre-check and the full post-eval
+    # validation (the loop file stays import-light until a gate actually runs)
+    from akt.core.evolve.capability_contract import (
+        validate_capability_contract,
+        validate_space_extension,
+    )
+    from akt.core.evolve.exposure import validate_programmer_exposure
+
     st["round"] += 1
     rnd = st["round"]
     incumbent = st["incumbent_geomean"]
@@ -1326,9 +1343,6 @@ def gate_capability(st, m, mpath, args):
             capability=m["name"],
             phase="static contract pre-check (fail-cheap)",
         )
-        from akt.core.evolve.capability_contract import validate_capability_contract
-        from akt.core.evolve.exposure import validate_programmer_exposure
-
         try:
             pre_exposure = validate_programmer_exposure(m, {}, ROOT, static_only=True)
             pre_contract = validate_capability_contract(
@@ -1439,19 +1453,12 @@ def gate_capability(st, m, mpath, args):
         capability=m["name"],
         phase="programmer exposure gate",
     )
-    from akt.core.evolve.exposure import validate_programmer_exposure
-
     exposure = validate_programmer_exposure(m, summary, ROOT)
     exposure_ok = bool(exposure.get("ok"))
 
     write_status(
         "running", round=rnd, capability=m["name"], phase="gap and prior-access contract"
     )
-    from akt.core.evolve.capability_contract import (
-        validate_capability_contract,
-        validate_space_extension,
-    )
-
     capability_contract = validate_capability_contract(
         m,
         summary,
@@ -1697,15 +1704,9 @@ def gate_capability(st, m, mpath, args):
             st.update(
                 incumbent_geomean=geo,
                 incumbent_choices=summary.get("n_choices"),
-                incumbent_plans={
-                    model["model"]: model["selected_plan"] for model in models
-                },
                 incumbent_case_spaces=_case_space_inventory(summary),
                 # the kept selected plan is the next incumbent -> pin ITS outputs
-                incumbent_output_hashes={
-                    model["model"]: model.get("selected_output_hashes") or {}
-                    for model in models
-                },
+                **_incumbent_pins(models),
                 action_graph_fingerprint=graph_closure.get(
                     "candidate_action_graph_fingerprint"
                 ),
@@ -1874,14 +1875,7 @@ def cmd_restore(args):
     st = load()
     # refuse to race a live gate: the taint rewrite + board rebuild below would
     # clobber a concurrently appended round record.
-    status_now = {}
-    status_path = ROOT / "akt/board/evolve_status.json"
-    if status_path.exists():
-        try:
-            status_now = json.loads(status_path.read_text())
-        except json.JSONDecodeError:
-            status_now = {}
-    if status_now.get("state") == "running":
+    if _read_status().get("state") == "running":
         print("[evolve] restore refused: a round is currently running (evolve_status "
               "state=running). Wait for it to finish or stop the loop first.")
         return

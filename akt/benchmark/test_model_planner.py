@@ -215,35 +215,57 @@ def test_single_plan_empirical_certificate_is_explicitly_vacuous():
     assert metrics["additivity_supported"]
 
 
-def test_local_search_times_correct_configs_in_balanced_round_robin(monkeypatch):
-    class FakeSpace:
-        knobs = []
+class _StubSpace:
+    """Minimal DesignSpace stand-in enumerating fixed config dicts.
 
-        def deployment_space(self):
+    `deployment_configs` (when given) makes deployment_space() a SMALLER space,
+    modeling runner-only knobs the deployment objective anchors at defaults.
+    Shared by every _search_case test below (was four near-identical local
+    FakeSpace/ResearchSpace classes)."""
+
+    knobs = []
+
+    def __init__(self, configs, deployment_configs=None):
+        self._configs = list(configs)
+        self._deployment = deployment_configs
+
+    def enumerate(self, cap=None):
+        del cap
+        yield from self._configs
+
+    def size(self):
+        return len(self._configs)
+
+    def deployment_space(self):
+        if self._deployment is None:
             return self
+        return _StubSpace(self._deployment)
 
-        def enumerate(self, cap=None):
-            del cap
-            yield {"variant": 0}
-            yield {"variant": 1}
 
-        def size(self):
-            return 2
+_TWO_VARIANTS = ({"variant": 0}, {"variant": 1})
 
+
+def _stub_case(space, run, *, atol=1e-3, rtol=0.0, bitexact=False, case_id="fake:case"):
+    """Minimal KernelCase stand-in for comparator/search tests."""
+    return SimpleNamespace(
+        case_id=case_id,
+        space=space,
+        run=run,
+        check_out=lambda output: output,
+        atol=atol,
+        rtol=rtol,
+        bitexact_invariant=bitexact,
+    )
+
+
+def test_local_search_times_correct_configs_in_balanced_round_robin(monkeypatch):
     calls = []
 
     def run(_inputs, config):
         calls.append(config["variant"])
         return 0.0
 
-    case = SimpleNamespace(
-        case_id="fake:case",
-        space=FakeSpace(),
-        run=run,
-        check_out=lambda output: output,
-        atol=0.0,
-        rtol=0.0,
-    )
+    case = _stub_case(_StubSpace(_TWO_VARIANTS), run, atol=0.0)
     ticks = iter(float(value) for value in range(8))
     monkeypatch.setattr(model_eval.jax, "block_until_ready", lambda value: value)
     monkeypatch.setattr(model_eval.time, "perf_counter", lambda: next(ticks))
@@ -453,12 +475,7 @@ def test_next_round_bottleneck_uses_retained_plan_after_rejection(
 
 
 def _comparator_case(atol=1e-3):
-    return SimpleNamespace(
-        case_id="fake:compare",
-        check_out=lambda output: output,
-        atol=atol,
-        rtol=0.0,
-    )
+    return _stub_case(None, None, atol=atol, case_id="fake:compare")
 
 
 def test_compare_rejects_wrong_output_shape_and_leafcount():
@@ -486,33 +503,12 @@ def test_search_case_excludes_wrong_config_from_measurements(monkeypatch):
 
     reference = np.zeros((4,), dtype=np.float32)
 
-    class FakeSpace:
-        knobs = []
-
-        def deployment_space(self):
-            return self
-
-        def enumerate(self, cap=None):
-            del cap
-            yield {"variant": 0}
-            yield {"variant": 1}
-
-        def size(self):
-            return 2
-
     def run(_inputs, config):
         if config["variant"] == 1:
             return reference + 1.0  # far beyond atol -> must be rejected
         return reference.copy()
 
-    case = SimpleNamespace(
-        case_id="fake:negctl",
-        space=FakeSpace(),
-        run=run,
-        check_out=lambda output: output,
-        atol=1e-3,
-        rtol=0.0,
-    )
+    case = _stub_case(_StubSpace(_TWO_VARIANTS), run, case_id="fake:negctl")
     ticks = iter(float(value) for value in range(64))
     monkeypatch.setattr(model_eval.jax, "block_until_ready", lambda value: value)
     monkeypatch.setattr(model_eval.time, "perf_counter", lambda: next(ticks))
@@ -575,20 +571,6 @@ def test_bitexact_invariant_rejects_cross_config_output_divergence(monkeypatch):
 
     reference = np.zeros((4,), dtype=np.float32)
 
-    class FakeSpace:
-        knobs = []
-
-        def deployment_space(self):
-            return self
-
-        def enumerate(self, cap=None):
-            del cap
-            yield {"variant": 0}
-            yield {"variant": 1}
-
-        def size(self):
-            return 2
-
     def drifting_run(_inputs, config):
         # variant 1 drifts by atol/10: allclose-correct but NOT bit-identical.
         return reference + (1e-4 if config["variant"] == 1 else 0.0)
@@ -598,14 +580,8 @@ def test_bitexact_invariant_rejects_cross_config_output_divergence(monkeypatch):
         return reference.copy()
 
     def case_with(run):
-        return SimpleNamespace(
-            case_id="fake:bitexact",
-            space=FakeSpace(),
-            run=run,
-            check_out=lambda output: output,
-            atol=1e-3,
-            rtol=0.0,
-            bitexact_invariant=True,
+        return _stub_case(
+            _StubSpace(_TWO_VARIANTS), run, bitexact=True, case_id="fake:bitexact"
         )
 
     ticks = iter(float(value) for value in range(64))
@@ -646,46 +622,17 @@ def test_bitexact_invariant_sweeps_the_full_research_space(monkeypatch):
 
     reference = np.zeros((4,), dtype=np.float32)
 
-    class ResearchSpace:
-        """Deployment space = 1 config; research space = 2 (runner-only axis)."""
-
-        knobs = []
-
-        def deployment_space(self):
-            outer = self
-
-            class Collapsed:
-                knobs = []
-
-                def enumerate(self, cap=None):
-                    del cap
-                    yield {"runner_axis": 0}
-
-                def size(self):
-                    return 1
-
-            return Collapsed()
-
-        def enumerate(self, cap=None):
-            del cap
-            yield {"runner_axis": 0}
-            yield {"runner_axis": 1}
-
-        def size(self):
-            return 2
-
     def drifting_run(_inputs, config):
         # drift ONLY on the runner-only value invisible to the deployment space
         return reference + (1e-4 if config["runner_axis"] == 1 else 0.0)
 
-    case = SimpleNamespace(
-        case_id="fake:research-bitexact",
-        space=ResearchSpace(),
-        run=drifting_run,
-        check_out=lambda output: output,
-        atol=1e-3,
-        rtol=0.0,
-        bitexact_invariant=True,
+    # deployment space = 1 config; research space = 2 (a runner-only axis)
+    space = _StubSpace(
+        [{"runner_axis": 0}, {"runner_axis": 1}],
+        deployment_configs=[{"runner_axis": 0}],
+    )
+    case = _stub_case(
+        space, drifting_run, bitexact=True, case_id="fake:research-bitexact"
     )
     ticks = iter(float(value) for value in range(64))
     monkeypatch.setattr(model_eval.jax, "block_until_ready", lambda value: value)

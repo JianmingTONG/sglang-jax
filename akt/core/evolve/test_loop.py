@@ -586,16 +586,11 @@ def test_empty_but_valid_catalog_is_convergence_not_error(monkeypatch):
 
     empty = dict(real_context, actions=[])
     monkeypatch.setattr(
-        loop, "action_contract_block", loop.action_contract_block  # keep import shape
-    )
-    monkeypatch.setattr(
         action_catalog, "action_catalog_context", lambda _repo: empty
     )
     assert loop.action_catalog_convergence() == (True, 0)
     # the oracle contract itself still refuses to run with zero actions
-    import pytest as _pytest
-
-    with _pytest.raises(RuntimeError, match="CONVERGED"):
+    with pytest.raises(RuntimeError, match="CONVERGED"):
         loop.action_contract_block()
 
 

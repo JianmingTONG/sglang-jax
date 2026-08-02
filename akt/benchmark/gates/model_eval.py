@@ -306,15 +306,23 @@ def _search_case(case, inputs, reference, runs: int, max_configs: int) -> dict:
     correct_entries = []
     failures = []
     output_hashes: dict[str, list] = {}
+
+    def _execute_config(config):
+        """One materialized run + frozen comparison; hashes correct outputs when
+        the case declares the bit-exact invariant. Shared by the deployment loop
+        and the research-space invariant sweep below."""
+        output = case.run(inputs, config)
+        jax.block_until_ready(output)
+        correct, detail = _compare(case, output, reference)
+        if correct and bitexact:
+            output_hashes.setdefault(
+                _hash_tree(case.check_out(output)), []
+            ).append(config)
+        return correct, detail
+
     for index, config in enumerate(configs, 1):
         try:
-            output = case.run(inputs, config)
-            jax.block_until_ready(output)
-            correct, detail = _compare(case, output, reference)
-            if correct and bitexact:
-                output_hashes.setdefault(
-                    _hash_tree(case.check_out(output)), []
-                ).append(config)
+            correct, detail = _execute_config(config)
         except Exception as error:  # noqa: BLE001
             correct = False
             detail = f"{type(error).__name__}: {str(error)[:120]}"
@@ -345,18 +353,13 @@ def _search_case(case, inputs, reference, runs: int, max_configs: int) -> dict:
         for config in research_configs:
             if config in configs:
                 continue                    # already executed + hashed above
-            output = case.run(inputs, config)
-            jax.block_until_ready(output)
-            correct, detail = _compare(case, output, reference)
+            correct, detail = _execute_config(config)
             if not correct:
                 raise ValueError(
                     f"{case.case_id} violates its BITEXACT_INVARIANT contract: "
                     f"research config {config} is not even allclose-correct "
                     f"({detail}) though the axes are declared config-independent"
                 )
-            output_hashes.setdefault(
-                _hash_tree(case.check_out(output)), []
-            ).append(config)
     if bitexact and len(output_hashes) > 1:
         # The frozen refs contract declares this kernel's knobs config-independent
         # (pure data movement): any bit-level divergence across correct configs is a
