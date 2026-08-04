@@ -13,6 +13,7 @@ from akt.core.evolve.action_catalog import (
     action_semantic_record,
     action_catalog_context,
     load_action_graph,
+    load_frontier_catalog,
 )
 from akt.core.evolve.capability_contract import (
     _argument_forwarding_path,
@@ -703,3 +704,258 @@ def test_static_only_precheck_skips_exactly_the_eval_dependent_legs():
         "newly elevated runner controls" in error for error in static_exposure["errors"]
     )
     assert set(static_exposure["errors"]) <= set(full_exposure["errors"])
+
+
+# ----------------------------- NOVEL-algorithm proposals (flexgraph interface)
+
+
+def _frontier_slot():
+    """Pick a real frontier slot from the live graph (prefer the simple_gla family)."""
+    frontier = load_frontier_catalog(ROOT)
+    assert frontier, "the generated graph carries no frontier slots"
+    for slot in frontier.values():
+        if slot.get("family") == "simple_gla":
+            return slot
+    return next(iter(frontier.values()))
+
+
+def _novel_manifest(name="novel_frontier_variant"):
+    context = action_catalog_context(ROOT)
+    slot = _frontier_slot()
+    gap_id = slot["gap_id"]
+    evidence_path = str(slot["evidence"]).rsplit(":", 1)[0]
+    proposed = {
+        # Graph-owned fields: copied verbatim from the frontier slot template.
+        "gap_id": gap_id,
+        "family": slot["family"],
+        "kernel_ids": sorted(slot["kernel_ids"]),
+        "source_axis": slot["source_axis"],
+        "source_function": slot["source_function"],
+        "incumbent_value": slot["incumbent_value"],
+        "candidate_values": list(slot["candidate_values"]),
+        "category": slot["category"],
+        "model_callsites": sorted(slot["model_callsites"]),
+        "action_edge": dict(slot["action_edge"]),
+        # Oracle-owned fields: the implementation's mined sink and evidence line.
+        "source_sink": {
+            "assignments": ["use_variant_path"],
+            "expression_asts": {
+                "use_variant_path": _expression_ast(slot["source_axis"])
+            },
+        },
+        "source_evidence": {
+            "path": evidence_path,
+            "line": 0,
+            "detail": "novel schedule variant implemented behind the frontier toggle",
+        },
+    }
+    callsite = sorted(slot["model_callsites"])[0]
+    return {
+        "name": name,
+        "action_graph_fingerprint": context["fingerprint"],
+        "gap_id": gap_id,
+        "proposed_action": proposed,
+        "estimate": {
+            "model": callsite.split("/", 1)[0],
+            "callsite": callsite,
+            "baseline_share_pct": 25.0,
+            "expected_relief_pct": 4.0,
+            "reasoning": "The slot's dominant callsite carries this kernel's trace share.",
+        },
+        "search_dimensions": [
+            {
+                "control": f"{sorted(slot['kernel_ids'])[0]}.{slot['source_axis']}",
+                "kernel_function": slot["source_function"],
+                "consumer": (
+                    "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+                ),
+            }
+        ],
+    }
+
+
+def test_novel_proposed_action_validates_in_the_flexgraph_interface():
+    manifest = _novel_manifest()
+    slot = _frontier_slot()
+    proposed, errors = capability_contract.validate_proposed_action(manifest, ROOT)
+    assert errors == []
+    assert proposed["gap_id"] == manifest["gap_id"] == slot["gap_id"]
+
+    reference = validate_action_reference(manifest, ROOT)
+    assert reference["ok"] is True
+    assert reference["novel"] is True
+    gap = reference["gap"]
+    evidence_path = str(slot["evidence"]).rsplit(":", 1)[0]
+    assert gap["evidence"] == f"{evidence_path}:0"
+    assert gap["existing_low_level_proven"] is False
+
+    _reference, dimensions, dim_errors = capability_contract.derive_search_dimensions(
+        manifest, ROOT, reference
+    )
+    assert dim_errors == []
+    assert dimensions[0]["default"] == slot["incumbent_value"]
+    assert type(dimensions[0]["default"]) is type(slot["incumbent_value"])
+    assert dimensions[0]["candidate_values"] == list(slot["candidate_values"])
+    assert dimensions[0]["source_function"] == slot["source_function"]
+
+
+def test_novel_proposal_cannot_shadow_an_existing_finding():
+    manifest = _novel_manifest()
+    gap_id = "fused_moe/v2:interleave_bt:schedule-toggle"
+    proposed = dict(
+        manifest["proposed_action"],
+        gap_id=gap_id,
+        family="fused_moe/v2",
+        source_axis="interleave_bt",
+        kernel_ids=["moe_v2"],
+        source_function="fused_ep_moe_v2",
+        incumbent_value=True,
+        candidate_values=[True, False],
+        source_evidence={
+            "path": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py",
+            "line": 0,
+            "detail": "shadowing attempt",
+        },
+        model_callsites=["tiny-moe-serving/expert-v2"],
+        action_edge={"source": f"action:{gap_id}", "target": "pallas:dma_start"},
+        source_sink={
+            "assignments": ["use_gather_bank"],
+            "expression_asts": {"use_gather_bank": _expression_ast("interleave_bt")},
+        },
+    )
+    manifest.update(gap_id=gap_id, proposed_action=proposed)
+    _proposed, errors = capability_contract.validate_proposed_action(manifest, ROOT)
+    # An existing finding's gap_id is rejected either by the finding-collision
+    # check or by frontier membership (it can never be an open frontier slot).
+    assert any(
+        "collides with an existing source finding" in error
+        or "is not a frontier slot" in error
+        for error in errors
+    )
+
+
+def test_novel_proposal_shape_is_fail_closed():
+    manifest = _novel_manifest()
+    slot = _frontier_slot()
+
+    truncated = dict(manifest, proposed_action={"gap_id": manifest["gap_id"]})
+    _proposed, errors = capability_contract.validate_proposed_action(truncated, ROOT)
+    assert any("must contain exactly" in error for error in errors)
+
+    mismatched = dict(manifest, gap_id="simple_gla:something_else:schedule-toggle")
+    _proposed, errors = capability_contract.validate_proposed_action(mismatched, ROOT)
+    assert any("must equal proposed_action.gap_id" in error for error in errors)
+
+    # Template drift: a graph-owned field that disagrees with the frontier slot
+    # is a fail-closed mismatch naming the drifted field.
+    drifted = dict(
+        manifest,
+        proposed_action=dict(
+            manifest["proposed_action"],
+            candidate_values=list(slot["candidate_values"]) + ["extra"],
+        ),
+    )
+    _proposed, errors = capability_contract.validate_proposed_action(drifted, ROOT)
+    assert any(
+        "proposed_action.candidate_values" in error and "frontier slot" in error
+        for error in errors
+    )
+
+    # Non-frontier: a well-formed proposal (valid derivation, no collision with a
+    # mined finding) whose gap_id is not a frontier slot fails membership.
+    invented_axis = "enable_totally_invented_variant"
+    invented_gap_id = f"{slot['family']}:{invented_axis}:schedule-toggle"
+    invented = dict(
+        manifest["proposed_action"],
+        gap_id=invented_gap_id,
+        source_axis=invented_axis,
+        action_edge={
+            "source": f"action:{invented_gap_id}",
+            "target": slot["action_edge"]["target"],
+        },
+        source_sink={
+            "assignments": ["use_variant_path"],
+            "expression_asts": {"use_variant_path": _expression_ast(invented_axis)},
+        },
+    )
+    non_frontier = dict(manifest, gap_id=invented_gap_id, proposed_action=invented)
+    _proposed, errors = capability_contract.validate_proposed_action(non_frontier, ROOT)
+    assert any("is not a frontier slot" in error for error in errors)
+    assert not any("collides with an existing source finding" in error for error in errors)
+
+
+def test_novel_access_mode_requires_a_genuinely_new_axis(monkeypatch):
+    """A synthetic NOVEL reference whose axis already exists in the incumbent
+    low-level source must fail both prior-inaccessibility legs. The real
+    reference path can no longer reach this branch with a fabricated
+    non-frontier gap, so the action reference is monkeypatched."""
+    gap_id = "simple_gla:chunk_size:schedule-toggle"
+    callsites = ["tiny-linear-serving/gla-long", "tiny-linear-serving/gla-short"]
+    kernel_path = "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py"
+    gap = {
+        "gap_id": gap_id,
+        "family": "simple_gla",
+        "kernel_ids": ["gla"],
+        "source_axis": "chunk_size",
+        "source_function": "simple_gla_fwd",
+        "category": "schedule-toggle",
+        "incumbent_value": 64,
+        "candidate_values": [64, 2048],
+        "evidence": f"{kernel_path}:0",
+        "model_callsites": callsites,
+        "existing_low_level_proven": False,
+    }
+    reference = {
+        "ok": True,
+        "novel": True,
+        "gap_id": gap_id,
+        "gap": gap,
+        "action_edge": {"source": f"action:{gap_id}", "target": "pallas:dot_general"},
+        "action_graph_fingerprint": "x",
+        "source_evidence": {
+            "path": kernel_path,
+            "line": 0,
+            "detail": "synthetic novel reference",
+        },
+        "affected_model_callsites": callsites,
+        "errors": [],
+    }
+    monkeypatch.setattr(
+        capability_contract,
+        "validate_action_reference",
+        lambda _manifest, _repo: reference,
+    )
+    manifest = {
+        "name": "gla_chunk_size_variant",
+        "action_graph_fingerprint": "x",
+        "gap_id": gap_id,
+        "estimate": {
+            "model": "tiny-linear-serving",
+            "callsite": "tiny-linear-serving/gla-long",
+            "baseline_share_pct": 25.0,
+            "expected_relief_pct": 4.0,
+            "reasoning": "The long GLA prefill dominates the linear trace.",
+        },
+        "search_dimensions": [
+            {
+                "control": "gla.chunk_size",
+                "kernel_function": "simple_gla_fwd",
+                "consumer": (
+                    "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+                ),
+            }
+        ],
+    }
+    result = validate_capability_contract(
+        manifest, {}, ROOT, _head(), static_only=True
+    )
+    assert result["ok"] is False
+    assert result["access_modes"].get("gla.chunk_size") == "novel-algorithm"
+    assert any(
+        "declared novel but" in error and "already accepted this argument at the incumbent commit" in error
+        for error in result["errors"]
+    )
+    assert any(
+        "already appears in the incumbent low-level source" in error
+        for error in result["errors"]
+    )

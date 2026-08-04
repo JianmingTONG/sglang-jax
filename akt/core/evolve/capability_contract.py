@@ -10,12 +10,36 @@ import subprocess
 from collections import deque
 
 from akt.benchmark.model_workloads import callsite_inventory
-from akt.core.evolve.action_catalog import action_catalog_context, load_action_catalog
+from akt.core.evolve.action_catalog import (
+    MINABLE_INTERFACE_CATEGORIES,
+    action_catalog_context,
+    load_action_catalog,
+    load_action_graph,
+    load_frontier_catalog,
+    source_sink_errors,
+)
 
 
 CONTROL_CONFIG = "python/sgl_jax/srt/configs/kernel_control.py"
 _CONTROL_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 _DIMENSION_FIELDS = {"control", "kernel_function", "consumer"}
+# A novel-algorithm declaration is the exact record the extractor itself mines:
+# closure later compares the regenerated graph's finding against these fields.
+_PROPOSED_ACTION_FIELDS = {
+    "gap_id",
+    "family",
+    "kernel_ids",
+    "source_axis",
+    "source_function",
+    "source_sink",
+    "incumbent_value",
+    "candidate_values",
+    "category",
+    "source_evidence",
+    "model_callsites",
+    "action_edge",
+}
+_KERNEL_SOURCE_PREFIX = "python/sgl_jax/srt/kernels/"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -368,8 +392,268 @@ def _eval_dimensions(eval_summary: dict, capability: str) -> dict[str, list[dict
     return by_control
 
 
+def _typed_value_key(value) -> str:
+    return f"{type(value).__name__}:{json.dumps(value, sort_keys=True, separators=(',', ':'))}"
+
+
+def validate_proposed_action(manifest: dict, repo: Path) -> tuple[dict, list[str]]:
+    """Validate a NOVEL-algorithm declaration against the unified action interface.
+
+    The oracle picks a ``gap_id`` from ONE canonical catalog with two sources:
+
+    - flexgraph red-link actions — flexibilities that already exist in the
+      low-level source but are not yet programmer-exposed (ELEVATE mode; no
+      ``proposed_action`` record);
+    - frontier slots — mechanically derived, not-yet-considered flexibilities
+      the generated graph templates ahead of any implementation (NOVEL mode).
+
+    A proposal may invent a new low-level algorithm only by foreign-keying a
+    frontier slot: ``proposed_action.gap_id`` must be a key of
+    ``load_frontier_catalog(repo)``, and every GRAPH-OWNED field of the record
+    (family, kernel_ids, source_axis, source_function, category, typed
+    incumbent_value, typed candidate_values, model_callsites, evidence path,
+    action_edge) must equal the slot template exactly. The ORACLE-OWNED fields —
+    ``source_sink``, the evidence line, and the detail text — are supplied by the
+    implementation. The anchored record is the round's graph authority; graph
+    closure later proves the regenerated graph mined the same finding
+    programmer-exposed with exactly these semantics.
+    """
+
+    errors: list[str] = []
+    proposed = manifest.get("proposed_action")
+    if not isinstance(proposed, dict):
+        return {}, ["proposed_action must be an object"]
+    if set(proposed) != _PROPOSED_ACTION_FIELDS:
+        return {}, [
+            f"proposed_action must contain exactly {sorted(_PROPOSED_ACTION_FIELDS)}"
+        ]
+
+    family = proposed.get("family")
+    source_axis = proposed.get("source_axis")
+    category = proposed.get("category")
+    gap_id = proposed.get("gap_id")
+    if not isinstance(family, str) or not family:
+        errors.append("proposed_action.family must be a non-empty string")
+    if not isinstance(source_axis, str) or not source_axis.isidentifier():
+        errors.append("proposed_action.source_axis must be an identifier")
+    if category not in MINABLE_INTERFACE_CATEGORIES:
+        errors.append(
+            "proposed_action.category must be a minable flexgraph interface: "
+            f"{sorted(MINABLE_INTERFACE_CATEGORIES)}"
+        )
+    derived_gap_id = f"{family}:{source_axis}:{category}"
+    if gap_id != derived_gap_id:
+        errors.append(
+            "proposed_action.gap_id must follow the extractor derivation "
+            f"<family>:<source_axis>:<category>; expected {derived_gap_id!r}"
+        )
+    if manifest.get("gap_id") != gap_id:
+        errors.append("manifest gap_id must equal proposed_action.gap_id")
+
+    kernel_ids = proposed.get("kernel_ids")
+    if (
+        not isinstance(kernel_ids, list)
+        or not kernel_ids
+        or not all(isinstance(item, str) and item for item in kernel_ids)
+        or len(kernel_ids) != len(set(kernel_ids))
+    ):
+        errors.append("proposed_action.kernel_ids must be unique non-empty strings")
+
+    source_function = proposed.get("source_function")
+    if not isinstance(source_function, str) or not source_function.isidentifier():
+        errors.append("proposed_action.source_function must be an identifier")
+
+    incumbent_value = proposed.get("incumbent_value")
+    candidate_values = proposed.get("candidate_values")
+    if not isinstance(candidate_values, list) or len(candidate_values) < 2:
+        errors.append(
+            "proposed_action.candidate_values must be a finite domain of >=2 values"
+        )
+    else:
+        try:
+            encoded = [_typed_value_key(value) for value in candidate_values]
+        except (TypeError, ValueError):
+            errors.append("proposed_action.candidate_values must be JSON scalars")
+        else:
+            if len(encoded) != len(set(encoded)):
+                errors.append("proposed_action.candidate_values contains duplicates")
+            if not any(
+                type(value) is type(incumbent_value) and value == incumbent_value
+                for value in candidate_values
+            ):
+                errors.append(
+                    "proposed_action.candidate_values must contain the typed "
+                    "incumbent_value (the preserved incumbent algorithm)"
+                )
+
+    evidence = proposed.get("source_evidence")
+    if (
+        not isinstance(evidence, dict)
+        or set(evidence) != {"path", "line", "detail"}
+        or not isinstance(evidence.get("path"), str)
+        or not isinstance(evidence.get("line"), int)
+        or isinstance(evidence.get("line"), bool)
+        or evidence["line"] < 0
+        or not isinstance(evidence.get("detail"), str)
+    ):
+        errors.append(
+            "proposed_action.source_evidence must be {path, line, detail}"
+        )
+    else:
+        path = evidence["path"]
+        resolved = _safe_file(repo, path)
+        if not path.startswith(_KERNEL_SOURCE_PREFIX):
+            errors.append(
+                "proposed_action.source_evidence.path must name a production "
+                f"kernel source under {_KERNEL_SOURCE_PREFIX}"
+            )
+        elif resolved is None or not resolved.is_file():
+            errors.append(
+                f"proposed_action.source_evidence.path does not exist: {path!r}"
+            )
+
+    model_callsites = proposed.get("model_callsites")
+    inventory = callsite_inventory()
+    if (
+        not isinstance(model_callsites, list)
+        or not model_callsites
+        or len(model_callsites) != len(set(model_callsites))
+    ):
+        errors.append("proposed_action.model_callsites must be unique and non-empty")
+    else:
+        unknown = sorted(set(model_callsites) - set(inventory))
+        if unknown:
+            errors.append(
+                f"proposed_action.model_callsites are not frozen callsites: {unknown}"
+            )
+
+    edge = proposed.get("action_edge")
+    if (
+        not isinstance(edge, dict)
+        or set(edge) != {"source", "target"}
+        or edge.get("source") != f"action:{gap_id}"
+        or not isinstance(edge.get("target"), str)
+        or not edge["target"].startswith("pallas:")
+    ):
+        errors.append(
+            "proposed_action.action_edge must be "
+            f"{{source: 'action:{gap_id}', target: 'pallas:<primitive>'}}"
+        )
+
+    errors.extend(
+        f"proposed_action.source_sink: {message}"
+        for message in source_sink_errors(category, proposed.get("source_sink"), source_axis)
+    )
+
+    try:
+        graph, _catalog = load_action_graph(repo)
+    except Exception as error:  # noqa: BLE001
+        errors.append(f"cannot load incumbent graph for collision check: {error}")
+    else:
+        existing = {
+            item.get("gap_id")
+            for item in graph.get("gaps") or []
+            if isinstance(item, dict)
+        }
+        if gap_id in existing:
+            errors.append(
+                f"proposed_action.gap_id {gap_id!r} collides with an existing source "
+                "finding; select the existing action instead of declaring it novel"
+            )
+
+    try:
+        frontier = load_frontier_catalog(repo)
+    except Exception as error:  # noqa: BLE001
+        errors.append(f"cannot load frontier catalog for novel anchoring: {error}")
+    else:
+        slot = frontier.get(gap_id)
+        if not isinstance(slot, dict):
+            errors.append(
+                f"proposed_action.gap_id {gap_id!r} is not a frontier slot: a novel "
+                "algorithm must select an unconsidered-flexibility slot from the "
+                "frontier catalog (the same gap_id interface as red-link actions)"
+            )
+        else:
+            errors.extend(_frontier_template_errors(proposed, slot, gap_id))
+    return proposed, errors
+
+
+def _frontier_template_errors(proposed: dict, slot: dict, gap_id) -> list[str]:
+    """Compare the GRAPH-OWNED fields of a novel proposal against its frontier slot.
+
+    Graph-owned (must equal the slot template exactly): family, sorted
+    kernel_ids, source_axis, source_function, category, typed incumbent_value,
+    typed candidate_values sequence, sorted model_callsites, evidence path, and
+    action_edge source/target. Oracle-owned (free to differ): source_sink, the
+    evidence line, and the detail text.
+    """
+
+    errors: list[str] = []
+
+    def _mismatch(field: str, slot_value, declared_value) -> None:
+        errors.append(
+            f"proposed_action.{field} does not match the graph-owned frontier slot "
+            f"template for {gap_id!r}: slot={slot_value!r}, declared={declared_value!r}"
+        )
+
+    for field in ("family", "source_axis", "source_function", "category"):
+        if proposed.get(field) != slot.get(field):
+            _mismatch(field, slot.get(field), proposed.get(field))
+
+    kernel_ids = proposed.get("kernel_ids")
+    slot_kernel_ids = sorted(str(item) for item in slot.get("kernel_ids") or [])
+    if isinstance(kernel_ids, list) and all(
+        isinstance(item, str) for item in kernel_ids
+    ):
+        if sorted(kernel_ids) != slot_kernel_ids:
+            _mismatch("kernel_ids", slot_kernel_ids, sorted(kernel_ids))
+
+    if not _same_typed_value(proposed.get("incumbent_value"), slot.get("incumbent_value")):
+        _mismatch(
+            "incumbent_value", slot.get("incumbent_value"), proposed.get("incumbent_value")
+        )
+
+    candidate_values = proposed.get("candidate_values")
+    if isinstance(candidate_values, list) and not _same_typed_values(
+        candidate_values, slot.get("candidate_values")
+    ):
+        _mismatch(
+            "candidate_values", slot.get("candidate_values"), candidate_values
+        )
+
+    model_callsites = proposed.get("model_callsites")
+    slot_callsites = sorted(str(item) for item in slot.get("model_callsites") or [])
+    if isinstance(model_callsites, list):
+        declared_callsites = sorted(str(item) for item in model_callsites)
+        if declared_callsites != slot_callsites:
+            _mismatch("model_callsites", slot_callsites, declared_callsites)
+
+    evidence = proposed.get("source_evidence")
+    slot_path = _source_evidence(slot)["path"]
+    if isinstance(evidence, dict) and isinstance(evidence.get("path"), str):
+        if evidence["path"] != slot_path:
+            _mismatch("source_evidence.path", slot_path, evidence["path"])
+
+    edge = proposed.get("action_edge")
+    slot_edge = slot.get("action_edge") or {}
+    if isinstance(edge, dict):
+        for key in ("source", "target"):
+            if edge.get(key) != slot_edge.get(key):
+                _mismatch(f"action_edge.{key}", slot_edge.get(key), edge.get(key))
+    return errors
+
+
 def validate_action_reference(manifest: dict, repo: Path) -> dict:
-    """Validate a proposal foreign key before any target-hardware evaluation."""
+    """Validate a proposal foreign key before any target-hardware evaluation.
+
+    Two admissible modes over one canonical gap_id catalog:
+    - ELEVATE: ``gap_id`` foreign-keys one executable red-link action in the
+      incumbent generated graph (an existing-but-not-exposed flexibility).
+    - NOVEL: the manifest carries a ``proposed_action`` record foreign-keying a
+      frontier slot (a not-yet-considered flexibility) through the exact same
+      flexgraph action interface; the anchored record (not the incumbent
+      red-link catalog) supplies the graph-owned fields.
+    """
 
     errors = []
     try:
@@ -386,17 +670,35 @@ def validate_action_reference(manifest: dict, repo: Path) -> dict:
         )
 
     gap_id = manifest.get("gap_id")
-    gap = catalog.get(gap_id)
-    if gap is None:
-        errors.append(
-            f"gap_id {gap_id!r} is not an executable red-link action in the generated graph"
-        )
+    novel = manifest.get("proposed_action") is not None
+    if novel:
+        proposed, proposal_errors = validate_proposed_action(manifest, repo)
+        errors.extend(proposal_errors)
         gap = {}
+        if proposed and not proposal_errors:
+            evidence = proposed["source_evidence"]
+            gap = {
+                **proposed,
+                "evidence": f"{evidence['path']}:{evidence['line']}",
+                "detail": evidence.get("detail") or "",
+                "existing_low_level_proven": False,
+            }
+    else:
+        gap = catalog.get(gap_id)
+        if gap is None:
+            errors.append(
+                f"gap_id {gap_id!r} is not an executable red-link action nor a "
+                "frontier slot selectable without a declaration; an invented "
+                "algorithm must foreign-key a frontier slot AND declare "
+                "proposed_action in the flexgraph interface"
+            )
+            gap = {}
 
     expected_evidence = _source_evidence(gap) if gap else None
     affected = sorted(set(gap.get("model_callsites") or []))
     return {
         "ok": not errors,
+        "novel": novel,
         "gap_id": gap_id,
         "gap": gap,
         "action_edge": gap.get("action_edge") if gap else None,
@@ -524,6 +826,7 @@ def validate_capability_contract(
     capability = manifest.get("name")
     gap_id = action_reference.get("gap_id")
     gap = action_reference.get("gap") or {}
+    novel = action_reference.get("novel") is True
     action_graph_fingerprint = action_reference.get("action_graph_fingerprint")
     expected_evidence = action_reference.get("source_evidence")
     affected = action_reference.get("affected_model_callsites") or []
@@ -681,13 +984,34 @@ def validate_capability_contract(
                                 f"incumbent {default!r}"
                             )
         access_mode = (
-            "existing-backend-argument" if old_has else "existing-low-level-axis"
+            "novel-algorithm"
+            if novel
+            else "existing-backend-argument" if old_has else "existing-low-level-axis"
         )
         access_modes[control] = access_mode
-        if access_mode == "existing-low-level-axis":
+        if access_mode == "novel-algorithm":
+            # An invented algorithm must be genuinely new: neither the entry
+            # argument nor the axis name may exist at the incumbent commit
+            # (otherwise the round must select/elevate the existing action).
+            if old_has:
+                errors.append(
+                    f"{control} is declared novel but {kernel_function} already "
+                    "accepted this argument at the incumbent commit"
+                )
+            allowed_axes = dimension["allowed_axes"]
+            if old_source is not None and any(
+                name in old_source for name in allowed_axes
+            ):
+                errors.append(
+                    f"{control} is declared novel but its axis already appears in "
+                    "the incumbent low-level source; select the existing action"
+                )
+        elif access_mode == "existing-low-level-axis":
             if not gap.get("existing_low_level_proven"):
                 errors.append(
-                    f"{control} cannot invent a backend behavior from an unproven graph finding"
+                    f"{control} cannot claim an existing backend behavior from an "
+                    "unproven graph finding; a genuinely new algorithm must be "
+                    "declared via proposed_action in the flexgraph interface"
                 )
             allowed_axes = dimension["allowed_axes"]
             if old_source is None or not any(name in old_source for name in allowed_axes):
@@ -723,6 +1047,7 @@ def validate_capability_contract(
     return {
         "ok": not errors,
         "static_only": static_only,
+        "novel": novel,
         "gap_id": gap_id,
         "gap": gap,
         "action_edge": action_reference.get("action_edge"),
@@ -894,5 +1219,6 @@ __all__ = [
     "derive_search_dimensions",
     "validate_action_reference",
     "validate_capability_contract",
+    "validate_proposed_action",
     "validate_space_extension",
 ]

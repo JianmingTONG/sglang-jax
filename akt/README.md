@@ -1,14 +1,28 @@
 # AKT capability-elevation loop
 
-AKT exposes source-proven, already-existing TPU kernel choices through the serving
-stack. A round may add the control-plane plumbing needed to name an existing choice
-(`KernelControlPolicy`, a production forwarding path, and planner metadata), but it
-may not introduce a new low-level algorithm, kernel path, schedule mode, or semantic
-behavior.
+AKT exposes TPU kernel choices through the serving stack. The flexibility graph
+mines TWO lists into ONE canonical interface under ONE fingerprint: red-link
+ACTIONS (`access: "existing"`) — source-proven, already-existing low-level
+selection points not exposed to programmers — and FRONTIER SLOTS
+(`access: "frontier"`) — mechanically derived flexibilities not yet considered,
+one per Pallas-launch-owning function in an in-suite family. The graph tells us
+what exists but is not exposed; the frontier tells us what has not been
+considered; both arrive in the same action contract, so the oracle does not treat
+them as different kinds — it picks one `gap_id` from one catalog.
+
+A round either ELEVATES a red-link action — adding the control-plane plumbing
+needed to name it (`KernelControlPolicy`, a production forwarding path, and
+planner metadata) — or fills a FRONTIER SLOT with a NOVEL algorithm/variant: the
+manifest foreign-keys the slot's `gap_id`, its `proposed_action` COMPLETES the
+slot record, the implementation sits strictly behind the slot's prescribed axis
+whose default preserves the incumbent algorithm bit-exactly, and the frozen
+extractor must rediscover the finding in the regenerated graph with exactly the
+declared semantics.
 
 The flexibility graph is the oracle's authorization boundary, not a performance
 oracle. The LLM still ranks actions and writes the implementation; the graph limits
-that work to fingerprinted source findings and the gate decides with measurements.
+elevation to fingerprinted source findings, confines invention to the graph's own
+mined frontier slots, and the gate decides with measurements.
 
 ## Quick start
 
@@ -69,19 +83,25 @@ separate live-model gate conditionally runs the actual
 1. `adapter.py bottleneck` reports the latest model/callsite timing and selected
    plans. `adapter.py gaps` reports the complete executable graph action catalog.
 2. The oracle receives both the human-readable report and a structured action
-   contract containing version, target stack, actions, and SHA-256 fingerprint. The
-   checked-in v2 graph currently has five source-proven actions.
-3. A proposal selects one `gap_id` under the complete graph fingerprint. Source
-   evidence, axis, family, incumbent value, finite candidate domain, semantic sink,
-   and affected callsites are derived from that foreign key rather than copied into
-   the manifest.
+   contract containing version, target stack, red-link actions, frontier slots
+   (`frontier_actions`), and one SHA-256 fingerprint over both. The checked-in v2
+   graph currently has five source-proven actions.
+3. A proposal selects one `gap_id` under the complete graph fingerprint — a
+   red-link action (ELEVATE) or a frontier slot (NOVEL); the two sources share one
+   contract, so the oracle never treats them differently. Source evidence, axis,
+   family, incumbent value, finite candidate domain, semantic sink, and affected
+   callsites are derived from that foreign key rather than copied into the
+   manifest; a frontier round's `proposed_action` completes the slot record,
+   authoring only the source sink, evidence line, and detail.
 4. The implementation exposes that existing axis through a production consumer,
    `KernelControlPolicy`, a runner `Knob`, and planner metadata. A newly added backend
    argument is allowed only as forwarding for the exact hardcoded source axis, with
    the incumbent behavior preserved as its default.
-5. The extractor regenerates a candidate graph. The selected action must be closed
-   or marked programmer-exposed; unrelated actions may not disappear, appear, or
-   change semantics.
+5. The extractor regenerates a candidate graph. A selected red-link action must be
+   closed or marked programmer-exposed; a selected frontier slot must no longer be
+   emitted while its finding is mined under the same `gap_id`; unrelated red-link
+   actions and unrelated frontier slots may not disappear, appear, or change
+   semantics.
 6. Every valid *deployable* local configuration is correctness-checked and timed on
    TPU. Runner-only benchmark knobs are held at their defaults; adding a stable
    `programmer_control` is what expands their existing values into the serving search.
@@ -131,7 +151,15 @@ PYTHONPATH=python:. .venv/bin/python akt/benchmark/adapter.py gaps
 ```
 
 The extractor scans the Pallas kernel sources and installed Pallas-to-Mosaic
-lowering registry. The oracle receives a canonical context shaped like:
+lowering registry. It mines two lists into one context: red-link `actions`
+(`access: "existing"`, already-existing selection points) and top-level
+`frontier_actions` (`access: "frontier"`, not-yet-considered flexibilities) — one
+slot per Pallas-launch-owning function in an in-suite family, gap_id
+`<family>:enable_<fn>_variant:schedule-toggle`, prescribed axis name, category
+`schedule-toggle`, incumbent `false`, domain `[false, true]`, evidence at the
+launch site, callsites from the frozen workloads. A slot is where a NEW
+algorithm/variant may be introduced. The oracle receives a canonical context
+shaped like:
 
 ```json
 {
@@ -143,6 +171,7 @@ lowering registry. The oracle receives a canonical context shaped like:
   "actions": [
     {
       "gap_id": "fused_moe/v2:interleave_bt:schedule-toggle",
+      "access": "existing",
       "family": "fused_moe/v2",
       "kernel_ids": ["moe_v2"],
       "source_axis": "interleave_bt",
@@ -166,42 +195,83 @@ lowering registry. The oracle receives a canonical context shaped like:
       }
     }
   ],
-  "fingerprint": "<sha256-of-the-complete-canonical-context>"
+  "frontier_actions": [
+    {
+      "gap_id": "simple_gla:enable_simple_gla_fwd_variant:schedule-toggle",
+      "access": "frontier",
+      "family": "simple_gla",
+      "kernel_ids": ["gla"],
+      "source_axis": "enable_simple_gla_fwd_variant",
+      "source_function": "simple_gla_fwd",
+      "category": "schedule-toggle",
+      "incumbent_value": false,
+      "candidate_values": [false, true],
+      "source_evidence": {
+        "path": "python/sgl_jax/srt/kernels/simple_gla/kernel.py",
+        "line": 118,
+        "detail": "pallas_call launch site"
+      },
+      "model_callsites": ["tiny-linear-serving/gla-long"],
+      "action_edge": {
+        "source": "action:simple_gla:enable_simple_gla_fwd_variant:schedule-toggle",
+        "target": "pallas:pallas_call"
+      }
+    }
+  ],
+  "fingerprint": "<sha256-of-the-complete-canonical-context-both-lists>"
 }
 ```
 
 The red edge target is extractor category context, not proof that the named source
 axis data-flows to that lowering primitive; source/sink validation and measurement
 provide the enforceable evidence. The
-fingerprint covers the complete ordered action context, so changing any action's
-family, axis, source function/sink, incumbent/domain, evidence, callsites, or edge
-changes the manifest namespace. Campaign
-state pins the fingerprint; `run` refuses stale graph state.
+fingerprint covers the complete ordered two-source context — red-link actions and
+frontier slots alike — so changing any entry's family, axis, source function/sink,
+incumbent/domain, evidence, callsites, or edge changes the manifest namespace.
+Campaign state pins the fingerprint; `run` refuses stale graph state.
 
 Only findings that are source-proven to exist, covered by the frozen model gate, open,
 bound to an exact live call argument or normalized assignment expression, and not already programmer-exposed receive red
 action links. The checked-in graph has 22 visible findings but only five executable v2
 actions. Dead or missing tuning tables and numeric-representation toggles remain
-analysis-only, as do other opportunities and hidden compiler boundaries; none
-authorizes the oracle to invent behavior.
+analysis-only, as do other opportunities and hidden compiler boundaries; none is
+itself authorization to elevate. Invention does not flow from these findings either:
+a NOVEL algorithm is authorized only by a mined frontier slot — the manifest
+foreign-keys the slot's `gap_id` and its `proposed_action` completes the slot
+record — never by an analysis-only finding.
 
 Before evaluation, AKT regenerates the post-implementation graph in a temporary
 location and proves that exactly the selected action closes in the source-mined
-catalog, with no unrelated action removed or introduced. After KEEP, that already
-validated graph and its new fingerprint become the next round's pinned context.
+catalog, with no unrelated action removed or introduced. A NOVEL round must
+additionally show (i) the selected frontier slot no longer emitted — the axis now
+exists — (ii) the declared finding mined under the same `gap_id`,
+programmer-exposed, field-for-field equal to the declaration, and (iii) unrelated
+red-link actions and unrelated frontier slots outside the selected family
+preserved. After KEEP, that already validated graph and its new fingerprint become
+the next round's pinned context.
 
 ## Capability versus tuning
 
-A valid round can expose either:
+A valid round can expose one of:
 
 - an explicit backend argument that already existed but lacked stable programmer
-  access (`existing-backend-argument`); or
+  access (`existing-backend-argument`);
 - an existing literal/derived low-level axis that must be lifted into an entry
-  argument solely for forwarding (`existing-low-level-axis`).
+  argument solely for forwarding (`existing-low-level-axis`); or
+- a NEW algorithm/kernel variant filling a mined FRONTIER SLOT
+  (`novel-algorithm`): the manifest foreign-keys the slot's `gap_id` and its
+  `proposed_action` completes the slot record — graph-owned fields must equal the
+  slot; the oracle authors only the source sink, evidence line, and detail.
+  Neither the entry argument nor the axis may exist at the incumbent commit, the
+  incumbent algorithm remains the exact default (output-hash pinned), and graph
+  closure requires the slot to vanish and the extractor to mine the new axis
+  programmer-exposed with exactly the declared semantics.
 
-Both modes may add a serving API field and forwarding code. Neither authorizes a new
-algorithm or a replacement low-level abstraction. Changing defaults, widening an
-already exposed control, or adding only a benchmark knob is tuning and cannot pass.
+All modes may add a serving API field and forwarding code. Invention outside a
+mined frontier slot — a `gap_id` that is not a current slot, a variant not mined by
+the extractor, a replaced default path, or a declaration drifting from the slot —
+fails closed. Changing defaults, widening an already exposed control, or adding
+only a benchmark knob is tuning and cannot pass.
 
 The stable API is
 [`KernelControlPolicy`](../python/sgl_jax/srt/configs/kernel_control.py). It is shape-

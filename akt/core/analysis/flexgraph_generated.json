@@ -3961,6 +3961,437 @@
    "count": 6
   }
  },
+ "frontier_actions": [
+  {
+   "gap_id": "fused_mlp:enable_local_fused_mlp_variant:schedule-toggle",
+   "family": "fused_mlp",
+   "kernel_ids": [
+    "fused_mlp"
+   ],
+   "source_axis": "enable_local_fused_mlp_variant",
+   "source_function": "local_fused_mlp",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/fused_mlp.py:158",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the local_fused_mlp Pallas launch, selectable behind a new enable_local_fused_mlp_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-dense-serving/dense-mlp",
+    "tiny-moe-serving/expert-mlp"
+   ],
+   "action_edge": {
+    "source": "action:fused_mlp:enable_local_fused_mlp_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "fused_moe/v1:enable_fused_ep_moe_variant:schedule-toggle",
+   "family": "fused_moe/v1",
+   "kernel_ids": [
+    "moe_v1"
+   ],
+   "source_axis": "enable_fused_ep_moe_variant",
+   "source_function": "fused_ep_moe",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/fused_moe/v1/kernel.py:3589",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the fused_ep_moe Pallas launch, selectable behind a new enable_fused_ep_moe_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-moe-serving/expert-v1"
+   ],
+   "action_edge": {
+    "source": "action:fused_moe/v1:enable_fused_ep_moe_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "fused_moe/v2:enable_fused_ep_moe_v2_variant:schedule-toggle",
+   "family": "fused_moe/v2",
+   "kernel_ids": [
+    "moe_v2"
+   ],
+   "source_axis": "enable_fused_ep_moe_v2_variant",
+   "source_function": "fused_ep_moe_v2",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:2635",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the fused_ep_moe_v2 Pallas launch, selectable behind a new enable_fused_ep_moe_v2_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "action_edge": {
+    "source": "action:fused_moe/v2:enable_fused_ep_moe_v2_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "kda:enable_chunk_local_cumsum_vector_variant:schedule-toggle",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "source_axis": "enable_chunk_local_cumsum_vector_variant",
+   "source_function": "chunk_local_cumsum_vector",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:252",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the chunk_local_cumsum_vector Pallas launch, selectable behind a new enable_chunk_local_cumsum_vector_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "action_edge": {
+    "source": "action:kda:enable_chunk_local_cumsum_vector_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "source_axis": "enable_kda_fwd_intra_variant",
+   "source_function": "kda_fwd_intra",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:522",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the kda_fwd_intra Pallas launch, selectable behind a new enable_kda_fwd_intra_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "action_edge": {
+    "source": "action:kda:enable_kda_fwd_intra_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "kda:enable_chunk_gated_delta_rule_fwd_h_variant:schedule-toggle",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "source_axis": "enable_chunk_gated_delta_rule_fwd_h_variant",
+   "source_function": "chunk_gated_delta_rule_fwd_h",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:840",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the chunk_gated_delta_rule_fwd_h Pallas launch, selectable behind a new enable_chunk_gated_delta_rule_fwd_h_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "action_edge": {
+    "source": "action:kda:enable_chunk_gated_delta_rule_fwd_h_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "kda:enable_chunk_kda_fwd_o_gk_variant:schedule-toggle",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "source_axis": "enable_chunk_kda_fwd_o_gk_variant",
+   "source_function": "chunk_kda_fwd_o_gk",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:1059",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the chunk_kda_fwd_o_gk Pallas launch, selectable behind a new enable_chunk_kda_fwd_o_gk_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "action_edge": {
+    "source": "action:kda:enable_chunk_kda_fwd_o_gk_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "megablox_gmm_kernel:enable_gmm_variant:schedule-toggle",
+   "family": "megablox_gmm_kernel",
+   "kernel_ids": [
+    "gmm"
+   ],
+   "source_axis": "enable_gmm_variant",
+   "source_function": "gmm",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/gmm/megablox_gmm_kernel/gmm.py:572",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the gmm Pallas launch, selectable behind a new enable_gmm_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/input-projection",
+    "tiny-moe-serving/router-projection"
+   ],
+   "action_edge": {
+    "source": "action:megablox_gmm_kernel:enable_gmm_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "megablox_gmm_kernel:enable_gmm_v2_variant:schedule-toggle",
+   "family": "megablox_gmm_kernel",
+   "kernel_ids": [
+    "gmm_v2"
+   ],
+   "source_axis": "enable_gmm_v2_variant",
+   "source_function": "gmm_v2",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/gmm/megablox_gmm_kernel/gmm_v2.py:1041",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the gmm_v2 Pallas launch, selectable behind a new enable_gmm_v2_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-dense-serving/dense-projection"
+   ],
+   "action_edge": {
+    "source": "action:megablox_gmm_kernel:enable_gmm_v2_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "ragged_paged_attention:enable_ragged_paged_attention_variant:schedule-toggle",
+   "family": "ragged_paged_attention",
+   "kernel_ids": [
+    "rpa_v3"
+   ],
+   "source_axis": "enable_ragged_paged_attention_variant",
+   "source_function": "ragged_paged_attention",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/ragged_paged_attention/ragged_paged_attention.py:1655",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the ragged_paged_attention Pallas launch, selectable behind a new enable_ragged_paged_attention_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-dense-serving/paged-attention",
+    "tiny-moe-serving/paged-attention"
+   ],
+   "action_edge": {
+    "source": "action:ragged_paged_attention:enable_ragged_paged_attention_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "ragged_paged_attention:enable_run_rpa_kernel_variant:schedule-toggle",
+   "family": "ragged_paged_attention",
+   "kernel_ids": [
+    "rpa_v3"
+   ],
+   "source_axis": "enable_run_rpa_kernel_variant",
+   "source_function": "run_rpa_kernel",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/ragged_paged_attention/ragged_paged_attention_v3.py:1923",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the run_rpa_kernel Pallas launch, selectable behind a new enable_run_rpa_kernel_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-dense-serving/paged-attention",
+    "tiny-moe-serving/paged-attention"
+   ],
+   "action_edge": {
+    "source": "action:ragged_paged_attention:enable_run_rpa_kernel_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "source_axis": "enable_chunk_fwd_h_kernel_varlen_variant",
+   "source_function": "chunk_fwd_h_kernel_varlen",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:532",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the chunk_fwd_h_kernel_varlen Pallas launch, selectable behind a new enable_chunk_fwd_h_kernel_varlen_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "action_edge": {
+    "source": "action:simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "source_axis": "enable__chunk_fwd_o_pl_variant",
+   "source_function": "_chunk_fwd_o_pl",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:761",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the _chunk_fwd_o_pl Pallas launch, selectable behind a new enable__chunk_fwd_o_pl_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "action_edge": {
+    "source": "action:simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "simple_gla:enable__launch_decode_simple_gla_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "source_axis": "enable__launch_decode_simple_gla_variant",
+   "source_function": "_launch_decode_simple_gla",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla_fused.py:310",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the _launch_decode_simple_gla Pallas launch, selectable behind a new enable__launch_decode_simple_gla_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "action_edge": {
+    "source": "action:simple_gla:enable__launch_decode_simple_gla_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "update_kv_cache:enable_kv_cache_update_impl_variant:schedule-toggle",
+   "family": "update_kv_cache",
+   "kernel_ids": [
+    "kv_cache"
+   ],
+   "source_axis": "enable_kv_cache_update_impl_variant",
+   "source_function": "kv_cache_update_impl",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/update_kv_cache/update_kv_cache.py:176",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the kv_cache_update_impl Pallas launch, selectable behind a new enable_kv_cache_update_impl_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-dense-serving/cache-update",
+    "tiny-moe-serving/cache-update"
+   ],
+   "action_edge": {
+    "source": "action:update_kv_cache:enable_kv_cache_update_impl_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "update_kv_cache:enable__kv_cache_update_wrapper_variant:schedule-toggle",
+   "family": "update_kv_cache",
+   "kernel_ids": [
+    "kv_cache"
+   ],
+   "source_axis": "enable__kv_cache_update_wrapper_variant",
+   "source_function": "_kv_cache_update_wrapper",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/update_kv_cache/update_kv_cache.py:266",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the _kv_cache_update_wrapper Pallas launch, selectable behind a new enable__kv_cache_update_wrapper_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-dense-serving/cache-update",
+    "tiny-moe-serving/cache-update"
+   ],
+   "action_edge": {
+    "source": "action:update_kv_cache:enable__kv_cache_update_wrapper_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  }
+ ],
  "seed_coverage": [
   {
    "family": "update_kv_cache",
@@ -4007,8 +4438,9 @@
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
+  "frontier_slots": 16,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true
  },
- "note": "AUTO-EXTRACTED: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas \u2192 Mosaic IR \u2192 Mosaic backend (LLO: reg-alloc / scheduling) \u2192 hardware. Nameability is BINARY: NAMEABLE (reschedulable at the top) vs HIDDEN (compiler-internal) \u2014 reachable in the lowering but with no direct handle. Neutral dashed links mark these compiler-internal boundaries; they are structural context, not loop actions. Each source-derived, programmer-unexposed finding covered by the frozen model gate is represented by exactly one red action link carrying the same stable gap_id consumed by the AKT loop. Open findings without a model callsite remain visible but are not actions."
+ "note": "AUTO-EXTRACTED: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas \u2192 Mosaic IR \u2192 Mosaic backend (LLO: reg-alloc / scheduling) \u2192 hardware. Nameability is BINARY: NAMEABLE (reschedulable at the top) vs HIDDEN (compiler-internal) \u2014 reachable in the lowering but with no direct handle. Neutral dashed links mark these compiler-internal boundaries; they are structural context, not loop actions. Each source-derived, programmer-unexposed finding covered by the frozen model gate is represented by exactly one red action link carrying the same stable gap_id consumed by the AKT loop. Open findings without a model callsite remain visible but are not actions. frontier_actions list not-yet-considered flexibility slots (one per Pallas-launch-owning function) in the same action interface; they carry no red edge and become real findings only when implemented."
 }

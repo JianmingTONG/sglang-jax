@@ -19,8 +19,7 @@ ACTION_CONTEXT_VERSION = 2
 
 # These finding kinds prove that a selectable behavior is already present below the
 # serving API.  In particular, an absent tuned table is an optimization opportunity,
-# not an existing low-level flexibility that an oracle may use as authorization to
-# invent a new implementation.
+# not an existing low-level flexibility that closes a red link by itself.
 _PROVEN_EXISTING_CATEGORIES = frozenset(
     {
         "pipeline-depth",
@@ -28,9 +27,61 @@ _PROVEN_EXISTING_CATEGORIES = frozenset(
     }
 )
 
+# The same two categories are the only shapes the frozen extractor can mine from
+# source with a complete sink/incumbent/domain record.  A NOVEL algorithm proposal
+# must therefore be written down as one of these interfaces: after implementation the
+# regenerated graph has to contain the declared finding, mined by the extractor with
+# exactly the declared semantics, or the round fails closure.
+MINABLE_INTERFACE_CATEGORIES = _PROVEN_EXISTING_CATEGORIES
+
 
 class ActionCatalogError(ValueError):
     """The generated graph cannot safely serve as the loop's action space."""
+
+
+def source_sink_errors(category, source_sink, source_axis) -> list[str]:
+    """Category-specific shape rules for a finding's mined sink record.
+
+    Shared by the graph loader and the novel-proposal validator so a declared
+    novel action must satisfy exactly the shape the extractor emits.
+    """
+
+    if category == "pipeline-depth":
+        if (
+            not isinstance(source_sink, dict)
+            or set(source_sink) != {"callee", "argument"}
+            or not all(
+                isinstance(source_sink.get(key), str)
+                and source_sink[key].isidentifier()
+                for key in ("callee", "argument")
+            )
+            or source_sink["argument"] != source_axis
+        ):
+            return ["pipeline action has no exact source sink"]
+        return []
+    if category == "schedule-toggle":
+        if (
+            not isinstance(source_sink, dict)
+            or set(source_sink) != {"assignments", "expression_asts"}
+            or not isinstance(source_sink.get("assignments"), list)
+            or not source_sink["assignments"]
+            or len(source_sink["assignments"])
+            != len(set(source_sink["assignments"]))
+            or not all(
+                isinstance(assignment, str) and assignment.isidentifier()
+                for assignment in source_sink["assignments"]
+            )
+            or not isinstance(source_sink.get("expression_asts"), dict)
+            or set(source_sink["expression_asts"])
+            != set(source_sink["assignments"])
+            or not all(
+                isinstance(expression, str) and expression
+                for expression in source_sink["expression_asts"].values()
+            )
+        ):
+            return ["schedule action has no exact assignment sinks"]
+        return []
+    return []
 
 
 def _proven_existing_action(gap: dict) -> bool:
@@ -240,43 +291,11 @@ def load_action_graph(repo: Path) -> tuple[dict, dict[str, dict]]:
         if not isinstance(source_function, str) or not source_function.isidentifier():
             raise ActionCatalogError(f"action {gap_id!r} has no source function")
         source_sink = gap.get("source_sink")
-        if gap.get("category") == "pipeline-depth":
-            if (
-                not isinstance(source_sink, dict)
-                or set(source_sink) != {"callee", "argument"}
-                or not all(
-                    isinstance(source_sink.get(key), str)
-                    and source_sink[key].isidentifier()
-                    for key in ("callee", "argument")
-                )
-                or source_sink["argument"] != source_axis
-            ):
-                raise ActionCatalogError(
-                    f"pipeline action {gap_id!r} has no exact source sink"
-                )
-        elif gap.get("category") == "schedule-toggle":
-            if (
-                not isinstance(source_sink, dict)
-                or set(source_sink) != {"assignments", "expression_asts"}
-                or not isinstance(source_sink.get("assignments"), list)
-                or not source_sink["assignments"]
-                or len(source_sink["assignments"])
-                != len(set(source_sink["assignments"]))
-                or not all(
-                    isinstance(assignment, str) and assignment.isidentifier()
-                    for assignment in source_sink["assignments"]
-                )
-                or not isinstance(source_sink.get("expression_asts"), dict)
-                or set(source_sink["expression_asts"])
-                != set(source_sink["assignments"])
-                or not all(
-                    isinstance(expression, str) and expression
-                    for expression in source_sink["expression_asts"].values()
-                )
-            ):
-                raise ActionCatalogError(
-                    f"schedule action {gap_id!r} has no exact assignment sinks"
-                )
+        sink_errors = source_sink_errors(
+            gap.get("category"), source_sink, source_axis
+        )
+        if sink_errors:
+            raise ActionCatalogError(f"{sink_errors[0]}: {gap_id!r}")
         if gap.get("incumbent_value_known") is not True or "incumbent_value" not in gap:
             raise ActionCatalogError(
                 f"action {gap_id!r} has no source-derived incumbent value"
@@ -324,14 +343,133 @@ def load_action_catalog(repo: Path) -> dict[str, dict]:
     return load_action_graph(repo)[1]
 
 
+def _validated_frontier(graph: dict) -> dict[str, dict]:
+    """Validate the extractor-emitted frontier (novel-slot) records of a graph.
+
+    Frontier slots share the mined-action interface but are not implemented yet:
+    they carry no ``source_sink`` and no red ``action_edge`` in the graph. A graph
+    without a ``frontier_actions`` array degrades to an empty frontier.
+    """
+
+    existing_gap_ids = {
+        gap.get("gap_id")
+        for gap in graph.get("gaps") or []
+        if isinstance(gap, dict) and isinstance(gap.get("gap_id"), str)
+    }
+    frontier: dict[str, dict] = {}
+    for record in graph.get("frontier_actions") or []:
+        if not isinstance(record, dict):
+            raise ActionCatalogError("frontier action is not an object")
+        gap_id = record.get("gap_id")
+        if not isinstance(gap_id, str) or not gap_id:
+            raise ActionCatalogError("frontier action is missing gap_id")
+        if gap_id in frontier:
+            raise ActionCatalogError(f"duplicate frontier gap_id {gap_id!r}")
+        if gap_id in existing_gap_ids:
+            raise ActionCatalogError(
+                f"frontier gap_id {gap_id!r} collides with a mined finding"
+            )
+        category = record.get("category")
+        if category not in MINABLE_INTERFACE_CATEGORIES:
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has non-minable category {category!r}"
+            )
+        family = record.get("family")
+        source_axis = record.get("source_axis")
+        source_function = record.get("source_function")
+        if not isinstance(family, str) or not family:
+            raise ActionCatalogError(f"frontier action {gap_id!r} has no source family")
+        if not isinstance(source_axis, str) or not source_axis.isidentifier():
+            raise ActionCatalogError(f"frontier action {gap_id!r} has no source axis")
+        if gap_id != f"{family}:{source_axis}:{category}":
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} disagrees with its family/axis/category"
+            )
+        if not isinstance(source_function, str) or not source_function.isidentifier():
+            raise ActionCatalogError(f"frontier action {gap_id!r} has no source function")
+        if (
+            record.get("incumbent_value_known") is not True
+            or "incumbent_value" not in record
+        ):
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has no source-derived incumbent value"
+            )
+        candidate_values = record.get("candidate_values")
+        if not isinstance(candidate_values, list) or len(candidate_values) < 2:
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has no finite source-derived candidate domain"
+            )
+        try:
+            encoded_values = [
+                json.dumps(value, sort_keys=True, separators=(",", ":"))
+                for value in candidate_values
+            ]
+        except (TypeError, ValueError) as error:
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has non-JSON candidate values"
+            ) from error
+        if len(encoded_values) != len(set(encoded_values)):
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has duplicate candidate values"
+            )
+        if not any(
+            type(value) is type(record["incumbent_value"])
+            and value == record["incumbent_value"]
+            for value in candidate_values
+        ):
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} candidate domain omits the typed incumbent"
+            )
+        kernel_ids = record.get("kernel_ids")
+        if not isinstance(kernel_ids, list) or not kernel_ids:
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has no kernel family mapping"
+            )
+        model_callsites = record.get("model_callsites")
+        if not isinstance(model_callsites, list) or not model_callsites:
+            raise ActionCatalogError(f"frontier action {gap_id!r} has no model callsite")
+        if len(model_callsites) != len(set(model_callsites)):
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has duplicate model callsites"
+            )
+        _evidence_parts(record)
+        edge = record.get("action_edge")
+        if (
+            not isinstance(edge, dict)
+            or edge.get("source") != f"action:{gap_id}"
+            or not isinstance(edge.get("target"), str)
+            or not edge["target"].startswith("pallas:")
+        ):
+            raise ActionCatalogError(
+                f"frontier action {gap_id!r} has an invalid action edge"
+            )
+        frontier[gap_id] = record
+    return frontier
+
+
+def load_frontier_catalog(repo: Path) -> dict[str, dict]:
+    """Return the validated not-yet-implemented frontier slots from the graph."""
+
+    graph = json.loads((repo / GRAPH).read_text())
+    return _validated_frontier(graph)
+
+
 def action_catalog_context(repo: Path) -> dict:
     """Return the canonical immutable action context and its content fingerprint."""
 
     graph, catalog = load_action_graph(repo)
+    frontier = _validated_frontier(graph)
     payload = {
         "version": ACTION_CONTEXT_VERSION,
         "graph_target": graph.get("graph_target") or {},
-        "actions": [_canonical_action(catalog[gap_id]) for gap_id in sorted(catalog)],
+        "actions": [
+            {**_canonical_action(catalog[gap_id]), "access": "existing"}
+            for gap_id in sorted(catalog)
+        ],
+        "frontier_actions": [
+            {**_canonical_action(frontier[gap_id]), "access": "frontier"}
+            for gap_id in sorted(frontier)
+        ],
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return {
@@ -349,9 +487,12 @@ def action_catalog_fingerprint(repo: Path) -> str:
 __all__ = [
     "ActionCatalogError",
     "ACTION_CONTEXT_VERSION",
+    "MINABLE_INTERFACE_CATEGORIES",
+    "source_sink_errors",
     "action_semantic_record",
     "action_catalog_context",
     "action_catalog_fingerprint",
     "load_action_catalog",
     "load_action_graph",
+    "load_frontier_catalog",
 ]

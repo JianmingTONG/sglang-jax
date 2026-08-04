@@ -738,10 +738,16 @@ def _mine_file(path: Path, text: str):
             "tables": set(),
             "table_refs": set(),
             "dependencies": {},
+            "launch_fns": [],
+            "param_names": set(),
         }
     lines = text.splitlines()
     axes, findings = [], []
     tables, table_refs = set(), set()
+    # Frontier inventory: functions that OWN a Pallas launch are the slots where a
+    # not-yet-considered algorithm/schedule variant could be introduced behind a
+    # new toggle; param_names lets the frontier skip slots already implemented.
+    launch_fns, param_names = [], set()
 
     # Attribute a hardcoded call-site value to the narrowest enclosing production
     # function, not to the callee (``Buffered``/``emit_pipeline``).  The enclosing
@@ -986,6 +992,17 @@ def _mine_file(path: Path, text: str):
             _param_axis(fn, arg, d)
         for arg, d in zip(a.kwonlyargs, a.kw_defaults):
             _param_axis(fn, arg, d)
+        param_names.update(arg.arg for arg in pos + a.kwonlyargs)
+        launch_line = min(
+            (
+                node.lineno
+                for node in _scope_nodes(fn)
+                if isinstance(node, ast.Call) and _callee(node.func) == "pallas_call"
+            ),
+            default=None,
+        )
+        if launch_line is not None:
+            launch_fns.append({"fn": fn.name, "line": launch_line})
 
         # (a) DEAD tuned table: an unconditional top-level return BEFORE the body
         # ever references a tuned table -> the table code is unreachable.
@@ -1072,6 +1089,8 @@ def _mine_file(path: Path, text: str):
         "tables": tables,
         "table_refs": table_refs,
         "dependencies": _axis_dependencies(tree),
+        "launch_fns": launch_fns,
+        "param_names": param_names,
     }
 
 
@@ -1098,6 +1117,8 @@ def mine_serving_stack(sources):
         return {kid for kid in live if kid == label or kid == stem}
 
     gaps = []
+    frontier = []                       # not-yet-considered flexibility slots
+    frontier_seen = set()
     stack = []
     for label, rec in sorted(families.items()):
         if not rec["pallas"]:
@@ -1249,6 +1270,54 @@ def mine_serving_stack(sources):
                        + (" (a sibling file in this family ships one)" if sib_has else "")),
                       rel, 0)
 
+        # FRONTIER slots: one per Pallas-launch-owning function — a place where a
+        # not-yet-considered algorithm/schedule variant could be introduced behind a
+        # new toggle. Same record interface as mined findings; skipped when the family
+        # is not exercised by the frozen gate, the toggle already exists in the file's
+        # parameters (slot closed), or a mined finding already owns the id.
+        for rel, m in per_file:
+            for launch in m["launch_fns"]:
+                fn = launch["fn"]
+                axis = f"enable_{fn}_variant"
+                slot_id = f"{label}:{axis}:schedule-toggle"
+                source_stem = Path(rel).stem
+                source_ids = {k for k in ids if k == source_stem}
+                slot_kernel_ids = source_ids or ids
+                slot_callsites = callsites_for_kernel_ids(slot_kernel_ids)
+                if not ids or not slot_callsites:
+                    continue
+                if axis in m["param_names"]:
+                    continue
+                if (label, "schedule-toggle", axis) in seen:
+                    continue
+                if slot_id in frontier_seen:
+                    continue
+                frontier_seen.add(slot_id)
+                frontier.append({
+                    "gap_id": slot_id,
+                    "family": label,
+                    "kernel_ids": sorted(slot_kernel_ids),
+                    "source_axis": axis,
+                    "source_function": fn,
+                    "category": "schedule-toggle",
+                    "incumbent_value": False,
+                    "incumbent_value_known": True,
+                    "candidate_values": [False, True],
+                    "evidence": f"{rel}:{launch['line']}",
+                    "detail": (
+                        f"unconsidered-flexibility slot: an alternative algorithm/"
+                        f"schedule variant for the {fn} Pallas launch, selectable "
+                        f"behind a new {axis} toggle; the incumbent path stays the "
+                        f"exact default"
+                    ),
+                    "model_callsites": slot_callsites,
+                    "action_edge": {
+                        "source": f"action:{slot_id}",
+                        "target": f"pallas:{_GAP_CATEGORIES['schedule-toggle'][1]}",
+                    },
+                    "access": "frontier",
+                })
+
     # rank: gaps in the tuned suite first, then by category salience, then un-elevated
     def _rank(g):
         sal = _GAP_CATEGORIES.get(g["category"], (None, None, 0))[2]
@@ -1263,7 +1332,8 @@ def mine_serving_stack(sources):
         n = sum(1 for g in gaps if g["category"] == c)
         if n:
             cats[c] = {"label": lab, "reachable_prim": prim, "salience": sal, "count": n}
-    return {"serving_stack": stack, "gaps": gaps, "gap_categories": cats}
+    return {"serving_stack": stack, "gaps": gaps, "gap_categories": cats,
+            "frontier": frontier}
 
 
 # Regression seeds: the auto-miner should continue rediscovering these known patterns.
@@ -1486,6 +1556,7 @@ def build_graph(focus_active: bool = True):
         # Auto-mined serving-stack investigation + loop action catalog.
         "serving_stack": mined["serving_stack"], "gaps": mined["gaps"],
         "gap_categories": mined["gap_categories"],
+        "frontier_actions": mined["frontier"],
         "seed_coverage": [{"family": f, "category": c, "hit": h} for (f, c, h) in coverage],
         "stats": {"jax_primitives_total": len(rules), "primitives_shown": shown_prims,
                   "mosaic_ops": sum(1 for n in nodes.values() if n["layer"] == "mosaic"),
@@ -1498,6 +1569,7 @@ def build_graph(focus_active: bool = True):
                   "open_action_edges": len(action_edges),
                   "hidden_lowering_boundaries": len(hidden_lowering_edges),
                   "executable_action_gaps": n_eligible,
+                  "frontier_slots": len(mined["frontier"]),
                   "seed_patterns_rediscovered": f"{sum(h for _,_,h in coverage)}/{len(coverage)}",
                   "focus_active": focus_active},
         "note": ("AUTO-EXTRACTED: JAX/Pallas primitives + primitive→Mosaic-op edges parsed from "
@@ -1509,7 +1581,10 @@ def build_graph(focus_active: bool = True):
                  "boundaries; they are structural context, not loop actions. Each source-derived, "
                  "programmer-unexposed finding covered by the frozen model gate is represented by "
                  "exactly one red action link carrying the same stable gap_id consumed by the AKT "
-                 "loop. Open findings without a model callsite remain visible but are not actions."),
+                 "loop. Open findings without a model callsite remain visible but are not actions. "
+                 "frontier_actions list not-yet-considered flexibility slots (one per "
+                 "Pallas-launch-owning function) in the same action interface; they carry no red "
+                 "edge and become real findings only when implemented."),
     }
 
 
@@ -1534,7 +1609,8 @@ def main():
           f"investigated -> {s['auto_gaps']} flexibility gaps auto-derived "
           f"({s['executable_action_gaps']} executable by the AKT model gate) across "
           f"{len(g['gap_categories'])} "
-          f"categories; regression seeds rediscovered {s['seed_patterns_rediscovered']}.")
+          f"categories, plus {s['frontier_slots']} unconsidered-flexibility frontier slots; "
+          f"regression seeds rediscovered {s['seed_patterns_rediscovered']}.")
     miss = [c for c in g["seed_coverage"] if not c["hit"]]
     if miss:
         print("[flexgraph-extract] WARNING action seed patterns NOT rediscovered: "

@@ -121,29 +121,48 @@ round, then STOP — do NOT run the evolve loop or `submit`; the harness gates y
 {query}
 
 DOMAIN: the validated flexibility-graph snapshot below is a FROZEN guardrail for this
-round, not brainstorming material. Each action is one source-proven, already-existing
-low-level selection point that is not exposed to programmers. Its stable gap_id, graph
-fingerprint, family, source axis/function/sink, finite candidate domain, evidence, and exact model callsites are
-foreign keys in your manifest. You may add plumbing needed to expose that existing
-selection point, but may not add a new low-level algorithm, kernel path, schedule mode,
-or semantic behavior unrelated to that source axis. Every kernel is a KernelCase
-whose deployable configurations become stages in an exact three-model DP. A CAPABILITY must
-make one previously programmer-inaccessible low-level behavior controllable through the
-whole stack: kernel/backend -> production consumer -> KernelControlPolicy -> runner Knob ->
+round, not brainstorming material. TWO proposal modes exist:
+ (a) ELEVATE an existing action. Each red-link action is one source-proven,
+already-existing low-level selection point that is not exposed to programmers. Its
+stable gap_id, graph fingerprint, family, source axis/function/sink, finite candidate
+domain, evidence, and exact model callsites are foreign keys in your manifest. You may
+add the plumbing needed to expose that existing selection point.
+ (b) INVENT a new algorithm or kernel variant — through the SAME contract below, which
+lists BOTH executable red-link actions (access "existing") AND unconsidered-flexibility
+FRONTIER SLOTS (access "frontier", in `frontier_actions`): mechanically-mined axes no
+round has yet considered. To invent, pick ONE frontier gap_id and implement the new
+variant behind that slot's prescribed `enable_<fn>_variant` toggle on the slot's
+`source_function`; the incumbent path is the exact default (False) and must stay
+bit-identical — it is output-hash pinned. Declare the manifest's `proposed_action` by
+COMPLETING the slot's record: copy the graph-owned fields (gap_id, family, kernel_ids,
+source_axis, source_function, category, incumbent_value, candidate_values,
+model_callsites, action_edge) exactly from the slot; you author only source_sink, the
+evidence line, and the detail. The gap_id therefore cannot collide with any existing
+finding — that follows from slot membership, not from inventing an identifier. A slot
+CLOSES when its axis becomes a real parameter: after your edits the regenerated graph
+must drop the frontier slot and instead contain your finding, mined
+programmer-exposed with EXACTLY the declared semantics, or the round rejects.
+In both modes every kernel is a KernelCase whose deployable configurations become
+stages in an exact three-model DP. A CAPABILITY must make one previously
+programmer-inaccessible low-level behavior controllable through the whole stack:
+kernel/backend -> production consumer -> KernelControlPolicy -> runner Knob ->
 model planner. A new knob alone, a default change, or widening an existing control is tuning.
 
 {action_contract}
 
 YOUR TASK:
- 1. Pick ONE executable red-link gap_id. Use the latest paired \
+ 1. Pick ONE executable red-link gap_id, or declare ONE novel algorithm via \
+`proposed_action`. Use the latest paired \
 model/callsite timings to estimate baseline share and expected aggregate relief >{target_pct:.0f}%; \
 record the calculation and do not repeat an unchanged failed estimate.
- 2. IMPLEMENT it end-to-end. Promote an existing runner/backend argument, or lift the exact
-graph-fingerprinted hardcoded selection into an entry argument while preserving its incumbent
-default exactly (copy the action's incumbent_value, including JSON type). The runner must use
-the action's complete candidate_values domain; do not copy that graph-owned field into the
-manifest or invent another value. Do not invent a
-replacement implementation. Register a validated control under \
+ 2. IMPLEMENT it end-to-end. For an existing action: promote an existing runner/backend
+argument, or lift the exact graph-fingerprinted hardcoded selection into an entry argument
+while preserving its incumbent default exactly (copy the action's incumbent_value, including
+JSON type); the runner must use the action's complete candidate_values domain; do not copy
+that graph-owned field into the manifest or invent another value. For a novel algorithm:
+implement the new variant strictly behind the new axis's non-default values, preserving the
+incumbent algorithm as the default; your `proposed_action` record owns the domain. In both
+modes register a validated control under \
 python/sgl_jax/srt/configs/kernel_control.py, and forward that control from a production \
 layer/model/backend (python/sgl_jax/srt/layers/**, models/**, or model_executor/**) to the kernel. Then add \
 a runner Knob with programmer_control="<family>.<key>". Name the exact \
@@ -154,7 +173,8 @@ and records the actual selected argument, so do not add a self-reported runtime 
 `PYTHONPATH=python:. .venv/bin/python akt/benchmark/gates/dp_verify.py`; target-hardware \
 model search and paired measurement are run only by the frozen gate.
  4. Write akt/core/evolve/capabilities/<name>.json using the exact schema in that directory. \
-It must foreign-key gap_id and action_graph_fingerprint, provide the quantitative \
+It must foreign-key gap_id and action_graph_fingerprint (novel proposals additionally \
+declare `proposed_action`), provide the quantitative \
 estimate, describe every search dimension using the minimal schema, and list EVERY \
 changed/created file. Set status="pending".
 
@@ -350,23 +370,27 @@ def action_contract_block():
 
     context = action_catalog_context(ROOT)
     actions = context.get("actions") or []
-    if not actions:
-        raise RuntimeError(
-            "validated flexibility graph has no executable actions — the campaign "
-            "is CONVERGED under this objective (see loop.py run / status)"
-        )
+    note = (
+        "\n(no open red-link actions remain — frontier slots remain available: pick a "
+        "gap_id from the contract's `frontier_actions` and implement its novel variant "
+        "via `proposed_action`)"
+        if not actions
+        else ""
+    )
     return (
         "== FROZEN FLEXIBILITY-GRAPH ACTION CONTRACT\n"
         + json.dumps(context, indent=2, sort_keys=True, allow_nan=False)
+        + note
     )
 
 
 def action_catalog_convergence() -> tuple[bool, int]:
-    """(converged, n_open_actions) for the CURRENT validated catalog.
+    """(red_link_space_exhausted, n_open_actions) for the CURRENT validated catalog.
 
-    Raises when the catalog is invalid/stale — an EMPTY-but-valid catalog is the
-    principled stopping signal (every source-proven red link closed), which must be
-    distinguishable from a broken graph.
+    Raises when the catalog is invalid/stale — an EMPTY-but-valid catalog must be
+    distinguishable from a broken graph. Since NOVEL-algorithm proposals are
+    admissible, an empty catalog exhausts only the mined red-link space; it is no
+    longer a terminal campaign state.
     """
     from akt.core.evolve.action_catalog import action_catalog_context
 
@@ -376,33 +400,35 @@ def action_catalog_convergence() -> tuple[bool, int]:
 
 
 def _maybe_stop_converged(current) -> bool:
-    """CONVERGENCE VERDICT — record + surface an empty-but-valid catalog and tell
-    the caller to stop. Checked before EVERY oracle round (not just at `run`
-    startup), because the canonical way the catalog empties is a mid-run KEEP
-    closing the last open action. Heals a stale flag when actions reappear.
-    Raises like action_catalog_convergence when the catalog itself is invalid."""
-    converged, _n_open = action_catalog_convergence()
-    if not converged:
+    """RED-LINK EXHAUSTION VERDICT — record + surface an empty-but-valid catalog.
+    Checked before EVERY oracle round (not just at `run` startup), because the
+    canonical way the catalog empties is a mid-run KEEP closing the last open
+    action. Heals a stale flag when actions reappear. Raises like
+    action_catalog_convergence when the catalog itself is invalid.
+
+    Returns False in every valid case: with NOVEL-algorithm proposals admissible
+    under the flexgraph interface, an empty mined catalog no longer stops the run —
+    it only flags `space_exhausted` so the board/status show that all rounds from
+    here on must invent. Frontier slots (the contract's `frontier_actions`) remain
+    actionable when the red-link space is exhausted (deadline/--rounds still bound
+    the campaign)."""
+    exhausted, _n_open = action_catalog_convergence()
+    if not exhausted:
         if current.get("space_exhausted"):
             current["space_exhausted"] = False       # actions reappeared -> heal
             save(current)
         return False
-    current["space_exhausted"] = True
-    save(current)
-    write_status("idle", round=current.get("round", 0), last={
-        "round": current.get("round", 0), "capability": None,
-        "decision": "converged",
-        "reason": "action catalog is empty — every source-proven red-link "
-                  "action closed under this objective",
-        "finished_ts": time.time()})
-    write_board()
-    print(
-        "[evolve] CONVERGED: the validated action catalog has ZERO open "
-        "actions — every source-proven flexibility has been elevated or "
-        "closed under this objective. No oracle round started. Widen the "
-        "objective (new workloads/backends/graph findings) or end the campaign."
-    )
-    return True
+    if not current.get("space_exhausted"):
+        current["space_exhausted"] = True
+        save(current)
+        print(
+            "[evolve] RED-LINK SPACE EXHAUSTED: the validated action catalog has "
+            "ZERO open actions — every source-proven flexibility has been elevated "
+            "or closed. Rounds continue: frontier slots remain actionable — the "
+            "oracle may implement a `frontier_actions` slot as a NOVEL variant via "
+            "`proposed_action`."
+        )
+    return False
 
 
 def current_action_graph_fingerprint():
@@ -505,7 +531,8 @@ def query(st):
         f"{bottleneck_block()}\n"
         f"{action_space_block()}\n"
         f"{failed_estimates_block()}\n"
-        f"== DECIDE ONE executable red-link gap_id to elevate. Then, off-loop:\n"
+        f"== DECIDE: elevate one red-link action OR implement one frontier slot (novel\n"
+        f"   variant) — both listed in the same contract. Then, off-loop:\n"
         f"   (1) estimate model-level bottleneck relief; (2) implement it end-to-end across\n"
         f"   backend -> production consumer -> KernelControlPolicy -> runner -> model DP;\n"
         f"   (3) report concrete selected backend execution;\n"
@@ -778,7 +805,7 @@ def load_manifest(name, require_pending=False):
         missing = sorted(required - set(m))
         if missing:
             raise ValueError(f"pending manifest is missing required fields: {missing}")
-        extra = sorted(set(m) - required - {"audit_case"})
+        extra = sorted(set(m) - required - {"audit_case", "proposed_action"})
         if extra:
             raise ValueError(f"pending manifest has unsupported fields: {extra}")
     if not isinstance(m.get("files_touched"), list) or not m["files_touched"]:
@@ -874,24 +901,104 @@ def write_board():
     sh("python3 akt/board/build.py", timeout=300)
 
 
+def _novel_finding_mismatches(finding, proposed):
+    """The mined record must equal the declared novel action, field for field.
+
+    This is the enforcement of "invented algorithms must be written down in the
+    flexgraph interface": the frozen extractor must rediscover the new axis with
+    exactly the semantics the manifest declared. Evidence line numbers are volatile
+    and excluded; the evidence path is compared.
+    """
+
+    def _typed(value):
+        return (type(value).__name__, value)
+
+    checks = {
+        "family": (finding.get("family"), proposed.get("family")),
+        "kernel_ids": (
+            sorted(finding.get("kernel_ids") or []),
+            sorted(proposed.get("kernel_ids") or []),
+        ),
+        "source_axis": (
+            finding.get("source_axis") or finding.get("axis"),
+            proposed.get("source_axis"),
+        ),
+        "source_function": (
+            finding.get("source_function"),
+            proposed.get("source_function"),
+        ),
+        "category": (finding.get("category"), proposed.get("category")),
+        "source_sink": (finding.get("source_sink"), proposed.get("source_sink")),
+        "incumbent_value": (
+            _typed(finding.get("incumbent_value")),
+            _typed(proposed.get("incumbent_value")),
+        ),
+        "candidate_values": (
+            [_typed(value) for value in finding.get("candidate_values") or []],
+            [_typed(value) for value in proposed.get("candidate_values") or []],
+        ),
+        "model_callsites": (
+            sorted(finding.get("model_callsites") or []),
+            sorted(proposed.get("model_callsites") or []),
+        ),
+        "source_evidence.path": (
+            str(finding.get("evidence") or "").rpartition(":")[0],
+            (proposed.get("source_evidence") or {}).get("path"),
+        ),
+    }
+    return [
+        f"novel finding field {field!r} was mined as {mined!r} but declared as "
+        f"{declared!r}"
+        for field, (mined, declared) in checks.items()
+        if mined != declared
+    ]
+
+
 def candidate_action_graph_closure(manifest):
     """Regenerate and validate the graph without replacing the incumbent snapshot.
 
-    A KEEP must close exactly the selected red action in the source-mined catalog.
-    The candidate may make the original source pattern disappear by lifting a literal
-    into an existing entry argument, so closure means the ID is no longer selectable;
-    if the finding remains, it must explicitly report programmer exposure. Unrelated
-    incumbent actions may not disappear as collateral damage.
+    ELEVATE mode: a KEEP must close exactly the selected red action in the
+    source-mined catalog. The candidate may make the original source pattern
+    disappear by lifting a literal into an existing entry argument, so closure means
+    the ID is no longer selectable; if the finding remains, it must explicitly
+    report programmer exposure. Unrelated incumbent actions may not disappear as
+    collateral damage.
+
+    NOVEL mode (manifest carries ``proposed_action``): the regenerated graph MUST
+    contain the declared finding — the frozen extractor has to mine the invented
+    algorithm's new axis in the flexgraph interface — marked programmer-exposed at
+    birth, with semantics exactly equal to the declaration. The same
+    collateral-damage rules apply to every unrelated action.
+
+    FRONTIER closure (both modes): frontier slots — mechanically-mined,
+    not-yet-considered flexibilities listed in the same catalog — OUTSIDE the
+    selected family must survive unchanged (compared with the volatile evidence
+    line excluded); slots INSIDE the selected family may change freely, since the
+    edit legitimately alters that family's launch inventory. In NOVEL mode the
+    selected slot must CLOSE: its gap_id leaves the frontier list because the axis
+    became a real parameter the extractor now mines as a finding.
     """
     from akt.core.evolve.action_catalog import (
         action_semantic_record,
         action_catalog_context,
         load_action_catalog,
         load_action_graph,
+        load_frontier_catalog,
     )
 
+    def _frontier_semantic(record):
+        """Frontier-slot record with the volatile evidence LINE dropped (path kept),
+        mirroring action_semantic_record's stance for red-link actions."""
+        stable = dict(record)
+        evidence = str(stable.get("evidence") or "")
+        path = evidence.rpartition(":")[0]
+        stable["evidence"] = path or evidence
+        return stable
+
     gap_id = manifest.get("gap_id")
+    proposed = manifest.get("proposed_action") if isinstance(manifest, dict) else None
     before = load_action_catalog(ROOT)
+    before_frontier = load_frontier_catalog(ROOT)
     candidate_path = ROOT / "akt/optimization_history/.candidate_flexgraph.json"
     candidate_path.unlink(missing_ok=True)
     rc, output = run_argv(
@@ -917,6 +1024,7 @@ def candidate_action_graph_closure(manifest):
             graph_path.write_text(raw)
             _validated_graph, after = load_action_graph(temp_root)
             after_context = action_catalog_context(temp_root)
+            after_frontier = load_frontier_catalog(temp_root)
     except Exception as error:  # noqa: BLE001
         errors.append(f"candidate graph is invalid: {error}")
         return {"ok": False, "gap_id": gap_id, "errors": errors}
@@ -930,7 +1038,7 @@ def candidate_action_graph_closure(manifest):
         errors.append(
             "candidate closed unrelated graph actions: " + ", ".join(unrelated_missing)
         )
-    unrelated_added = sorted(set(after) - set(before))
+    unrelated_added = sorted((set(after) - set(before)) - {gap_id})
     if unrelated_added:
         errors.append(
             "candidate introduced unrelated graph actions: " + ", ".join(unrelated_added)
@@ -946,10 +1054,63 @@ def candidate_action_graph_closure(manifest):
             "candidate changed unrelated graph action semantics: "
             + ", ".join(unrelated_changed)
         )
+    selected_family = (
+        proposed.get("family")
+        if proposed is not None
+        else before.get(gap_id, {}).get("family")
+    )
+    if proposed is not None and gap_id in after_frontier:
+        errors.append(
+            f"frontier slot {gap_id!r} is still open — the declared axis was not "
+            "implemented (the extractor must stop emitting the slot and mine a real "
+            "finding with the same gap_id)"
+        )
+    frontier_removed = sorted(
+        slot_id
+        for slot_id in set(before_frontier) - set(after_frontier)
+        if before_frontier[slot_id].get("family") != selected_family
+    )
+    if frontier_removed:
+        errors.append(
+            "candidate removed frontier slots outside the selected family: "
+            + ", ".join(frontier_removed)
+        )
+    frontier_added = sorted(
+        slot_id
+        for slot_id in set(after_frontier) - set(before_frontier)
+        if after_frontier[slot_id].get("family") != selected_family
+    )
+    if frontier_added:
+        errors.append(
+            "candidate introduced frontier slots outside the selected family: "
+            + ", ".join(frontier_added)
+        )
+    frontier_changed = sorted(
+        slot_id
+        for slot_id in set(before_frontier) & set(after_frontier)
+        if before_frontier[slot_id].get("family") != selected_family
+        and _frontier_semantic(before_frontier[slot_id])
+        != _frontier_semantic(after_frontier[slot_id])
+    )
+    if frontier_changed:
+        errors.append(
+            "candidate changed frontier-slot semantics outside the selected family: "
+            + ", ".join(frontier_changed)
+        )
     finding = next(
         (item for item in graph.get("gaps") or [] if item.get("gap_id") == gap_id),
         None,
     )
+    if proposed is not None:
+        if finding is None:
+            errors.append(
+                f"novel action {gap_id!r} was not mined into the regenerated graph — "
+                "the invented algorithm must be written down in the flexgraph "
+                "interface (a new pipeline-depth/schedule-toggle axis the frozen "
+                "extractor can rediscover)"
+            )
+        else:
+            errors.extend(_novel_finding_mismatches(finding, proposed))
     if finding is not None and not (
         finding.get("programmer_exposed") is True or finding.get("open") is False
     ):
@@ -964,6 +1125,9 @@ def candidate_action_graph_closure(manifest):
         "unrelated_missing": unrelated_missing,
         "unrelated_added": unrelated_added,
         "unrelated_changed": unrelated_changed,
+        "frontier_removed": frontier_removed,
+        "frontier_added": frontier_added,
+        "frontier_changed": frontier_changed,
         "selected_finding": finding,
         "candidate_action_graph_fingerprint": after_context.get("fingerprint"),
         # Retain the validated document in memory for atomic installation only after
@@ -2303,9 +2467,9 @@ def cmd_run(args):
         st = load()
         if time.time() >= st["deadline_ts"]:
             print(f"[evolve] deadline reached after {gated} gated round(s) — stopping."); break
-        # Re-check convergence EVERY round: a KEEP that closed the LAST open action
-        # must end the campaign with the CONVERGED verdict, not crash the next
-        # invoke_oracle on an empty action contract.
+        # Re-check the red-link space EVERY round: a KEEP that closed the LAST open
+        # action flags space_exhausted (novel-only rounds from here) and must not
+        # crash the next invoke_oracle on an empty action contract.
         try:
             if _maybe_stop_converged(st):
                 break

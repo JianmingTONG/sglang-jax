@@ -533,21 +533,24 @@ def build():
         else None
     )
     convergence = {
-        # the loop's recorded verdict (set by `run` when the catalog empties)
+        # the loop's recorded verdict (set by `run` when the catalog empties).
+        # Red-link exhaustion is no longer terminal: NOVEL-algorithm proposals
+        # (manifest `proposed_action`, flexgraph-interface declaration) remain
+        # admissible, so "red-links-exhausted" means novel-only rounds from here.
         "space_exhausted": bool(st.get("space_exhausted")),
         "open_actions": open_actions,
         "dp_ok_all_models": bool(models_compact)
         and all(model.get("dp_ok") for model in models_compact),
         # LIVE open_actions wins over the recorded flag: a stale space_exhausted
-        # (e.g. rebaseline widened the graph) must not present as converged when
+        # (e.g. rebaseline widened the graph) must not present as exhausted when
         # actions are visibly open. The flag only decides when the live count is
         # unavailable.
         "verdict": (
-            "converged"
+            "red-links-exhausted"
             if open_actions == 0
             else "open"
             if isinstance(open_actions, int) and open_actions > 0
-            else ("converged" if st.get("space_exhausted") else "unknown")
+            else ("red-links-exhausted" if st.get("space_exhausted") else "unknown")
         ),
     }
 

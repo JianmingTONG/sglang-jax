@@ -14,9 +14,19 @@ The enforced objective scope is `model-serving-empirical-dp-v2`.
 - Campaign state pins that fingerprint. Oracle execution and pending manifests fail
   before TPU work when the graph is stale, invalid, empty, or foreign keys do not
   match exactly.
-- A round may add API and forwarding plumbing only to expose the selected existing
-  axis. `existing-backend-argument` and `existing-low-level-axis` are the only access
-  modes; neither authorizes a new kernel algorithm or semantic behavior.
+- A round may add API and forwarding plumbing to expose the selected existing axis
+  (`existing-backend-argument` / `existing-low-level-axis`), or may add ONE new
+  algorithm/variant under the `novel-algorithm` access mode — admissible only
+  against a mined FRONTIER SLOT (`access: "frontier"`, the graph's top-level
+  `frontier_actions`, under the same fingerprint as the red-link actions): the
+  manifest foreign-keys the slot's `gap_id` and its `proposed_action` completes
+  the slot record (graph-owned fields equal to the slot; oracle-owned = source
+  sink, evidence line, detail), with neither the entry argument nor the axis
+  present at the incumbent commit and the incumbent algorithm preserved as the
+  exact (output-hash-pinned) default. Closure requires the regenerated graph to
+  stop emitting the slot AND to mine the declared finding programmer-exposed,
+  field-for-field equal to the declaration. Undeclared invention and declaration
+  drift from the slot both fail closed.
 - Runner-only benchmark knobs are default-only in the deployment space. Promoting an
   existing knob to a stable programmer control expands the exact graph-owned domain
   without changing the incumbent default.
@@ -68,11 +78,13 @@ The enforced objective scope is `model-serving-empirical-dp-v2`.
   fail (wrong output / wrong shape / wrong leaf count rejected; a wrong config is
   excluded from the DP-visible measurements; probe forgery and registration abuse
   raise).
-- Convergence is a first-class verdict: an EMPTY-but-valid action catalog stops
-  `run` (before every round, including after a mid-run KEEP closes the last action)
-  with a recorded `space_exhausted` verdict, the board shows a convergence card
-  (live open-action count wins over the recorded flag), and `rebaseline` clears the
-  flag when the graph is widened.
+- Red-link exhaustion is a first-class verdict: an EMPTY-but-valid action catalog
+  records `space_exhausted` (checked before every round, including after a mid-run
+  KEEP closes the last action) and the board shows the exhaustion card (live
+  open-action count wins over the recorded flag). Exhaustion covers only the
+  red-link list — frontier slots remain actionable — so it no longer stops `run`:
+  remaining rounds are frontier/novel-only, bounded by `--rounds` and the campaign
+  deadline; `rebaseline` clears the flag when the graph is widened.
 - The gate's metric coupling is a self-describing contract (`adapter.py gate`:
   objective name/unit/direction/summary keys) fetched LIVE from the frozen adapter
   at gate time — never trusted from editable campaign state.

@@ -1,9 +1,13 @@
+import ast
 import json
 import time
 from types import SimpleNamespace
 
 from akt.core.evolve import loop
-from akt.core.evolve.action_catalog import action_catalog_fingerprint
+from akt.core.evolve.action_catalog import (
+    action_catalog_fingerprint,
+    load_frontier_catalog,
+)
 from akt.core.evolve.loop import _render_oracle_line, _scan_rate_limit
 from akt.core.evolve.loop import validate_estimate_threshold
 import pytest
@@ -288,6 +292,7 @@ def test_candidate_graph_closure_rejects_every_collateral_action_change(
     monkeypatch.setattr(loop, "ROOT", tmp_path)
     monkeypatch.setattr(loop, "run_argv", write_candidate)
     monkeypatch.setattr(action_catalog, "load_action_catalog", lambda _repo: before)
+    monkeypatch.setattr(action_catalog, "load_frontier_catalog", lambda _repo: {})
     monkeypatch.setattr(
         action_catalog, "load_action_graph", lambda _repo: ({}, after)
     )
@@ -577,8 +582,10 @@ def test_incumbent_output_drift_detects_bitwise_default_path_change():
     assert loop._incumbent_output_drift({}, drifted) == {}  # unpinned -> no check
 
 
-def test_empty_but_valid_catalog_is_convergence_not_error(monkeypatch):
-    """Zero open actions must present as a CONVERGED verdict, not a broken graph."""
+def test_empty_but_valid_catalog_flags_exhaustion_but_continues(monkeypatch):
+    """Zero open actions exhausts only the mined red-link space: the round may
+    continue with a NOVEL-algorithm proposal, so the contract renders (with the
+    novel-only note) instead of raising, and _maybe_stop_converged never stops."""
     import akt.core.evolve.action_catalog as action_catalog
 
     real_context = action_catalog.action_catalog_context(loop.ROOT)
@@ -589,9 +596,15 @@ def test_empty_but_valid_catalog_is_convergence_not_error(monkeypatch):
         action_catalog, "action_catalog_context", lambda _repo: empty
     )
     assert loop.action_catalog_convergence() == (True, 0)
-    # the oracle contract itself still refuses to run with zero actions
-    with pytest.raises(RuntimeError, match="CONVERGED"):
-        loop.action_contract_block()
+    block = loop.action_contract_block()
+    assert "frontier slots remain available" in block
+
+    saved = {}
+    monkeypatch.setattr(loop, "save", saved.update)
+    state = {"round": 4, "space_exhausted": False}
+    assert loop._maybe_stop_converged(state) is False
+    assert state["space_exhausted"] is True
+    assert saved["space_exhausted"] is True
 
 
 def test_manual_restore_of_a_kept_round_taints_its_history(tmp_path, monkeypatch):
@@ -663,3 +676,170 @@ def test_probe_forgery_scan_rejects_manifest_files_touching_runtime(tmp_path, mo
     )
     assert len(errors) == 1 and "forging_kernel.py" in errors[0]
     assert loop._scan_probe_forgery({"files_touched": ["missing.py"]}) == []
+
+
+def _expression_ast(source):
+    return ast.dump(ast.parse(source, mode="eval").body, include_attributes=False)
+
+
+def _frontier_slot():
+    """Pick a real frontier slot from the live graph (prefer the simple_gla family)."""
+    frontier = load_frontier_catalog(loop.ROOT)
+    assert frontier, "the generated graph carries no frontier slots"
+    for slot in frontier.values():
+        if slot.get("family") == "simple_gla":
+            return slot
+    return next(iter(frontier.values()))
+
+
+def _novel_proposed_action():
+    slot = _frontier_slot()
+    gap_id = slot["gap_id"]
+    evidence_path = str(slot["evidence"]).rsplit(":", 1)[0]
+    return {
+        # Graph-owned fields: copied verbatim from the frontier slot template.
+        "gap_id": gap_id,
+        "family": slot["family"],
+        "kernel_ids": sorted(slot["kernel_ids"]),
+        "source_axis": slot["source_axis"],
+        "source_function": slot["source_function"],
+        "incumbent_value": slot["incumbent_value"],
+        "candidate_values": list(slot["candidate_values"]),
+        "category": slot["category"],
+        "model_callsites": sorted(slot["model_callsites"]),
+        "action_edge": dict(slot["action_edge"]),
+        # Oracle-owned fields: the implementation's mined sink and evidence line.
+        "source_sink": {
+            "assignments": ["use_variant_path"],
+            "expression_asts": {
+                "use_variant_path": _expression_ast(slot["source_axis"])
+            },
+        },
+        "source_evidence": {
+            "path": evidence_path,
+            "line": 0,
+            "detail": "novel schedule variant implemented behind the frontier toggle",
+        },
+    }
+
+
+def test_pending_manifest_accepts_a_valid_novel_proposed_action(tmp_path, monkeypatch):
+    monkeypatch.setattr(loop, "CAPS", tmp_path)
+    proposed = _novel_proposed_action()
+    callsite = sorted(proposed["model_callsites"])[0]
+    manifest = {
+        "name": "novel_frontier_variant",
+        "gap_id": proposed["gap_id"],
+        "action_graph_fingerprint": action_catalog_fingerprint(loop.ROOT),
+        "hypothesis": "a frontier-anchored novel variant, declared in the flexgraph interface",
+        "estimate": {
+            "model": callsite.split("/", 1)[0],
+            "callsite": callsite,
+            "baseline_share_pct": 25.0,
+            "expected_relief_pct": 4.0,
+            "reasoning": "The slot's dominant callsite carries this kernel's trace share.",
+        },
+        "proposed_action": proposed,
+        "search_dimensions": [
+            {
+                "control": f"{sorted(proposed['kernel_ids'])[0]}.{proposed['source_axis']}",
+                "kernel_function": proposed["source_function"],
+                "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+            }
+        ],
+        "files_touched": [
+            proposed["source_evidence"]["path"],
+            "akt/core/evolve/capabilities/novel_frontier_variant.json",
+        ],
+        "status": "pending",
+    }
+    (tmp_path / "novel_frontier_variant.json").write_text(json.dumps(manifest))
+
+    loaded, _path = loop.load_manifest("novel_frontier_variant", require_pending=True)
+    assert loaded["proposed_action"]["gap_id"] == proposed["gap_id"]
+
+
+def test_novel_closure_requires_the_mined_finding_to_match(tmp_path, monkeypatch):
+    from akt.core.evolve import action_catalog
+
+    proposed = _novel_proposed_action()
+    gap_id = proposed["gap_id"]
+    evidence_path = proposed["source_evidence"]["path"]
+    manifest = {"gap_id": gap_id, "proposed_action": proposed}
+    candidate_path = tmp_path / "akt/optimization_history/.candidate_flexgraph.json"
+    candidate_path.parent.mkdir(parents=True)
+
+    mined = {
+        "gap_id": gap_id,
+        "family": proposed["family"],
+        "kernel_ids": list(proposed["kernel_ids"]),
+        "axis": proposed["source_axis"],
+        "source_axis": proposed["source_axis"],
+        "source_function": proposed["source_function"],
+        "category": proposed["category"],
+        "source_sink": proposed["source_sink"],
+        "incumbent_value": proposed["incumbent_value"],
+        "candidate_values": list(proposed["candidate_values"]),
+        "model_callsites": list(proposed["model_callsites"]),
+        "evidence": f"{evidence_path}:1234",
+        "open": False,
+        "programmer_exposed": True,
+    }
+    graphs = {"gaps": []}
+
+    def write_candidate(*_args, **_kwargs):
+        candidate_path.write_text(json.dumps(graphs))
+        return 0, ""
+
+    # The closure reads the frontier twice: the incumbent tree (loop.ROOT, here
+    # monkeypatched to tmp_path) has the slot still OPEN, while the regenerated
+    # candidate graph (loaded from a separate temporary root) has it closed.
+    before_frontier = {
+        gap_id: {
+            "gap_id": gap_id,
+            "family": proposed["family"],
+            "evidence": f"{evidence_path}:532",
+        }
+    }
+    after_frontier = {}
+
+    def fake_frontier(repo):
+        if repo == tmp_path:
+            return dict(before_frontier)
+        return dict(after_frontier)
+
+    monkeypatch.setattr(loop, "ROOT", tmp_path)
+    monkeypatch.setattr(loop, "run_argv", write_candidate)
+    monkeypatch.setattr(action_catalog, "load_action_catalog", lambda _repo: {})
+    monkeypatch.setattr(action_catalog, "load_action_graph", lambda _repo: ({}, {}))
+    monkeypatch.setattr(action_catalog, "load_frontier_catalog", fake_frontier)
+    monkeypatch.setattr(
+        action_catalog,
+        "action_catalog_context",
+        lambda _repo: {"fingerprint": "candidate"},
+    )
+
+    # 1. Not mined at all -> the invented algorithm was not written down in the
+    #    flexgraph interface.
+    result = loop.candidate_action_graph_closure(manifest)
+    assert result["ok"] is False
+    assert any("was not mined into the regenerated graph" in e for e in result["errors"])
+
+    # 2. Mined with drifted semantics -> field-for-field mismatch is fail-closed.
+    graphs = {"gaps": [dict(mined, candidate_values=list(proposed["candidate_values"]) + ["extra"])]}
+    result = loop.candidate_action_graph_closure(manifest)
+    assert result["ok"] is False
+    assert any("candidate_values" in e and "mined as" in e for e in result["errors"])
+
+    # 3. Mined exactly as declared and programmer-exposed at birth -> closure holds.
+    graphs = {"gaps": [mined]}
+    result = loop.candidate_action_graph_closure(manifest)
+    assert result["ok"] is True, result["errors"]
+    assert result["selected_finding"]["gap_id"] == gap_id
+
+    # 4. Slot still emitted by the regenerated frontier -> the declared axis was
+    #    never implemented; the round fails even though the mined finding matches.
+    after_frontier[gap_id] = dict(before_frontier[gap_id])
+    result = loop.candidate_action_graph_closure(manifest)
+    assert result["ok"] is False
+    assert any("still open" in e for e in result["errors"])

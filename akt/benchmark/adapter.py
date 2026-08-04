@@ -133,17 +133,7 @@ def _auto_gap_lines():
 
     context = action_catalog_context(REPO)
     actions = context["actions"]
-    if not actions:
-        # A VALID catalog with zero open actions is CONVERGENCE, not an error: every
-        # source-proven red link has been closed (or none exists). Distinct from an
-        # invalid/stale catalog, which raises above and reports "missing".
-        note = (
-            "CONVERGED: the validated action catalog is EMPTY — every source-proven "
-            "red-link action has been closed or none remains discoverable. There is "
-            "no executable gap left to elevate under this objective; widen the "
-            "objective (new workloads/backends) or stop the campaign."
-        )
-        return [], note, context
+    frontier = context.get("frontier_actions") or []
     lines = []
     for gap in actions:
         sites = gap["model_callsites"]
@@ -155,11 +145,42 @@ def _auto_gap_lines():
             f"<{gap['source_evidence']['path']}:{gap['source_evidence']['line']}> "
             f"[red-link {edge['source']} -> {edge['target']}; {eligibility}]"
         )
-    note = (
-        f"Complete fingerprinted action catalog ({len(actions)} actions). Each red link "
-        "is an existing low-level choice that may be exposed; other graph findings and "
-        "hidden compiler boundaries are context, not executable actions."
-    )
+    if not actions:
+        # A VALID catalog with zero open actions is RED-LINK EXHAUSTION, not an
+        # error: every source-proven red link has been closed (or none exists).
+        # Distinct from an invalid/stale catalog, which raises above and reports
+        # "missing". Rounds may continue with NOVEL-algorithm proposals declared
+        # in the flexgraph interface (manifest `proposed_action`) — the FRONTIER
+        # slots listed below (if any) are the extractor-ranked candidates.
+        note = (
+            "RED-LINK SPACE EXHAUSTED: the validated action catalog is EMPTY — "
+            "every source-proven red-link action has been closed or none remains "
+            "discoverable. No existing gap is left to elevate; further rounds must "
+            "declare a NOVEL algorithm via `proposed_action`, or widen the "
+            "objective (new workloads/backends)."
+        )
+    else:
+        note = (
+            f"Complete fingerprinted action catalog ({len(actions)} actions). Each red link "
+            "is an existing low-level choice that may be exposed; other graph findings and "
+            "hidden compiler boundaries are context, not executable actions."
+        )
+    for gap in frontier:
+        sites = gap["model_callsites"]
+        lines.append(
+            f"FRONTIER(novel-slot) gap_id={gap['gap_id']} ({gap['category']}) "
+            f"family={gap['family']} fn={gap['source_function']} "
+            f"{gap['source_evidence']['detail'][:150]} "
+            f"<{gap['source_evidence']['path']}:{gap['source_evidence']['line']}> "
+            f"[no red link yet; models={','.join(sites)}]"
+        )
+    if frontier:
+        note += (
+            f" {len(frontier)} FRONTIER slot(s) listed above are extractor-declared "
+            "novel interfaces with no implemented source sink and no red action edge; "
+            "elevating one means implementing the declared variant so the regenerated "
+            "graph mines it as an executable action."
+        )
     return lines, note, context
 
 
@@ -175,8 +196,9 @@ def cmd_gaps(_args):
     print("AKT_GAPS " + json.dumps({
         "title": title,
         "lines": lines,
-        "n_actions": len(lines),
-        "converged": not lines,
+        "n_actions": len(context["actions"]),
+        "n_frontier": len(context.get("frontier_actions") or []),
+        "converged": not context["actions"],
         "action_graph_fingerprint": context["fingerprint"],
         "action_context_version": context["version"],
         "note": note,
