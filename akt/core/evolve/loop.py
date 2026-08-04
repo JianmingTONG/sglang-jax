@@ -74,6 +74,8 @@ FROZEN = (
     "akt/board/test_build.py",
     "akt/core/analysis/flexgraph_extract.py",
     "akt/core/analysis/flexgraph_generated.json",
+    "akt/core/analysis/api_metrics.py",
+    "akt/core/analysis/api_baseline.json",
     "akt/core/evolve/loop.py",
     "akt/core/evolve/exposure.py",
     "akt/core/evolve/action_catalog.py",
@@ -1287,10 +1289,13 @@ def cmd_init(args):
         )
         return
     CAPS.mkdir(exist_ok=True)
+    print("[evolve] profiling existing APIs for the novelty-guardrail baseline")
+    api_baseline = _build_api_baseline()
     expected_callsites = sorted(
         site for model in models for site in model.get("callsites") or []
     )
     st = {"start_ts": time.time(), "deadline_ts": time.time() + args.hours * 3600,
+          "api_baseline": api_baseline,
           "round": 0, "target_improvement": max(args.target, 0.02),
           "incumbent_geomean": geo, "incumbent_choices": summary.get("n_choices"),
           "base_search_geomean": geo,
@@ -1348,7 +1353,10 @@ def cmd_rebaseline(args):
             + str(summary.get("error") or summary.get("target_hardware"))
         )
         return
+    print("[evolve] profiling existing APIs for the novelty-guardrail baseline")
+    api_baseline = _build_api_baseline()
     st.update(
+        api_baseline=api_baseline,
         incumbent_geomean=geo,
         incumbent_choices=summary.get("n_choices"),
         incumbent_case_spaces=_case_space_inventory(summary),
@@ -1415,6 +1423,150 @@ def _scan_probe_forgery(manifest) -> list[str]:
                 "editable capability code may not touch runtime evidence"
             )
     return errors
+
+
+API_METRICS = "akt/core/analysis/api_metrics.py"
+API_BASELINE = "akt/core/analysis/api_baseline.json"
+
+
+def _build_api_baseline():
+    """Profile the existing APIs on the target host and pin the calibrated
+    guardrail thresholds (catalog percentiles, never the mean alone). Returns the
+    compact state pin; the full baseline stays in the frozen baseline file."""
+    rc, output = run_argv(
+        (*PY, API_METRICS, "profile", "--out", str(ROOT / API_BASELINE)),
+        timeout=3600,
+        env=harness_env(interpret=True),
+    )
+    if rc or not (ROOT / API_BASELINE).exists():
+        raise RuntimeError(
+            f"API-metrics baseline profiling failed (rc={rc}): {output[-400:]}"
+        )
+    baseline = json.loads((ROOT / API_BASELINE).read_text())
+    return {
+        "fingerprint": baseline.get("fingerprint"),
+        "backend": baseline.get("backend"),
+        "wl_iters": baseline.get("wl_iters"),
+        "weight_mode": baseline.get("weight_mode"),
+        "delta": baseline.get("delta"),
+        "policy": baseline.get("policy"),
+        "redundancy_global": (baseline.get("redundancy") or {}).get("global"),
+        "genericity_global": (baseline.get("genericity") or {}).get("global"),
+    }
+
+
+def validate_api_novelty(manifest, contract_result, summary, state):
+    """API-NOVELTY GUARD: the two calibrated guardrails that filter parameter
+    tweaks out of the KEEP path.
+
+    (1) Directional ISA-grounded redundancy — the candidate program (affected
+    case with the new control at its winning non-default value) must sit BELOW
+    the pinned parameter-tweak population percentile of duplicate risk
+    D(N)=max_E R(N,E), or exhibit the generalization signature (low R(N,E*)
+    with high R(E*,N)). (2) Genericity — G_delta over the frozen model
+    callsites must reach the pinned existing-control percentile. Both are
+    computed by the frozen ``api_metrics`` evaluator from the same eval-summary
+    measurements the gate already trusts; fail-closed on any gap."""
+    pin = state.get("api_baseline") or {}
+    if not pin.get("fingerprint"):
+        return {
+            "ok": False,
+            "errors": ["campaign has no pinned API-metrics baseline; rebaseline"],
+        }
+    baseline_path = ROOT / API_BASELINE
+    if not baseline_path.is_file():
+        return {"ok": False, "errors": [f"missing {API_BASELINE}; rebaseline"]}
+    try:
+        from akt.benchmark.model_workloads import callsite_inventory
+
+        inventory = callsite_inventory()
+    except Exception as error:  # noqa: BLE001
+        return {"ok": False, "errors": [f"cannot load callsite inventory: {error}"]}
+
+    affected = contract_result.get("affected_model_callsites") or []
+    relevant: dict[str, list[str]] = {}
+    for site in affected:
+        call = inventory.get(site)
+        if call is None:
+            return {"ok": False, "errors": [f"unknown affected callsite {site!r}"]}
+        relevant.setdefault(call.case_id, []).append(site)
+
+    case_search = summary.get("case_search") or {}
+    controls = []
+    errors = []
+    for dimension in contract_result.get("derived_dimensions") or []:
+        knob = dimension.get("knob")
+        for case_id in sorted(relevant):
+            result = case_search.get(case_id) or {}
+            knob_record = next(
+                (k for k in result.get("knobs") or [] if k.get("name") == knob),
+                None,
+            )
+            measurements = result.get("measurements") or []
+            if knob_record is None or not measurements:
+                errors.append(
+                    f"case {case_id} has no measured population for control {knob!r}"
+                )
+                continue
+            default = knob_record.get("default")
+            non_default = [
+                m
+                for m in measurements
+                if m.get("config", {}).get(knob, default) != default
+                and isinstance(m.get("latency_s"), (int, float))
+            ]
+            if not non_default:
+                errors.append(
+                    f"case {case_id} has no measured non-default value for {knob!r}"
+                )
+                continue
+            best = min(non_default, key=lambda m: m["latency_s"])
+            controls.append(
+                {
+                    "case_id": case_id,
+                    "knob": knob,
+                    "selected_value": best["config"][knob],
+                }
+            )
+    if errors or not controls:
+        return {
+            "ok": False,
+            "errors": errors or ["no measurable capability control"],
+        }
+
+    spec_path = ROOT / "akt/optimization_history/.api_novelty_spec.json"
+    out_path = ROOT / "akt/optimization_history/.api_novelty.json"
+    out_path.unlink(missing_ok=True)
+    spec_path.write_text(
+        json.dumps(
+            {
+                "baseline_path": str(baseline_path),
+                "summary_path": str(ROOT / "akt/optimization_history/.evolve_eval.json"),
+                "capability_controls": controls,
+                "relevant_case_to_callsites": relevant,
+                "forwarding_paths": contract_result.get("source_forwarding_paths")
+                or {},
+            },
+            indent=1,
+        )
+    )
+    rc, output = run_argv(
+        (*PY, API_METRICS, "gate", "--spec", str(spec_path), "--out", str(out_path)),
+        timeout=1800,
+        env=harness_env(interpret=True),
+    )
+    if rc or not out_path.exists():
+        return {
+            "ok": False,
+            "errors": [f"api-metrics gate failed (rc={rc}): {output[-400:]}"],
+        }
+    result = json.loads(out_path.read_text())
+    if result.get("baseline_fingerprint") != pin.get("fingerprint"):
+        result["ok"] = False
+        result.setdefault("errors", []).append(
+            "API-metrics baseline fingerprint does not match the campaign pin"
+        )
+    return result
 
 
 def _incumbent_pins(models: list[dict]) -> dict:
@@ -1629,6 +1781,27 @@ def gate_capability(st, m, mpath, args):
         ROOT,
         st["incumbent_commit"],
     )
+    # --- API-NOVELTY GUARD (two calibrated guardrails) -------------------------
+    # Filters efficient-use-of-existing-abstraction rounds (parameter tweaks)
+    # out of the KEEP path: directional ISA-grounded redundancy vs the pinned
+    # parameter-tweak percentile baseline, and upper-layer genericity coverage.
+    write_status(
+        "running",
+        round=rnd,
+        capability=m["name"],
+        phase="API-novelty guardrails (redundancy + genericity)",
+    )
+    if summary.get("target_hardware_ok"):
+        try:
+            api_novelty = validate_api_novelty(m, capability_contract, summary, st)
+        except Exception as error:  # noqa: BLE001 - fail closed
+            api_novelty = {"ok": False, "errors": [f"api-novelty guard crashed: {error}"]}
+    else:
+        api_novelty = {
+            "ok": False,
+            "errors": ["not evaluated: target-hardware eval did not run"],
+        }
+    api_novelty_ok = bool(api_novelty.get("ok"))
     space_extension = validate_space_extension(
         m,
         summary,
@@ -1729,6 +1902,7 @@ def gate_capability(st, m, mpath, args):
         and hardware_matches
         and exposure_ok
         and capability_contract.get("ok")
+        and api_novelty_ok
         and space_extension.get("ok")
         and runtime_evidence.get("ok")
         and summary.get("objective_scope") == st.get("objective_scope") == OBJECTIVE_SCOPE
@@ -1799,6 +1973,26 @@ def gate_capability(st, m, mpath, args):
             reason = (
                 "CAPABILITY-CONTRACT GUARD FAILED: "
                 + "; ".join(capability_contract.get("errors") or [])
+            )
+        elif not api_novelty_ok:
+            worst = api_novelty.get("worst_duplicate_risk") or {}
+            reason = (
+                "API-NOVELTY GUARD FAILED (parameter tweak / insufficient coverage): "
+                + "; ".join(api_novelty.get("errors") or [])
+                + (
+                    f" D(N)={worst.get('D'):.3f} vs cut={worst.get('redundancy_cut'):.3f} "
+                    f"(closest={worst.get('closest')!r}, R(E*,N)={worst.get('R_en'):.3f});"
+                    if isinstance(worst.get("D"), (int, float))
+                    and isinstance(worst.get("redundancy_cut"), (int, float))
+                    else ""
+                )
+                + (
+                    f" G_delta={api_novelty.get('genericity_min'):.3f} vs "
+                    f"cut={api_novelty.get('genericity_cut'):.3f}"
+                    if isinstance(api_novelty.get("genericity_min"), (int, float))
+                    and isinstance(api_novelty.get("genericity_cut"), (int, float))
+                    else ""
+                )
             )
         elif not space_extension.get("ok"):
             reason = (
@@ -1957,6 +2151,7 @@ def gate_capability(st, m, mpath, args):
         "incumbent_hash_drift": incumbent_hash_drift,
         "programmer_exposure": exposure,
         "capability_contract": capability_contract,
+        "api_novelty": api_novelty,
         "space_extension": space_extension,
         "target_hardware": target_hardware,
         "workload_fingerprint": summary.get("workload_fingerprint"),

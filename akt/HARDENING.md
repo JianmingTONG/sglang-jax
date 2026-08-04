@@ -85,6 +85,24 @@ The enforced objective scope is `model-serving-empirical-dp-v2`.
   red-link list — frontier slots remain actionable — so it no longer stops `run`:
   remaining rounds are frontier/novel-only, bounded by `--rounds` and the campaign
   deadline; `rebaseline` clears the flag when the graph is widened.
+- API-NOVELTY GUARD: two calibrated guardrails filter parameter tweaks out of
+  KEEP. (1) Directional ISA-grounded redundancy — candidate and incumbent
+  programs are lowered to operation dependency graphs (jaxpr DAGs incl. Pallas
+  kernel bodies) under identical shape/dtype/compiler settings; the duplicate
+  risk `D(N)=max_E R(N,E)` (ancestry-WL maximum-weight dependency-preserving
+  match, instruction-count weights first) must fall below the pinned
+  leave-one-out percentile of the family's own one-knob parameter-tweak
+  population, unless the directional generalization signature holds (low
+  `R(N,E*)`, high `R(E*,N)`). (2) Genericity — `G_delta` upper-layer coverage
+  over the frozen model callsites (each pattern once; lower-layer fan-out
+  reported separately as implementation breadth) must reach the pinned
+  percentile of the existing programmer controls' own coverage. Thresholds are
+  catalog percentiles profiled from the existing APIs
+  (`api_metrics.py profile` -> `api_baseline.json`, both frozen), pinned at
+  init/rebaseline by fingerprint, recomputed live by the frozen evaluator at
+  gate time from the same measured `case_search` population; missing baseline,
+  untraceable programs, or fingerprint mismatch fail closed. Applies uniformly
+  to ELEVATE and NOVEL rounds.
 - The gate's metric coupling is a self-describing contract (`adapter.py gate`:
   objective name/unit/direction/summary keys) fetched LIVE from the frozen adapter
   at gate time — never trusted from editable campaign state.

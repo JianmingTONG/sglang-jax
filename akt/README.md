@@ -250,6 +250,54 @@ red-link actions and unrelated frontier slots outside the selected family
 preserved. After KEEP, that already validated graph and its new fingerprint become
 the next round's pinned context.
 
+## API-novelty guardrails (anti-parameter-tweak)
+
+The campaign audit showed every kept round was a schedule/packaging change —
+efficient use of the existing abstraction. Two calibrated guardrails now filter
+that class out of the KEEP path (`akt/core/analysis/api_metrics.py`, thresholds
+in `akt/core/analysis/api_baseline.json`, both frozen; pinned at
+init/rebaseline):
+
+1. **Directional, ISA-grounded redundancy.** The candidate program N (the
+   affected case with the new control at its winning non-default value) and each
+   existing program E (the incumbent one-knob configuration population) are
+   lowered under identical shape/dtype/compiler settings to their operation
+   dependency graphs (jaxpr equation DAGs, recursing into Pallas kernel bodies —
+   dependency graphs, not instruction sequences, so scheduling cannot hide a
+   match). `R(N,E)` is the weight fraction of N reproducible by E via ancestry
+   Weisfeiler-Lehman matching; `D(N)=max_E R(N,E)` is the duplicate risk. Both
+   directions are computed: high both ways = duplicate; low `R(N,E*)` with high
+   `R(E*,N)` = N generalizes E* (admissible). Weights are instruction counts
+   first (`size` mode weighs by output elements as a cycle proxy). Thresholds
+   come from leave-one-out nearest-neighbor `D` among each family's existing
+   one-knob programs — the canonical parameter-tweak population — as catalog
+   percentiles, never the mean alone. A tile/chunk re-parameterization scores
+   `D≈1` and rejects; a genuinely different algorithm (e.g. the recurrent
+   reference vs the chunked kernel) scores `D≈0.1`.
+
+2. **Genericity = upper-layer coverage.** `G_delta(N)` = the fraction of
+   relevant frozen model callsites (each upper pattern counted once) whose best
+   measured configuration selects the new control at a non-default value with
+   local benefit >= delta (default 2%). The cut is the pinned percentile of the
+   existing programmer controls' own G, floored at 0.5 (a proxy-host
+   calibration that flattens every existing control's coverage cannot make the
+   guard vacuous). Lower-layer fan-out is reported separately as
+   `implementation_breadth` — it is not genericity.
+
+Both guardrails run inside the gate (`API-NOVELTY GUARD`) from the same measured
+`case_search` population the gate already trusts, and apply uniformly to ELEVATE
+and NOVEL rounds — an elevated existing axis whose program is reproducible from
+the incumbent catalog is a parameter tweak by definition and now fails, which is
+the point: KEEPs must change the abstraction, not re-parameterize it.
+
+```bash
+# Recalibrate on the current host (init/rebaseline do this automatically):
+PYTHONPATH=python:. .venv/bin/python akt/core/analysis/api_metrics.py profile
+# Score one candidate config by hand:
+PYTHONPATH=python:. .venv/bin/python akt/core/analysis/api_metrics.py score \
+  --case gla:seq512_h8 --knob compact_alignment --value true
+```
+
 ## Capability versus tuning
 
 A valid round can expose one of:
