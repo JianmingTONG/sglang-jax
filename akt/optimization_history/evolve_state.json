@@ -272,7 +272,7 @@
   }
  },
  "testbench": true,
- "round": 0,
+ "round": 2,
  "target_improvement": 0.02,
  "incumbent_geomean": 0.003348533064126968,
  "incumbent_choices": 323,
@@ -3230,7 +3230,7 @@
    "tiny-linear-serving/kda-long": "f58f2a0b787abcf9f7a6bfa2377689851f58178340ea1455fa440dea4d0d8a8f"
   }
  },
- "incumbent_commit": "328457810739c6f6ec5b01988846875daffe1536",
+ "incumbent_commit": "4ebf154ceb54be4771e243ab90305cfb9b98ea3b",
  "expected_models": [
   "tiny-linear-serving"
  ],

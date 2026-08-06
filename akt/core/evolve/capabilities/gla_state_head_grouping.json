@@ -1,0 +1,67 @@
+{
+ "name": "gla_state_head_grouping",
+ "gap_id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+ "action_graph_fingerprint": "d0be3ecb0a6cd775e54f24141761173f63c8aa32b35855009ddb426de41d2d53",
+ "hypothesis": "The GLA recurrent-state stage launches its Pallas grid as (H, K/BK, V/BV, NT) and only the chunk axis is sequential -- the head axis is pure parallelism that carries no data between programs. Every head therefore pays a full program prologue, grid bookkeeping, boundary-scalar read (chunk_to_seq, bos, eos, seq_real_lens) and its own narrow k/v tile transfer to run one [BK,BT]x[BT,BV] state update. A head-grouped schedule gives one program HEAD_GROUP adjacent heads, each keeping its own recurrent scratch plane and its own unchanged arithmetic, so the boundary scalars are read once per group and the k/v tiles arrive as one wider transfer instead of HEAD_GROUP separate ones. Head arithmetic is never mixed, so the emitted per-head states and final states are the incumbent's.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/gla-long",
+  "baseline_share_pct": 32.7,
+  "expected_relief_pct": 6.0,
+  "reasoning": "The paired incumbent aggregate is 3.358ms and tiny-linear-serving is the only model with a plan. The action's two affected callsites are 53.2% of it: gla-long 1.097ms = 32.7% and gla-short 0.689ms = 20.5%. LOCALIZATION: a stage decomposition of the incumbent-selected plans on this round's GPU-interpret proxy puts chunk_fwd_h_kernel_varlen at 0.537ms of gla-long's 1.082ms (49.7%) and 0.514ms of gla-short's 0.693ms (74.2%) -- the single largest stage at both callsites, and the stage this action schedules. A grid-program scaling sweep isolates the cause: state-stage latency is 58-89us per grid program and is flat in tile size (H=8,T=2048,cs=2048 -> 8 programs -> 0.555ms; H=8,T=512,cs=512 -> 8 programs -> 0.501ms; H=1 -> 1 program -> 0.089ms at both shapes), i.e. the stage is per-program overhead bound, not work bound. Grouping G heads per program divides the program count by G, so the relief is a schedule property rather than an arithmetic saving. MEASURED UPPER REFERENCE: a full 2x112-configuration deployable sweep of both GLA cases on the proxy takes the best deployable config from 1.0091ms to 0.8151ms on gla-long (19.22%, both at chunk_size=2048/compact_alignment=True/output_value_tiles=4) and from 0.6279ms to 0.5008ms on gla-short (20.25%, chunk_size=512/compact_alignment=True/output_value_tiles=8), i.e. 0.327*19.22 + 0.205*20.25 = 6.3 + 4.2 = 10.4% aggregate; all 224 configurations stayed correct. That denominator is inflated for the target: the interpret proxy pays a Python-level grid loop per program, so it exaggerates the fixed per-program cost that Mosaic amortizes in hardware. The estimate discounts the measured local relief by roughly 40% to 11% on gla-long and 12% on gla-short, which are still above the residual grid/prologue cost a real Pallas launch pays per program: 0.327*11 + 0.205*12 = 3.6 + 2.5 = 6.0%."
+ },
+ "search_dimensions": [
+  {
+   "control": "gla.enable_chunk_fwd_h_kernel_varlen_variant",
+   "kernel_function": "chunk_simple_gla_fwd_varlen",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+  "family": "simple_gla",
+  "kernel_ids": [
+   "gla"
+  ],
+  "source_axis": "enable_chunk_fwd_h_kernel_varlen_variant",
+  "source_function": "chunk_fwd_h_kernel_varlen",
+  "source_sink": {
+   "assignments": [
+    "head_group"
+   ],
+   "expression_asts": {
+    "head_group": "IfExp(test=Name(id='enable_chunk_fwd_h_kernel_varlen_variant', ctx=Load()), body=Call(func=Name(id='_state_head_group', ctx=Load()), args=[Name(id='H', ctx=Load()), Name(id='BT', ctx=Load()), Name(id='BK', ctx=Load()), Name(id='BV', ctx=Load()), Attribute(value=Attribute(value=Name(id='k', ctx=Load()), attr='dtype', ctx=Load()), attr='itemsize', ctx=Load())], keywords=[]), orelse=Constant(value=1))"
+   }
+  },
+  "incumbent_value": false,
+  "candidate_values": [
+   false,
+   true
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+   "line": 586,
+   "detail": "default=False"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/gla-long",
+   "tiny-linear-serving/gla-short"
+  ],
+  "action_edge": {
+   "source": "action:simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_state_head_grouping.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "FROZEN-WORKLOAD FINGERPRINT CHANGED",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

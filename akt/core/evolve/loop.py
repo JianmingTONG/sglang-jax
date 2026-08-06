@@ -231,10 +231,20 @@ def run_argv(argv, *, timeout=3600, env=None):
     return result.returncode, result.stdout + result.stderr
 
 
-def harness_env(*, interpret):
+def harness_env(*, interpret, deterministic=False):
     env = os.environ.copy()
     env["PALLAS_INTERPRET"] = "1" if interpret else "0"
     env["PYTHONPATH"] = "python:."
+    if deterministic:
+        # GPU testbench: XLA autotune picks different matmul algorithms per
+        # process, making float outputs bitwise NONDETERMINISTIC — which breaks
+        # the frozen-workload tensor fingerprints and the incumbent output-hash
+        # pins. Deterministic mode restores TPU-grade bitwise stability at some
+        # speed cost (both sides of every paired comparison pay it equally).
+        flags = "--xla_gpu_autotune_level=0 --xla_gpu_deterministic_ops=true"
+        existing = env.get("XLA_FLAGS", "")
+        if "autotune_level" not in existing:
+            env["XLA_FLAGS"] = (existing + " " + flags).strip()
     return env
 
 
@@ -822,7 +832,7 @@ def model_hw_eval(
         log_path,
         progress_prefixes=("[akt-model-eval]",),
         capability=capability,
-        env=harness_env(interpret=bool(testbench)),
+        env=harness_env(interpret=bool(testbench), deterministic=bool(testbench)),
     )
     if not out_path.exists():
         return {

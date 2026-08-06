@@ -1,11 +1,19 @@
 {
- "state": "idle",
- "updated_ts": 1786010631.2273204,
+ "state": "running",
+ "updated_ts": 1786021517.7761161,
  "init_ts": 1786010631.2273204,
- "round": 0,
+ "round": 3,
  "capability": null,
- "phase": null,
- "started_ts": null,
+ "phase": "oracle: tool:Bash cat > /tmp/fp_probe.py <<'EOF'\nimport hashlib,",
+ "started_ts": 1786021344.539828,
  "testbench": true,
- "last": null
+ "last": {
+  "round": 2,
+  "capability": "gla_state_head_grouping",
+  "decision": "reject",
+  "reason": "FROZEN-WORKLOAD FINGERPRINT CHANGED",
+  "geomean_s": 0.0030452143400907508,
+  "delta_pct": -9.95,
+  "finished_ts": 1786021341.4136279
+ }
 }

@@ -1,0 +1,67 @@
+{
+ "name": "kda_contiguous_intra_blocks",
+ "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+ "action_graph_fingerprint": "d0be3ecb0a6cd775e54f24141761173f63c8aa32b35855009ddb426de41d2d53",
+ "hypothesis": "KDA stage 2 reaches every logical chunk through a runtime start offset: it pads the packed time axis, materializes each BT tile with a vmapped dynamic_slice, and scatter-adds the kernel outputs back through an [NC, BT] int32 position vector. chunk_kda_fwd always hands that stage a varlen-aligned layout in which chunk c is exactly rows [c*BT, (c+1)*BT), so a contiguous chunk-block schedule can re-block it by reshape: no tile copy, no int32 position vector, no T+BT scatter buffer. That removes the DMA-bound index/copy segments the campaign attributes to kda-long while returning bit-identical tensors.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/kda-long",
+  "baseline_share_pct": 33.8,
+  "expected_relief_pct": 3.4,
+  "reasoning": "The aggregate objective is 3.349ms (tiny-linear-serving is the only model with a plan; the dense/MoE callsites are deferred). The action's two affected callsites are 50.5% of it: kda-long 1.133ms = 33.8% and kda-short 0.560ms = 16.7%. UPPER BOUND from the campaign L1 panel: 35% of kda-long sits in two int32 index segments (#47 22% + #42 13%, cmp=0%/bw=100%) and 11% more in a float32 rank-3 segment -- exactly the pos/flat_pos position vectors and the per-chunk gather/scatter tile copies. Stage 2 owns roughly half that machinery (stage 2 issues 5 gathers + 4 live scatter-adds, stage 4 issues 4 gathers + 1), i.e. ~23% of kda-long, giving 0.338*23 + 0.167*12 = 9.8%. LOWER BOUND from a full 420-configuration timing sweep of both KDA cases on this round's GPU-interpret proxy: the best deployable config improves from 0.9998ms to 0.9556ms (4.42%) on kda-long and from 0.4110ms to 0.4054ms (1.36%) on kda-short -- both at the unchanged incumbent knob settings -- i.e. 0.338*4.42 + 0.167*1.36 = 1.7%. That denominator is inflated because every Pallas stage runs interpreted here, while the deleted work (about 18MB of HBM traffic per kda-long call -- the T+BT pads, the per-chunk gather copies and the zero-initialized scatter buffers -- plus 9 dynamic-index operations) is unchanged by interpretation. The estimate takes a conservative 8% local relief on kda-long and 4% on kda-short, inside those bounds: 0.338*8 + 0.167*4 = 2.7 + 0.7 = 3.4%."
+ },
+ "search_dimensions": [
+  {
+   "control": "kda.enable_kda_fwd_intra_variant",
+   "kernel_function": "chunk_kda_fwd",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+  "family": "kda",
+  "kernel_ids": [
+   "kda"
+  ],
+  "source_axis": "enable_kda_fwd_intra_variant",
+  "source_function": "kda_fwd_intra",
+  "source_sink": {
+   "assignments": [
+    "contiguous_chunk_blocks"
+   ],
+   "expression_asts": {
+    "contiguous_chunk_blocks": "BoolOp(op=And(), values=[Name(id='enable_kda_fwd_intra_variant', ctx=Load()), Name(id='exact_chunk_tiling', ctx=Load())])"
+   }
+  },
+  "incumbent_value": false,
+  "candidate_values": [
+   false,
+   true
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/kda/kda.py",
+   "line": 444,
+   "detail": "default=False"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/kda-long",
+   "tiny-linear-serving/kda-short"
+  ],
+  "action_edge": {
+   "source": "action:kda:enable_kda_fwd_intra_variant:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_contiguous_intra_blocks.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "FROZEN-WORKLOAD FINGERPRINT CHANGED",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}
