@@ -64,6 +64,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -149,6 +150,7 @@
    "category": "compute",
    "nameability": "hidden",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -166,6 +168,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -186,6 +189,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -225,6 +229,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -262,6 +267,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -339,6 +345,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -506,6 +513,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -576,6 +584,7 @@
    "category": "layout",
    "nameability": "hidden",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -704,6 +713,7 @@
    "category": "datamove",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -730,6 +740,7 @@
    "category": "datamove",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -751,6 +762,7 @@
    "category": "datamove",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -770,6 +782,7 @@
    "category": "datamove",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -794,6 +807,7 @@
    "category": "datamove",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -844,6 +858,7 @@
    "category": "compute",
    "nameability": "nameable",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -927,6 +942,7 @@
    "category": "layout",
    "nameability": "nameable",
    "active": [
+    "common",
     "gla",
     "kda",
     "moe_v1",
@@ -952,6 +968,7 @@
    "category": "layout",
    "nameability": "nameable",
    "active": [
+    "common",
     "gla",
     "kda",
     "moe_v1",
@@ -970,6 +987,7 @@
    "category": "memory",
    "nameability": "nameable",
    "active": [
+    "common",
     "gla",
     "kda",
     "moe_v1",
@@ -1445,6 +1463,7 @@
    "category": "layout",
    "nameability": "nameable",
    "active": [
+    "common",
     "gla",
     "gmm",
     "kda",
@@ -1809,6 +1828,7 @@
    "category": "datamove",
    "nameability": "hidden",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -1825,6 +1845,7 @@
    "category": "datamove",
    "nameability": "hidden",
    "active": [
+    "common",
     "fused_mlp",
     "gla",
     "gmm",
@@ -2904,6 +2925,14 @@
  "n_hidden": 9,
  "n_partial": 14,
  "serving_stack": [
+  {
+   "family": "common",
+   "in_akt_suite": [],
+   "tile_axes": [],
+   "has_tuned_table": false,
+   "n_files": 1,
+   "note": "reusable common-kernel module patching a recorded jax-api-gap (see akt/core/analysis/jax_api_limitations.md); not yet consumed by any suite case \u2014 consuming it is a future capability round"
+  },
   {
    "family": "fused_mlp",
    "in_akt_suite": [
@@ -4026,6 +4055,74 @@
    "eligible_for_current_gate": false,
    "graph_node": "pallas:dot_general",
    "action_node": null
+  },
+  {
+   "gap_id": "common:single_move_permute:jax-api-gap",
+   "id": "common:single_move_permute:jax-api-gap",
+   "family": "common",
+   "kernel_ids": [],
+   "axis": "single_move_permute",
+   "source_axis": "single_move_permute",
+   "source_function": "_single_move_permute_pallas",
+   "category": "jax-api-gap",
+   "status": "jax-api-gap",
+   "what": "JAX/Pallas API boundary limitation (analysis-only)",
+   "detail": "JAX/jnp has no single-move row-permutation/de-alignment primitive: `.at[idx].add/set` lowers to a read-modify-write scatter over the destination (accumulate semantics, touches every row, DMA-bound int32 index stages \u2014 the campaign L1/L2 limiter), while `take`/gather materializes a second full buffer. Incumbent GLA/KDA callers eat the scatter (simple_gla.py:1312, kda.py:566/:1082); R1's fix hand-fused the permutation into one kernel (simple_gla.py:1150-1156, not reusable). Patched by the reusable single_move_permute API (scalar-prefetched dynamic-destination Pallas copy + argsort/take jnp fallback); existing kernels deliberately not rewired \u2014 consuming it is a future elevation.",
+   "evidence": "akt/core/analysis/jax_api_limitations.md:1",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
+   "reachable_prim": null,
+   "elevated_in_akt": false,
+   "programmer_exposed": false,
+   "runner_axes": [],
+   "programmer_controls": [],
+   "exposure_level": "none",
+   "in_akt_suite": false,
+   "model_callsites": [],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "analysis_only": true,
+   "patch_module": "python/sgl_jax/srt/kernels/common/permute.py",
+   "patch_status": "patched-api-available",
+   "graph_node": null,
+   "action_node": null
+  },
+  {
+   "gap_id": "jax:pallas_triton_backend_parity:jax-api-gap",
+   "id": "jax:pallas_triton_backend_parity:jax-api-gap",
+   "family": "jax",
+   "kernel_ids": [],
+   "axis": "pallas_triton_backend_parity",
+   "source_axis": "pallas_triton_backend_parity",
+   "source_function": null,
+   "category": "jax-api-gap",
+   "status": "jax-api-gap",
+   "what": "JAX/Pallas API boundary limitation (analysis-only)",
+   "detail": "Pallas-Triton cannot express what Pallas-Mosaic can: scratch memory ('scratch memory not implemented in the Triton backend', moe_v1 case) and dynamic grid bounds ('dynamic grid bounds not supported in the Triton backend', kv_cache cases) raise NotImplementedError, and Mosaic tuned-table probes leak host assumptions off-TPU (tpu_version=-1, 'Unsupported TPU device kind'). The interpret proxy pays a Python-level grid loop per program, exaggerating fixed per-program cost. Recorded in akt/optimization_history/evals/*.json as the tpu-deferred regime.",
+   "evidence": "akt/core/analysis/jax_api_limitations.md:1",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
+   "reachable_prim": null,
+   "elevated_in_akt": false,
+   "programmer_exposed": false,
+   "runner_axes": [],
+   "programmer_controls": [],
+   "exposure_level": "none",
+   "in_akt_suite": false,
+   "model_callsites": [],
+   "open": true,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "analysis_only": true,
+   "patch_module": null,
+   "patch_status": "documented-not-patched",
+   "graph_node": null,
+   "action_node": null
   }
  ],
  "gap_categories": {
@@ -4064,6 +4161,12 @@
    "reachable_prim": "dot_general",
    "salience": 3,
    "count": 6
+  },
+  "jax-api-gap": {
+   "label": "JAX/Pallas API boundary limitation (analysis-only)",
+   "reachable_prim": null,
+   "salience": 0,
+   "count": 2
   }
  },
  "frontier_actions": [
@@ -4668,10 +4771,10 @@
   "hw_units": 16,
   "tpu_dialect_ops": 175,
   "active_primitives": 54,
-  "kernels_scanned": 8,
-  "pallas_families": 13,
-  "auto_gaps": 24,
-  "open_gaps": 20,
+  "kernels_scanned": 9,
+  "pallas_families": 14,
+  "auto_gaps": 26,
+  "open_gaps": 22,
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,

@@ -209,6 +209,7 @@ def scan_kernel_usage(kernels_dir: Path, prim_shorts: set[str]):
         "ragged_paged_attention_v3": "rpa", "fused_moe/v1": "moe_v1", "fused_moe/v2": "moe_v2",
         "gmm_v2": "gmm", "gmm.py": "gmm", "kda/kda": "kda", "simple_gla": "gla",
         "fused_mlp": "fused_mlp", "update_kv_cache": "kv_cache",
+        "common/": "common",   # reusable cross-family primitives (kernels/common/*)
     }
     for f in kernels_dir.rglob("*.py"):
         rel = str(f.relative_to(kernels_dir.parent))
@@ -443,6 +444,10 @@ _GAP_CATEGORIES = {
     "schedule-toggle":      ("schedule/fusion toggle never searched", "dma_start", 4),
     "backend-gated":        ("tuned table gated to one TPU generation", "dot_general", 2),
     "shape-pinned-tile":    ("tile derived from input shape (not a knob)", "dot_general", 3),
+    # ANALYSIS-ONLY: a limitation IN the JAX/Pallas API boundary itself (not a config
+    # axis of a kernel). Never an action — no red link, never fingerprinted; recorded so
+    # the graph reports boundary limitations instead of silently hiding them.
+    "jax-api-gap":          ("JAX/Pallas API boundary limitation (analysis-only)", None, 0),
 }
 
 # Only findings that prove a pre-existing selector/value reaches a low-level API may
@@ -1101,6 +1106,94 @@ def _mine_file(path: Path, text: str):
     }
 
 
+# ============================ JAX-API BOUNDARY LIMITATIONS ============================
+# Digested, campaign-evidenced limitations IN the JAX/Pallas API boundary itself —
+# not un-named config axes of a serving kernel. The graph historically only added
+# flexibility ON TOP of JAX/Pallas; these records make it also REPORT where the API
+# itself forced the incumbent code shape. Analysis-only by construction: category
+# "jax-api-gap" is not in _EXISTING_ACTION_CATEGORIES, so a record can never become
+# eligible, never owns a red action edge, and never enters the fingerprinted action
+# catalog. Full digest + evidence: akt/core/analysis/jax_api_limitations.md.
+_JAX_API_LIMITATIONS_DOC = "akt/core/analysis/jax_api_limitations.md"
+_JAX_API_LIMITATIONS = [
+    {
+        "family": "common",
+        "axis": "single_move_permute",
+        "source_function": "_single_move_permute_pallas",
+        "patch_module": "python/sgl_jax/srt/kernels/common/permute.py",
+        "patch_status": "patched-api-available",
+        "detail": (
+            "JAX/jnp has no single-move row-permutation/de-alignment primitive: "
+            "`.at[idx].add/set` lowers to a read-modify-write scatter over the "
+            "destination (accumulate semantics, touches every row, DMA-bound int32 "
+            "index stages — the campaign L1/L2 limiter), while `take`/gather "
+            "materializes a second full buffer. Incumbent GLA/KDA callers eat the "
+            "scatter (simple_gla.py:1312, kda.py:566/:1082); R1's fix hand-fused the "
+            "permutation into one kernel (simple_gla.py:1150-1156, not reusable). "
+            "Patched by the reusable single_move_permute API (scalar-prefetched "
+            "dynamic-destination Pallas copy + argsort/take jnp fallback); existing "
+            "kernels deliberately not rewired — consuming it is a future elevation."
+        ),
+    },
+    {
+        "family": "jax",
+        "axis": "pallas_triton_backend_parity",
+        "source_function": None,
+        "patch_module": None,
+        "patch_status": "documented-not-patched",
+        "detail": (
+            "Pallas-Triton cannot express what Pallas-Mosaic can: scratch memory "
+            "('scratch memory not implemented in the Triton backend', moe_v1 case) "
+            "and dynamic grid bounds ('dynamic grid bounds not supported in the "
+            "Triton backend', kv_cache cases) raise NotImplementedError, and Mosaic "
+            "tuned-table probes leak host assumptions off-TPU (tpu_version=-1, "
+            "'Unsupported TPU device kind'). The interpret proxy pays a Python-level "
+            "grid loop per program, exaggerating fixed per-program cost. Recorded in "
+            "akt/optimization_history/evals/*.json as the tpu-deferred regime."
+        ),
+    },
+]
+
+
+def jax_api_gap_findings(repo: Path) -> list[dict]:
+    """Emit the digested JAX-API boundary limitations as analysis-only findings."""
+    doc = repo / _JAX_API_LIMITATIONS_DOC
+    if not doc.is_file():
+        return []
+    findings = []
+    for item in _JAX_API_LIMITATIONS:
+        patch = item.get("patch_module")
+        patch_status = item["patch_status"]
+        if patch and not (repo / patch).is_file():
+            patch_status = "patch-module-missing"
+        gap_id = f"{item['family']}:{item['axis']}:jax-api-gap"
+        findings.append({
+            "gap_id": gap_id, "id": gap_id,
+            "family": item["family"], "kernel_ids": [],
+            "axis": item["axis"], "source_axis": item["axis"],
+            "source_function": item["source_function"],
+            "category": "jax-api-gap", "status": "jax-api-gap",
+            "what": _GAP_CATEGORIES["jax-api-gap"][0],
+            "detail": item["detail"],
+            "evidence": f"{_JAX_API_LIMITATIONS_DOC}:1",
+            "incumbent_value": None, "incumbent_value_known": False,
+            "candidate_values": [], "source_sink": None,
+            "reachable_prim": None,
+            "elevated_in_akt": False, "programmer_exposed": False,
+            "runner_axes": [], "programmer_controls": [],
+            "exposure_level": "none",
+            "in_akt_suite": False,
+            "model_callsites": [],
+            "open": True,
+            "existing_low_level_proven": False,
+            "eligible_for_current_gate": False,
+            "analysis_only": True,
+            "patch_module": patch,
+            "patch_status": patch_status,
+        })
+    return findings
+
+
 def mine_serving_stack(sources):
     """Investigate the full serving stack and emit source findings + categories.
     Returns {serving_stack, gaps, gap_categories}. Each gap is a reachable structural
@@ -1367,6 +1460,22 @@ def mine_serving_stack(sources):
                 "access": "frontier",
                 "perpetual": True,
             })
+
+    # JAX-API boundary limitations (analysis-only; no red link, never fingerprinted).
+    api_findings = jax_api_gap_findings(repo)
+    patched_families = {
+        _short_family(str(Path(f["patch_module"]).relative_to("python/sgl_jax/srt")))
+        for f in api_findings
+        if f.get("patch_module")
+    }
+    for row in stack:
+        if row["family"] in patched_families:
+            row["note"] = (
+                "reusable common-kernel module patching a recorded jax-api-gap "
+                f"(see {_JAX_API_LIMITATIONS_DOC}); not yet consumed by any suite "
+                "case — consuming it is a future capability round"
+            )
+    gaps.extend(api_findings)
 
     # rank: gaps in the tuned suite first, then by category salience, then un-elevated
     def _rank(g):
