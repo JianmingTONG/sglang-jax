@@ -1208,6 +1208,16 @@ def test_oracle_prompt_presents_both_novel_forms():
     assert "never closes" in prompt
 
 
+def test_oracle_prompt_offers_universal_standalone_delivery():
+    """Task 2 must offer BOTH round forms delivery as a new standalone JAX API."""
+    prompt = loop.ORACLE_PROMPT
+    assert "DELIVERY IS UNIVERSAL" in prompt
+    assert "in EITHER mode" in prompt
+    assert "NEW standalone JAX API" in prompt
+    assert "dispatching between the incumbent path and the new handle" in prompt
+    assert 'optional "kernel_path" field' in prompt
+
+
 def test_opus_oracle_forces_opus_model_at_max_effort():
     command = loop.ORACLES["opus"]
     assert "--model opus" in command

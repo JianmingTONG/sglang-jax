@@ -1,19 +1,19 @@
 {
- "state": "idle",
- "updated_ts": 1786037378.8306832,
+ "state": "running",
+ "updated_ts": 1786046567.7846482,
  "init_ts": 1786023097.9306195,
- "round": 3,
- "capability": "kda_resident_chunk_handoff",
- "phase": null,
- "started_ts": null,
+ "round": 5,
+ "capability": null,
+ "phase": "oracle: tool:Bash timeout 1800 .venv/bin/python -c \"\nimport sys;",
+ "started_ts": 1786046143.2013187,
  "testbench": true,
  "last": {
-  "round": 3,
-  "capability": "kda_resident_chunk_handoff",
+  "round": 4,
+  "capability": "kda_resident_chunk_layout",
   "decision": "reject",
   "reason": "FROZEN-WORKLOAD GUARD FAILED: models missing=['tiny-linear-serving'] added=[]; calls missing=['tiny-linear-serving/gla-long', 'tiny-linear-serving/gla-short', 'tiny-linear-serving/input-projection', 'tiny-linear-serving/kda-long', 'tiny-linear-serving/kda-short'] added=[]",
   "geomean_s": null,
   "delta_pct": null,
-  "finished_ts": 1786037378.8306816
+  "finished_ts": 1786046107.5099187
  }
 }

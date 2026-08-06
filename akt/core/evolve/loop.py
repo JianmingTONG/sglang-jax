@@ -199,7 +199,14 @@ while preserving its incumbent default exactly (copy the action's incumbent_valu
 JSON type); the runner must use the action's complete candidate_values domain; do not copy
 that graph-owned field into the manifest or invent another value. For a novel algorithm:
 implement the new variant strictly behind the new axis's non-default values, preserving the
-incumbent algorithm as the default; your `proposed_action` record owns the domain. In both
+incumbent algorithm as the default; your `proposed_action` record owns the domain.
+DELIVERY IS UNIVERSAL: in EITHER mode you may graft the axis onto the existing kernel
+entry as an argument, OR deliver it as a NEW standalone JAX API — your own handle (a new
+function, possibly a new file under python/sgl_jax/srt/kernels/) that exposes the
+graph-owned axis and statically forwards into the mined source_function/sink, with the
+production consumer dispatching between the incumbent path and the new handle via the
+control; in that case the manifest dimension carries the optional "kernel_path" field
+naming the new handle's repo-relative file. In both
 modes register a validated control under \
 python/sgl_jax/srt/configs/kernel_control.py, and forward that control from a production \
 layer/model/backend (python/sgl_jax/srt/layers/**, models/**, or model_executor/**) to the kernel. Then add \

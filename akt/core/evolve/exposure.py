@@ -89,7 +89,14 @@ def _consumer_forwards_argument(
     kernel_path: str,
     kernel_function: str,
 ) -> bool:
-    """Prove a resolver-produced control reaches the declared kernel keyword."""
+    """Prove a resolver-produced control reaches the declared kernel keyword.
+
+    Only the consumer is ASTed here; the callee is resolved through the
+    consumer's own local definitions / absolute imports and then proven by
+    ``_argument_forwarding_path`` against the DECLARED ``(kernel_path,
+    kernel_function)`` — which, under universal delivery, may be a newly created
+    standalone handle (its own function/file), not the graph-evidence entry.
+    """
     tree = ast.parse(path.read_text())
     imported = {}
     for top_level in tree.body:

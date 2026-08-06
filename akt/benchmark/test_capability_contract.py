@@ -962,3 +962,178 @@ def test_novel_access_mode_requires_a_genuinely_new_axis(monkeypatch):
         "already appears in the incumbent low-level source" in error
         for error in result["errors"]
     )
+
+
+# --------------------- universal delivery (optional dimension kernel_path)
+
+
+def test_dimension_kernel_path_override_starts_forwarding_at_the_new_handle(
+    tmp_path, monkeypatch
+):
+    """Universal delivery: a NEW standalone handle file (absent at the incumbent
+    commit) carries the axis; the declared kernel_path is the forwarding START,
+    the forwarding TARGET stays the graph evidence source, and the access mode
+    derives from the graph source_function's own incumbent argument."""
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q")
+    git("config", "user.email", "akt@test.invalid")
+    git("config", "user.name", "akt-test")
+    kernels = tmp_path / "python/sgl_jax/srt/kernels/demo"
+    kernels.mkdir(parents=True)
+    (kernels / "kernel.py").write_text(
+        """
+def graph_entry(*, buffer_count=3):
+    return list(range(buffer_count))
+"""
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "incumbent")
+    incumbent = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True
+    ).strip()
+    # The new standalone handle exists only in the worktree, not at incumbent.
+    (kernels / "handle.py").write_text(
+        """
+from sgl_jax.srt.kernels.demo.kernel import graph_entry
+
+def demo_handle(*, buffer_count=3):
+    return graph_entry(buffer_count=buffer_count)
+"""
+    )
+
+    gap_id = "demo:buffer_count:pipeline-depth"
+    callsite = "tiny-moe-serving/expert-v2"
+    gap = {
+        "gap_id": gap_id,
+        "family": "demo",
+        "kernel_ids": ["demo"],
+        "source_axis": "buffer_count",
+        "source_function": "graph_entry",
+        "category": "pipeline-depth",
+        "incumbent_value": 3,
+        "candidate_values": [2, 3, 4],
+        "evidence": "python/sgl_jax/srt/kernels/demo/kernel.py:2",
+        "model_callsites": [callsite],
+        "existing_low_level_proven": True,
+    }
+    reference = {
+        "ok": True,
+        "novel": False,
+        "gap_id": gap_id,
+        "gap": gap,
+        "action_edge": {"source": f"action:{gap_id}", "target": "pallas:dma_start"},
+        "action_graph_fingerprint": "x",
+        "source_evidence": {
+            "path": "python/sgl_jax/srt/kernels/demo/kernel.py",
+            "line": 2,
+            "detail": "graph-owned pipeline depth",
+        },
+        "affected_model_callsites": [callsite],
+        "errors": [],
+    }
+    monkeypatch.setattr(
+        capability_contract,
+        "validate_action_reference",
+        lambda _manifest, _repo: reference,
+    )
+    manifest = {
+        "name": "demo_standalone_handle",
+        "action_graph_fingerprint": "x",
+        "gap_id": gap_id,
+        "estimate": {
+            "model": "tiny-moe-serving",
+            "callsite": callsite,
+            "baseline_share_pct": 20.0,
+            "expected_relief_pct": 3.0,
+            "reasoning": "The demo family dominates this frozen callsite.",
+        },
+        "search_dimensions": [
+            {
+                "control": "demo.buffer_count",
+                "kernel_function": "demo_handle",
+                "consumer": "python/sgl_jax/srt/layers/demo.py",
+                "kernel_path": "python/sgl_jax/srt/kernels/demo/handle.py",
+            }
+        ],
+    }
+
+    result = validate_capability_contract(
+        manifest, {}, tmp_path, incumbent, static_only=True
+    )
+
+    assert result["ok"] is True, result["errors"]
+    derived = result["derived_dimensions"][0]
+    assert derived["kernel_path"] == "python/sgl_jax/srt/kernels/demo/handle.py"
+    assert derived["default"] == 3
+    assert [
+        step["function"]
+        for step in result["source_forwarding_paths"]["demo.buffer_count"]
+    ] == ["demo_handle", "graph_entry"]
+    # graph_entry accepted buffer_count at incumbent, so the red-link elevation
+    # stays "existing-backend-argument" even though the handle file is new.
+    assert result["access_modes"] == {"demo.buffer_count": "existing-backend-argument"}
+
+    # Fail-closed leg: a handle whose default does not preserve the graph
+    # incumbent is rejected even in the new-file regime.
+    (kernels / "handle.py").write_text(
+        """
+from sgl_jax.srt.kernels.demo.kernel import graph_entry
+
+def demo_handle(*, buffer_count=4):
+    return graph_entry(buffer_count=buffer_count)
+"""
+    )
+    drifted = validate_capability_contract(
+        manifest, {}, tmp_path, incumbent, static_only=True
+    )
+    assert drifted["ok"] is False
+    assert any("backend default" in error for error in drifted["errors"])
+
+
+def test_dimension_kernel_path_outside_kernels_tree_or_missing_is_rejected():
+    manifest, summary = _existing_moe_action_contract()
+    manifest["search_dimensions"][0]["kernel_path"] = (
+        "python/sgl_jax/srt/layers/fused_moe.py"
+    )
+    evidence = validate_capability_contract(manifest, summary, ROOT, _head())
+    assert evidence["ok"] is False
+    assert any(
+        "kernel_path must name an existing production kernel source" in error
+        for error in evidence["errors"]
+    )
+
+    manifest["search_dimensions"][0]["kernel_path"] = (
+        "python/sgl_jax/srt/kernels/does_not_exist/handle.py"
+    )
+    evidence = validate_capability_contract(manifest, summary, ROOT, _head())
+    assert evidence["ok"] is False
+    assert any(
+        "kernel_path must name an existing production kernel source" in error
+        for error in evidence["errors"]
+    )
+
+
+def test_dimension_explicit_graph_kernel_path_matches_omitted_behavior():
+    """kernel_path naming the graph evidence path is byte-identical to omitting it."""
+    manifest, summary = _existing_moe_action_contract()
+    baseline = validate_capability_contract(manifest, summary, ROOT, _head())
+    assert baseline["ok"] is True, baseline["errors"]
+
+    explicit = copy.deepcopy(manifest)
+    explicit["search_dimensions"][0]["kernel_path"] = baseline[
+        "derived_dimensions"
+    ][0]["kernel_path"]
+    evidence = validate_capability_contract(explicit, summary, ROOT, _head())
+
+    assert evidence["ok"] is True, evidence["errors"]
+    assert evidence["derived_dimensions"] == baseline["derived_dimensions"]
+    assert evidence["access_modes"] == baseline["access_modes"]
+    assert evidence["source_forwarding_paths"] == baseline["source_forwarding_paths"]

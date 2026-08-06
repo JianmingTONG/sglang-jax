@@ -23,6 +23,9 @@ from akt.core.evolve.action_catalog import (
 CONTROL_CONFIG = "python/sgl_jax/srt/configs/kernel_control.py"
 _CONTROL_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 _DIMENSION_FIELDS = {"control", "kernel_function", "consumer"}
+# Universal delivery: a dimension may name a NEW standalone handle's file as the
+# forwarding START; the forwarding TARGET stays graph-owned (evidence path).
+_DIMENSION_OPTIONAL_FIELDS = {"kernel_path"}
 # A novel-algorithm declaration is the exact record the extractor itself mines:
 # closure later compares the regenerated graph's finding against these fields.
 _PROPOSED_ACTION_FIELDS = {
@@ -88,6 +91,22 @@ def _function_has_argument(source: str, function: str, argument: str) -> bool:
         if argument in names:
             return True
     return False
+
+
+def _source_has_function(source: str | None, function: str) -> bool:
+    """Whether one source text (possibly absent) defines a function by name."""
+
+    if source is None:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == function
+        for node in ast.walk(tree)
+    )
 
 
 def _function_argument_default(
@@ -836,7 +855,16 @@ def derive_search_dimensions(
     repo: Path,
     action_reference: dict | None = None,
 ) -> tuple[dict, list[dict], list[str]]:
-    """Derive all graph-owned dimension fields from the selected action."""
+    """Derive all graph-owned dimension fields from the selected action.
+
+    A dimension carries exactly ``{control, kernel_function, consumer}`` plus an
+    OPTIONAL ``kernel_path`` (repo-relative, under
+    ``python/sgl_jax/srt/kernels/``, existing in the worktree). When present it
+    names a NEW standalone JAX handle's file — universal delivery — and
+    OVERRIDES the graph-evidence path as the dimension's kernel_path (the
+    forwarding START); the forwarding TARGET stays graph-owned (the graph
+    evidence path, ``source_function``, and mined sink).
+    """
 
     action_reference = action_reference or validate_action_reference(manifest, repo)
     errors = list(action_reference.get("errors") or [])
@@ -858,8 +886,15 @@ def derive_search_dimensions(
     derived = []
     for index, dimension in enumerate(dimensions):
         label = f"search_dimensions[{index}]"
-        if not isinstance(dimension, dict) or set(dimension) != _DIMENSION_FIELDS:
-            errors.append(f"{label} must contain exactly {sorted(_DIMENSION_FIELDS)}")
+        if not isinstance(dimension, dict) or not (
+            _DIMENSION_FIELDS
+            <= set(dimension)
+            <= _DIMENSION_FIELDS | _DIMENSION_OPTIONAL_FIELDS
+        ):
+            errors.append(
+                f"{label} must contain exactly {sorted(_DIMENSION_FIELDS)} "
+                f"plus at most the optional {sorted(_DIMENSION_OPTIONAL_FIELDS)}"
+            )
             continue
 
         control = dimension.get("control")
@@ -887,6 +922,25 @@ def derive_search_dimensions(
             errors.append(f"{label}.consumer must be a repository-relative path")
             continue
 
+        declared_kernel_path = dimension.get("kernel_path")
+        if declared_kernel_path is not None:
+            resolved = (
+                _safe_file(repo, declared_kernel_path)
+                if isinstance(declared_kernel_path, str)
+                else None
+            )
+            if (
+                not isinstance(declared_kernel_path, str)
+                or not declared_kernel_path.startswith(_KERNEL_SOURCE_PREFIX)
+                or resolved is None
+                or not resolved.is_file()
+            ):
+                errors.append(
+                    f"{label}.kernel_path must name an existing production kernel "
+                    f"source under {_KERNEL_SOURCE_PREFIX}"
+                )
+                continue
+
         derived.append(
             {
                 "label": label,
@@ -896,7 +950,7 @@ def derive_search_dimensions(
                 "kernel_family": family,
                 "knob": key,
                 "default": default,
-                "kernel_path": source_evidence.get("path"),
+                "kernel_path": declared_kernel_path or source_evidence.get("path"),
                 "kernel_function": kernel_function,
                 "kernel_argument": key,
                 "source_axis": source_axis,
@@ -920,6 +974,15 @@ def validate_capability_contract(
     static_only: bool = False,
 ) -> dict:
     """Validate gap identity, prior inaccessibility, estimate, and planner dimensions.
+
+    Universal delivery: a dimension may declare an optional ``kernel_path`` naming
+    a NEW standalone handle's file under ``python/sgl_jax/srt/kernels/``. The
+    current-tree checks (typed incumbent-preserving default on ``kernel_function``,
+    static forwarding) then run against that declared file, while the forwarding
+    TARGET stays the graph evidence path / ``source_function`` / sink, and — when
+    the declared function did not exist at the incumbent commit — the access mode
+    and prior-inaccessibility legs inspect the incumbent GRAPH source instead of
+    the new handle's file.
 
     ``static_only=True`` runs every check derivable from the manifest, the source
     tree, and the incumbent git revision alone — skipping only the legs that need
@@ -1026,20 +1089,56 @@ def validate_capability_contract(
                     f"{control} runtime event named a different backend: "
                     f"{mismatched_backends}"
                 )
+        source_function = gap.get("source_function")
         old_source = _git_text(repo, incumbent_commit, kernel_path)
+        # Incumbent text of the GRAPH-owned source (the forwarding target). With
+        # no kernel_path override the declared file IS the graph evidence path.
+        graph_old_source = (
+            old_source
+            if kernel_path == expected_kernel_path
+            else _git_text(repo, incumbent_commit, expected_kernel_path)
+            if isinstance(expected_kernel_path, str)
+            else None
+        )
+        # Universal delivery: a missing file or absent function at the incumbent
+        # commit means the declared entry is a NEW standalone handle — the
+        # old-source inspection must not error; prior access derives from the
+        # graph evidence source below instead of the new handle's file.
+        entry_existed_at_incumbent = _source_has_function(old_source, kernel_function)
         try:
             current_source = path.read_text()
             current_has = _function_has_argument(
                 current_source, kernel_function, kernel_argument
             )
-            old_has = (
+            entry_old_has = (
                 _function_has_argument(old_source, kernel_function, kernel_argument)
-                if old_source is not None
+                if entry_existed_at_incumbent
                 else False
             )
         except Exception as error:  # noqa: BLE001
             errors.append(f"cannot prove {control} backend entry: {error}")
             continue
+        if entry_existed_at_incumbent:
+            old_has = entry_old_has
+        else:
+            # Access mode is a property of the graph-owned source: an existing
+            # red-link elevation stays "existing-backend-argument" or
+            # "existing-low-level-axis" per the source_function's own
+            # argument/axis at the incumbent commit.
+            try:
+                old_has = (
+                    _function_has_argument(
+                        graph_old_source, source_function, kernel_argument
+                    )
+                    if graph_old_source is not None
+                    and isinstance(source_function, str)
+                    else False
+                )
+            except ValueError:
+                old_has = False
+        axis_old_source = (
+            old_source if entry_existed_at_incumbent else graph_old_source
+        )
         if not current_has:
             errors.append(f"{control} is not an explicit argument of {kernel_function}")
         else:
@@ -1055,7 +1154,6 @@ def validate_capability_contract(
                         f"{control} backend default must preserve the graph incumbent "
                         f"{default!r}"
                     )
-        source_function = gap.get("source_function")
         forwarding_path = None
         if current_has and isinstance(source_function, str):
             forwarding_path = _argument_forwarding_path(
@@ -1076,7 +1174,7 @@ def validate_capability_contract(
                 )
             elif isinstance(control, str):
                 forwarding_paths[control] = forwarding_path
-                if source_function != kernel_function:
+                if source_function != kernel_function or kernel_path != expected_kernel_path:
                     source_path = _safe_file(repo, expected_kernel_path)
                     try:
                         source_default_known, source_default = _function_argument_default(
@@ -1102,14 +1200,14 @@ def validate_capability_contract(
             # An invented algorithm must be genuinely new: neither the entry
             # argument nor the axis name may exist at the incumbent commit
             # (otherwise the round must select/elevate the existing action).
-            if old_has:
+            if entry_old_has:
                 errors.append(
                     f"{control} is declared novel but {kernel_function} already "
                     "accepted this argument at the incumbent commit"
                 )
             allowed_axes = dimension["allowed_axes"]
-            if old_source is not None and any(
-                name in old_source for name in allowed_axes
+            if axis_old_source is not None and any(
+                name in axis_old_source for name in allowed_axes
             ):
                 errors.append(
                     f"{control} is declared novel but its axis already appears in "
@@ -1123,7 +1221,9 @@ def validate_capability_contract(
                     "declared via proposed_action in the flexgraph interface"
                 )
             allowed_axes = dimension["allowed_axes"]
-            if old_source is None or not any(name in old_source for name in allowed_axes):
+            if axis_old_source is None or not any(
+                name in axis_old_source for name in allowed_axes
+            ):
                 errors.append(
                     f"{control} source axis is not present in the incumbent low-level source"
                 )

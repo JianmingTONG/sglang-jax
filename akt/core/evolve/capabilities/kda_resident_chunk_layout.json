@@ -1,0 +1,67 @@
+{
+ "name": "kda_resident_chunk_layout",
+ "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+ "action_graph_fingerprint": "65a20089bc4503338f65c0f17c194acb12f3674384609797ea066e8e9aef92a5",
+ "hypothesis": "Every stage boundary inside chunk_kda_fwd re-addresses the same tensors twice for no arithmetic reason. The intra-chunk solve's Pallas grid already produces its six results as (1, H, NC, BT, D) chunk tiles, but the stage then read-modify-writes each of them into a T+BT-row token-space staging buffer, and its consumers immediately take that buffer apart again -- the state stage by padding and transposing it back to head-major, the output stage by a vmap of dynamic_slice that rebuilds the very tiles the grid emitted. The address map behind that round trip is not even data-dependent: the varlen aligner has already padded every sequence to a multiple of STATE_BT, and STATE_BT is a multiple of BT, so chunk c always physically occupies rows [c*BT, (c+1)*BT) and the scatter is exactly a reshape with a permutation that happens to be the identity. Paying for it as a scatter is what makes it expensive -- a read-modify-write over every token row of five tensors, which the deterministic-execution regime the gate evaluates under cannot vectorize. The resident layout keeps stage 2's results in the layout the grid produced and lets stages 3 and 4 consume them there, so the staging buffer is never allocated, the scatter and its inverse gather annihilate, and the only conversions left are one reshape per token-space operand plus a single transpose closing the run. Nothing is re-associated or approximated: the Pallas kernel bodies are untouched and every intermediate holds the same values in a different order, so the token output and the final recurrent state are bit-identical to the incumbent's.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/kda-long",
+  "baseline_share_pct": 55.1,
+  "expected_relief_pct": 60.0,
+  "reasoning": "SHARE: from the last accepted eval (evals/c1786023097_round_001), whose additive DP optimum is 11.4217ms across the only model that runs on this backend. Its per-callsite best measured latencies are kda-long 6.2965ms (55.13%), kda-short 3.2212ms (28.20%), gla-long 0.8165ms (7.15%), gla-short 0.7463ms (6.53%), input-projection 0.3412ms (2.99%) -- so after the previous round moved the GLA output stage, KDA is 83.3% of the objective and is the only place with room left. LOCALIZATION: a stage decomposition of chunk_kda_fwd at the DP-selected plans, run under the deterministic-XLA regime the frozen gate evaluates in, puts kda_fwd_intra at 78.6% of kda-long's pipeline and 77.7% of kda-short's (output stage 15.7%/15.9%, state stage 4.8%/5.2%, gate cumsum and the two varlen alignment helpers under 1% each). Decomposing that stage in turn puts its four live staging scatters at 9.1009ms of 11.0257ms for kda-long (82.5%) and 4.6191ms of 4.9992ms for kda-short (92.4%), against 16.9%/6.3% for the Pallas launch itself and under 1.3% for the input gather. The scatter is therefore ~65% of the whole kda-long callsite, and it is pure addressing. MEASURED: at the exact DP-selected plans, timed end to end through chunk_kda_fwd with PALLAS_INTERPRET=1 and XLA_FLAGS='--xla_gpu_autotune_level=0 --xla_gpu_deterministic_ops=true', kda-long goes 7.4006ms -> 1.6267ms (78.02%) and kda-short 3.7060ms -> 0.4762ms (87.15%), with both the token output and the final recurrent state bit-identical (np.array_equal) to the incumbent path and both matching the frozen pure-JAX reference at max abs error 7.0e-07/4.4e-06 (kda-long) and 5.6e-09/3.2e-08 (kda-short) against atol 1e-2. AGGREGATE: 0.5513*78.02 + 0.2820*87.15 = 43.0 + 24.6 = 67.6%. DISCOUNT: the estimate is cut to 60% to leave room for the gate's own timing methodology and for the DP re-selecting other configurations once the axis widens each KDA case's deployment space; even crediting only the smaller callsite, 0.2820*87.15 = 24.6%, clears the 2% bar by an order of magnitude."
+ },
+ "search_dimensions": [
+  {
+   "control": "kda.enable_kda_fwd_intra_variant",
+   "kernel_function": "chunk_kda_fwd",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+  "family": "kda",
+  "kernel_ids": [
+   "kda"
+  ],
+  "source_axis": "enable_kda_fwd_intra_variant",
+  "source_function": "kda_fwd_intra",
+  "source_sink": {
+   "assignments": [
+    "staging_rows"
+   ],
+   "expression_asts": {
+    "staging_rows": "IfExp(test=Name(id='resident_chunk_layout', ctx=Load()), body=Constant(value=0), orelse=Name(id='T_alloc', ctx=Load()))"
+   }
+  },
+  "incumbent_value": false,
+  "candidate_values": [
+   false,
+   true
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/kda/kda.py",
+   "line": 472,
+   "detail": "default=False"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/kda-long",
+   "tiny-linear-serving/kda-short"
+  ],
+  "action_edge": {
+   "source": "action:kda:enable_kda_fwd_intra_variant:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_resident_chunk_layout.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "FROZEN-WORKLOAD GUARD FAILED: models missing=['tiny-linear-serving'] added=[]; calls missing=['tiny-linear-serving/gla-long', 'tiny-linear-serving/gla-short', 'tiny-linear-serving/input-projection', 'tiny-linear-serving/kda-long', 'tiny-linear-serving/kda-short'] added=[]",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

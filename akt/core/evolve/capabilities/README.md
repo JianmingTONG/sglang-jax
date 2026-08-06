@@ -23,6 +23,21 @@ One pending manifest proposes exactly one of:
     closes: introducing one API does not exhaust the family, so the extractor
     keeps emitting it, and graph closure requires its persistence.
 
+**Universal delivery.** BOTH round forms — elevating a red-link action or filling a
+variant-toggle frontier slot (form A), and a novel standalone API (form B) — may be
+DELIVERED either by grafting the axis onto the existing kernel entry as an argument,
+or as a NEW standalone JAX API: a new handle (a new function, possibly its own file
+under `python/sgl_jax/srt/kernels/`) that exposes the graph-owned axis and statically
+forwards into the mined `source_function`/sink, with the production consumer
+dispatching between the incumbent path and the new handle via the control. A
+dimension delivering through a new handle sets the optional `kernel_path` field (see
+below). Every guarantee stays: the incumbent default is preserved (typed), the
+static forwarding proof lands in the graph `source_function`/sink, the consumer
+resolves the control through `KernelControlPolicy`, closure applies, and prior
+inaccessibility is judged against the incumbent GRAPH source (an elevation stays
+`existing-backend-argument`/`existing-low-level-axis` per the `source_function`'s own
+argument/axis at the incumbent commit, even when the handle file is new).
+
 ## Schema
 
 ```json
@@ -120,15 +135,27 @@ per-launch frontier slot id. Requirements:
   the perpetual `<family>:new_api:standalone` slot MUST still be present — it
   never closes and its persistence is not an error.
 
-Each search dimension contains exactly three fields:
+Each search dimension contains exactly three required fields, plus one optional
+field:
 
 - `control`: `<kernel-family>.<axis>`. The family must be one of the selected
   action's `kernel_ids`; the key becomes both the runner knob and backend argument.
-- `kernel_function`: the backend entry in the graph-derived kernel source. It must
-  forward the argument to the graph-derived `source_function` and, for a hardcoded
-  literal, to its exact mined sink.
+- `kernel_function`: the backend entry carrying the argument. It must forward the
+  argument to the graph-derived `source_function` and, for a hardcoded literal, to
+  its exact mined sink. It may be the graph-derived entry OR a newly created
+  standalone handle (universal delivery).
 - `consumer`: a production path under `layers/`, `models/`, or `model_executor/`
   that resolves the stable control and forwards it to `kernel_function`.
+- `kernel_path` (OPTIONAL, universal delivery): repo-relative path of the file
+  defining `kernel_function`, required to start with `python/sgl_jax/srt/kernels/`
+  and to exist in the working tree (it need not exist at the incumbent commit).
+  When present it OVERRIDES the graph-evidence path as the dimension's forwarding
+  START; the forwarding TARGET is unchanged — the graph evidence path,
+  `source_function`, and mined sink. When `kernel_function` did not exist at the
+  incumbent commit in that file (a missing file counts as function-absent), the
+  incumbent-side inspections do not error, and the access mode derives from the
+  graph source's own incumbent argument/axis. When omitted, behavior is exactly
+  the pre-existing one: the dimension's kernel path is the graph evidence path.
 
 Do not copy graph-owned fields into the manifest. The validator derives
 `source_evidence`, callsites, source axis, default, kernel path/family/argument, and
