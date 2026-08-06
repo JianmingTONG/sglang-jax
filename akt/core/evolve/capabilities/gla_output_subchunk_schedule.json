@@ -1,0 +1,70 @@
+{
+ "name": "gla_output_subchunk_schedule",
+ "gap_id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
+ "action_graph_fingerprint": "d0be3ecb0a6cd775e54f24141761173f63c8aa32b35855009ddb426de41d2d53",
+ "hypothesis": "The GLA output stage is the only stage that both owns the intra-chunk score tile and owns the layout its rows are finally read in, and the incumbent schedule is pessimal on both counts. It materializes one chunk-wide BT x BT fp32 score tile per output tile -- 16 MiB at BT=2048, roughly half of it masked away again -- so its score arithmetic AND its elementwise decay/mask traffic grow with the square of chunk_size; and it returns the aligned staging layout, leaving the caller to restore token order with a read-modify-write scatter over the ALIGNED index space, which touches every output row through an accumulate. A resident output schedule fixes both: the chunk is walked in fixed-height sub-chunks whose own rows need only a (128,128) score tile while every older row of the same chunk arrives through a running (K,V) state -- exactly how a chunk already reads preceding chunks through h -- and the stage lands its rows directly in token order, expressing the identical permutation over the OUTPUT index space so each row is moved exactly once. The sub-chunk axis stays a batch dimension of single contractions and the state recurrence is resolved as one (num_sub, num_sub) decay matrix, so the operation count is unchanged while every operand shrinks. Nothing is dropped or approximated: it is the same linear-attention sum re-associated, and the restored layout is bitwise identical to the scatter's.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/gla-long",
+  "baseline_share_pct": 50.2,
+  "expected_relief_pct": 55.0,
+  "reasoning": "SHARE: the paired incumbent aggregate is 25.601ms and the action's two affected callsites are 64.2% of it -- gla-long 12.853ms = 50.2% and gla-short 3.574ms = 14.0%. LOCALIZATION: a stage decomposition of the incumbent-selected plans, run under the same deterministic-XLA regime the frozen gate evaluates in, puts the aligned-space scatter at 12.044ms of gla-long's 12.462ms (96.6%) and 3.038ms of gla-short's 3.623ms (83.9%), with the output Pallas launch at 5.5%/5.3% and the state launch at 4.4%/14.0%. That scatter is the campaign's named LIMITER (#26 jit|float32r4, cmp=2%/bw=98%, DMA memory-bound -- cut bytes moved / keep data resident), and this action's source function is the stage that produces its input. MEASURED: a full 224-configuration paired sweep of the extended deployment space on this host, every configuration checked against the frozen pure-JAX reference and all 224 correct, takes gla-long's best deployable config from 12.4307ms to 0.7622ms (93.87%, incumbent cs=2048/ca=True/ovt=4 vs variant cs=2048/ca=True/ovt=8) and gla-short's from 3.4873ms to 0.6850ms (80.36%, variant cs=512/ca=True/ovt=8). Aggregate = 0.502*93.87 + 0.140*80.36 = 47.1 + 11.3 = 58.4%. DISCOUNT: most of that margin is the scatter, and a deterministic GPU scatter is far more pathological than the TPU equivalent, so the estimate is cut to 55% to leave room for the gate's own timing methodology and for the DP re-selecting other callsites; even attributing NOTHING to the scatter and crediting only the sub-chunk walk (separately measured at 28.08% of gla-long with autotuning left on) clears the 2% bar at 0.502*28.08 = 14.1%."
+ },
+ "search_dimensions": [
+  {
+   "control": "gla.enable__chunk_fwd_o_pl_variant",
+   "kernel_function": "chunk_simple_gla_fwd_varlen",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
+  "family": "simple_gla",
+  "kernel_ids": [
+   "gla"
+  ],
+  "source_axis": "enable__chunk_fwd_o_pl_variant",
+  "source_function": "_chunk_fwd_o_pl",
+  "source_sink": {
+   "assignments": [
+    "subchunk_rows",
+    "emit_order"
+   ],
+   "expression_asts": {
+    "subchunk_rows": "IfExp(test=Name(id='enable__chunk_fwd_o_pl_variant', ctx=Load()), body=Call(func=Name(id='_output_subchunk_rows', ctx=Load()), args=[Name(id='BT', ctx=Load())], keywords=[]), orelse=Constant(value=None))",
+    "emit_order": "IfExp(test=Name(id='enable__chunk_fwd_o_pl_variant', ctx=Load()), body=Name(id='output_gather', ctx=Load()), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": false,
+  "candidate_values": [
+   false,
+   true
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+   "line": 846,
+   "detail": "default=False"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/gla-long",
+   "tiny-linear-serving/gla-short"
+  ],
+  "action_edge": {
+   "source": "action:simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_output_subchunk_schedule.json"
+ ],
+ "status": "kept",
+ "delta_pct": 58.67,
+ "measured_geomean_s": 0.010579681955277916,
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

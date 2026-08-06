@@ -532,6 +532,7 @@
    "category": "layout",
    "nameability": "nameable",
    "active": [
+    "gla",
     "gmm",
     "kda",
     "moe_v1",
@@ -554,6 +555,7 @@
    "nameability": "nameable",
    "active": [
     "fused_mlp",
+    "gla",
     "gmm",
     "kda",
     "kv_cache",
@@ -1684,6 +1686,7 @@
    "category": "layout",
    "nameability": "nameable",
    "active": [
+    "gla",
     "gmm",
     "kda",
     "moe_v2"
@@ -3861,6 +3864,58 @@
    "action_node": null
   },
   {
+   "gap_id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
+   "id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "axis": "enable__chunk_fwd_o_pl_variant",
+   "source_axis": "enable__chunk_fwd_o_pl_variant",
+   "source_function": "_chunk_fwd_o_pl",
+   "category": "schedule-toggle",
+   "status": "schedule-toggle",
+   "what": "schedule/fusion toggle never searched",
+   "detail": "default=False",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:846",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "source_sink": {
+    "assignments": [
+     "subchunk_rows",
+     "emit_order"
+    ],
+    "expression_asts": {
+     "subchunk_rows": "IfExp(test=Name(id='enable__chunk_fwd_o_pl_variant', ctx=Load()), body=Call(func=Name(id='_output_subchunk_rows', ctx=Load()), args=[Name(id='BT', ctx=Load())], keywords=[]), orelse=Constant(value=None))",
+     "emit_order": "IfExp(test=Name(id='enable__chunk_fwd_o_pl_variant', ctx=Load()), body=Name(id='output_gather', ctx=Load()), orelse=Constant(value=None))"
+    }
+   },
+   "reachable_prim": "dma_start",
+   "elevated_in_akt": true,
+   "programmer_exposed": true,
+   "runner_axes": [
+    "enable__chunk_fwd_o_pl_variant"
+   ],
+   "programmer_controls": [
+    "gla.enable__chunk_fwd_o_pl_variant"
+   ],
+   "exposure_level": "programmer",
+   "in_akt_suite": true,
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dma_start",
+   "action_node": null
+  },
+  {
    "gap_id": "grouped_topk/v1:bt:shape-pinned-tile",
    "id": "grouped_topk/v1:bt:shape-pinned-tile",
    "family": "grouped_topk/v1",
@@ -3946,7 +4001,7 @@
    "label": "schedule/fusion toggle never searched",
    "reachable_prim": "dma_start",
    "salience": 4,
-   "count": 4
+   "count": 5
   },
   "backend-gated": {
    "label": "tuned table gated to one TPU generation",
@@ -4284,33 +4339,6 @@
    "access": "frontier"
   },
   {
-   "gap_id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
-   "family": "simple_gla",
-   "kernel_ids": [
-    "gla"
-   ],
-   "source_axis": "enable__chunk_fwd_o_pl_variant",
-   "source_function": "_chunk_fwd_o_pl",
-   "category": "schedule-toggle",
-   "incumbent_value": false,
-   "incumbent_value_known": true,
-   "candidate_values": [
-    false,
-    true
-   ],
-   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:761",
-   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the _chunk_fwd_o_pl Pallas launch, selectable behind a new enable__chunk_fwd_o_pl_variant toggle; the incumbent path stays the exact default",
-   "model_callsites": [
-    "tiny-linear-serving/gla-long",
-    "tiny-linear-serving/gla-short"
-   ],
-   "action_edge": {
-    "source": "action:simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
-    "target": "pallas:dma_start"
-   },
-   "access": "frontier"
-  },
-  {
    "gap_id": "simple_gla:enable__launch_decode_simple_gla_variant:schedule-toggle",
    "family": "simple_gla",
    "kernel_ids": [
@@ -4430,15 +4458,15 @@
   "mosaic_ops": 34,
   "hw_units": 16,
   "tpu_dialect_ops": 175,
-  "active_primitives": 53,
+  "active_primitives": 54,
   "kernels_scanned": 8,
   "pallas_families": 13,
-  "auto_gaps": 22,
+  "auto_gaps": 23,
   "open_gaps": 20,
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
-  "frontier_slots": 16,
+  "frontier_slots": 15,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true
  },

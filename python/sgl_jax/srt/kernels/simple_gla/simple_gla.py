@@ -561,6 +561,159 @@ def chunk_fwd_h_kernel_varlen(
 # =============================================================================
 
 
+# Row count of the output stage's second-level sub-chunk. 128 is the TPU lane
+# width and this kernel's pinned BK/BV, so a sub-chunk score tile and the running
+# (K, BV) state are both exactly one native tile wide.
+_OUTPUT_SUBCHUNK_ROWS = 128
+
+
+def _output_subchunk_rows(chunk_rows: int) -> int | None:
+    """Sub-chunk height for the two-level output schedule.
+
+    ``None`` means the chunk is already at most one sub-chunk tall, so the
+    two-level walk would degenerate into the incumbent single-tile schedule.
+    """
+    if chunk_rows <= _OUTPUT_SUBCHUNK_ROWS:
+        return None
+    return _OUTPUT_SUBCHUNK_ROWS
+
+
+def _chunk_fwd_o_subchunk_body(
+    q_ref,
+    k_ref,
+    v_ref,
+    h_ref,
+    g_ref,
+    g_gamma_ref,
+    scale_ref,
+    o_ref,
+    *,
+    value_tile_base,
+    BT: int,
+    ZERO_STATE_OUTPUT: bool,
+    OUTPUT_VALUE_TILES: int,
+    SUBCHUNK_ROWS: int,
+):
+    """Two-level output schedule: split a chunk into ``SUBCHUNK_ROWS``-row sub-chunks.
+
+    The incumbent schedule materializes one masked ``BT x BT`` score tile per output
+    tile, so both its intra-chunk score arithmetic and — far more expensive here —
+    the elementwise decay/mask traffic over that tile grow with the SQUARE of the
+    chunk length. At ``BT=2048`` that tile is 16 MiB of fp32 and roughly half of it
+    is masked away again.
+
+    This variant applies the kernel's own chunked recurrence one level deeper: a
+    sub-chunk pays a ``SUBCHUNK_ROWS x SUBCHUNK_ROWS`` score tile for its own rows
+    and reads every older row of the same chunk through a ``(K, BV)`` state, exactly
+    as a chunk reads the preceding chunks through ``h``. Score work and score-tile
+    traffic drop from ``BT * BT`` to ``BT * SUBCHUNK_ROWS`` and the sub-chunk states
+    add a fixed ``BT * K * V``.
+
+    The sub-chunk axis stays a BATCH dimension of single contractions rather than a
+    loop, and the state recurrence is resolved as one ``(num_sub, num_sub)`` decay
+    matrix applied to the per-sub-chunk contributions, so the schedule keeps the
+    incumbent's operation count while shrinking every operand. Nothing is dropped or
+    approximated: it is the same linear-attention sum re-associated, and each
+    sub-chunk state carries the same chunk-entrance convention ``h`` arrives in, so
+    both gate forms stay exact.
+    """
+    sub = SUBCHUNK_ROWS
+    num_sub = BT // sub
+    row = jnp.arange(sub)
+    sub_mask = row[:, None] >= row[None, :]
+    older = jnp.arange(num_sub)[:, None] > jnp.arange(num_sub)[None, :]
+    scale = scale_ref[0].astype(jnp.float32)
+    K = q_ref.shape[-1]
+    BV = v_ref.shape[-1]
+
+    for local_value_tile in range(OUTPUT_VALUE_TILES):
+        # Chunk-cumulative log decay per row. Both gate forms are additive in log
+        # space, matching the incumbent's two independent exp() factors.
+        b_log = None
+        if g_ref is not None:
+            b_log = g_ref[local_value_tile, 0, :, 0].astype(jnp.float32)  # (BT,)
+        if g_gamma_ref is not None:
+            value_tile_idx = value_tile_base + local_value_tile
+            b_gamma = g_gamma_ref[value_tile_idx].astype(jnp.float32)
+            b_g_gamma = b_gamma * (jnp.arange(BT) + 1).astype(jnp.float32)
+            b_log = b_g_gamma if b_log is None else b_log + b_g_gamma
+
+        s_q = q_ref[local_value_tile, 0].reshape(num_sub, sub, K)
+        s_k = k_ref[local_value_tile, 0].reshape(num_sub, sub, K)
+        s_v = v_ref[local_value_tile, 0].astype(jnp.float32).reshape(num_sub, sub, BV)
+        if b_log is not None:
+            # ``s_log`` is the chunk-cumulative decay; ``entrance``/``exit`` are its
+            # values just before and at the end of each sub-chunk. Every exponent
+            # formed below is a difference of a later minus an earlier position, so
+            # all of them stay non-positive for a decaying gate.
+            s_log = b_log.reshape(num_sub, sub)
+            exit_log = s_log[:, sub - 1]  # (num_sub,)
+            entrance_log = jnp.concatenate(
+                [jnp.zeros((1,), jnp.float32), exit_log[: num_sub - 1]]
+            )
+
+        # Intra-sub-chunk attention: one masked (sub, sub) score tile per sub-chunk.
+        s_A = jnp.einsum(
+            "nik,njk->nij", s_q, s_k, preferred_element_type=jnp.float32
+        )
+        if b_log is not None:
+            log_diff = s_log[:, :, None] - s_log[:, None, :]
+            s_A = s_A * exp(jnp.where(sub_mask, log_diff, 0.0))
+        s_A = jnp.where(sub_mask, s_A, 0.0)
+        # Keep the score tile in fp32 for precision; the values are upcast instead.
+        b_o = jnp.einsum(
+            "nij,njd->nid",
+            s_A,
+            s_v,
+            precision=jax.lax.Precision.HIGHEST,
+            preferred_element_type=jnp.float32,
+        )
+
+        # Each sub-chunk's own contribution to the states the later sub-chunks read,
+        # expressed at that sub-chunk's exit so no positive exponent ever appears.
+        k_decayed = s_k.astype(jnp.float32)
+        if b_log is not None:
+            k_decayed = k_decayed * exp(exit_log[:, None] - s_log)[:, :, None]
+        b_u = jnp.einsum(
+            "nik,nid->nkd",
+            k_decayed,
+            s_v,
+            precision=jax.lax.Precision.HIGHEST,
+            preferred_element_type=jnp.float32,
+        )
+
+        # Resolve the sub-chunk state recurrence in closed form: sub-chunk n reads
+        # every strictly older sub-chunk's contribution, rebased onto its entrance.
+        decay_matrix = older.astype(jnp.float32)
+        if b_log is not None:
+            decay_matrix = decay_matrix * exp(
+                jnp.where(older, entrance_log[:, None] - exit_log[None, :], 0.0)
+            )
+        b_state = jnp.einsum(
+            "nb,bkd->nkd",
+            decay_matrix,
+            b_u,
+            precision=jax.lax.Precision.HIGHEST,
+            preferred_element_type=jnp.float32,
+        )
+        if not ZERO_STATE_OUTPUT:
+            b_h = h_ref[local_value_tile, 0].astype(jnp.float32)  # (K, BV)
+            entrance_decay = (
+                jnp.ones((num_sub,), jnp.float32)
+                if b_log is None
+                else exp(entrance_log)
+            )
+            b_state = b_state + entrance_decay[:, None, None] * b_h[None]
+
+        b_inter = jnp.einsum(
+            "nik,nkd->nid", s_q, b_state, preferred_element_type=jnp.float32
+        )
+        if b_log is not None:
+            b_inter = b_inter * exp(s_log - entrance_log[:, None])[:, :, None]
+        b_o = (b_o + b_inter) * scale
+        o_ref[local_value_tile, 0] = b_o.reshape(BT, BV).astype(o_ref.dtype)
+
+
 def _chunk_fwd_o_kernel(
     q_ref,
     k_ref,
@@ -574,6 +727,7 @@ def _chunk_fwd_o_kernel(
     BT: int,
     ZERO_STATE_OUTPUT: bool,
     OUTPUT_VALUE_TILES: int,
+    SUBCHUNK_ROWS: int | None = None,
 ):
     """Pallas kernel for chunk_fwd_o.
 
@@ -590,8 +744,28 @@ def _chunk_fwd_o_kernel(
     Each local tile retains its own q/k/v/gamma arithmetic. Grouping adjacent
     head-value tiles changes only program ownership, amortizing grid/program
     overhead without mixing heads or value slices.
+
+    ``SUBCHUNK_ROWS`` is None on the incumbent single-tile schedule and names the
+    sub-chunk height of the two-level schedule otherwise.
     """
     first_value_tile = pl.program_id(0) * OUTPUT_VALUE_TILES
+    if SUBCHUNK_ROWS is not None:
+        _chunk_fwd_o_subchunk_body(
+            q_ref,
+            k_ref,
+            v_ref,
+            h_ref,
+            g_ref,
+            g_gamma_ref,
+            scale_ref,
+            o_ref,
+            value_tile_base=first_value_tile,
+            BT=BT,
+            ZERO_STATE_OUTPUT=ZERO_STATE_OUTPUT,
+            OUTPUT_VALUE_TILES=OUTPUT_VALUE_TILES,
+            SUBCHUNK_ROWS=SUBCHUNK_ROWS,
+        )
+        return
     mask = jnp.arange(BT)[:, None] >= jnp.arange(BT)[None, :]
     scale = scale_ref[0].astype(jnp.float32)
 
@@ -650,7 +824,12 @@ def _chunk_fwd_o_kernel(
 
 @functools.partial(
     jax.jit,
-    static_argnames=("chunk_size", "zero_state_output_elision", "output_value_tiles"),
+    static_argnames=(
+        "chunk_size",
+        "zero_state_output_elision",
+        "output_value_tiles",
+        "enable__chunk_fwd_o_pl_variant",
+    ),
 )
 def _chunk_fwd_o_pl(
     q: jax.Array,
@@ -664,8 +843,17 @@ def _chunk_fwd_o_pl(
     chunk_size: int = 64,
     zero_state_output_elision: bool = False,
     output_value_tiles: int = 1,
+    enable__chunk_fwd_o_pl_variant: bool = False,
+    output_gather: jax.Array | None = None,
 ) -> jax.Array:
-    """Pallas launcher for chunk_fwd_o on the uniform-length path."""
+    """Pallas launcher for chunk_fwd_o on the uniform-length path.
+
+    ``enable__chunk_fwd_o_pl_variant`` selects the resident output schedule: the
+    chunk-wide score tile is replaced by a two-level sub-chunked walk, and the
+    launch delivers its rows straight into the caller-supplied ``output_gather``
+    token order instead of an aligned staging buffer a later pass must restore.
+    ``output_gather`` is ignored unless the variant is selected.
+    """
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = chunk_size
@@ -758,12 +946,18 @@ def _chunk_fwd_o_pl(
     )
     spec_scale = pl.BlockSpec(memory_space=pltpu.ANY if interpret else pltpu.SMEM)
 
+    subchunk_rows = (
+        _output_subchunk_rows(BT) if enable__chunk_fwd_o_pl_variant else None
+    )
+    emit_order = output_gather if enable__chunk_fwd_o_pl_variant else None
+
     o = pl.pallas_call(
         functools.partial(
             _chunk_fwd_o_kernel,
             BT=BT,
             ZERO_STATE_OUTPUT=zero_state_output_elision,
             OUTPUT_VALUE_TILES=output_value_tiles,
+            SUBCHUNK_ROWS=subchunk_rows,
         ),
         grid_spec=pltpu.PrefetchScalarGridSpec(
             num_scalar_prefetch=0,
@@ -793,7 +987,15 @@ def _chunk_fwd_o_pl(
         )
 
     o = o.reshape(H, B, NT, BT, V).transpose(1, 2, 3, 0, 4)
-    return o.reshape(B, T, H, V)
+    o = o.reshape(B, T, H, V)
+    if emit_order is not None:
+        # Land the rows in their final token order as part of this stage's own
+        # layout step. The incumbent instead hands back the aligned staging
+        # layout, which the caller has to restore with a scatter over the
+        # aligned index space; expressing the identical permutation over the
+        # OUTPUT index space is one gather and moves each row exactly once.
+        o = o[:, emit_order]
+    return o
 
 
 def chunk_fwd_o(
@@ -810,6 +1012,8 @@ def chunk_fwd_o(
     chunk_size: int = 64,
     zero_state_output_elision: bool = False,
     output_value_tiles: int = 1,
+    enable__chunk_fwd_o_pl_variant: bool = False,
+    output_gather: jax.Array | None = None,
 ) -> jax.Array:
     """Chunk forward output computation.
 
@@ -819,6 +1023,11 @@ def chunk_fwd_o(
     ``output_value_tiles`` groups that many independent full-width BV tiles in
     one Pallas program. It changes program ownership only; no head or value
     arithmetic is shared.
+
+    ``enable__chunk_fwd_o_pl_variant`` selects the resident output schedule: a
+    per-sub-chunk score tile plus a running intra-chunk state in place of the
+    chunk-wide score tile, and delivery straight into the ``output_gather`` token
+    order. ``output_gather`` is ignored unless the variant is selected.
     """
     B, T, H, K = q.shape
     V = v.shape[-1]
@@ -854,6 +1063,8 @@ def chunk_fwd_o(
         chunk_size=chunk_size,
         zero_state_output_elision=zero_state_output_elision,
         output_value_tiles=output_value_tiles,
+        enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
+        output_gather=output_gather,
     )
 
 
@@ -915,6 +1126,22 @@ def _align_varlen_inputs(q, k, v, cu_seqlens_dev, chunk_size, T_aligned):
     return q_a, k_a, v_a, aligned_cu, real_lens
 
 
+def _build_unalign_gather_idx(cu_seqlens, aligned_cu, T_orig):
+    """For each ORIGINAL token position, the aligned-layout row that carries it.
+
+    This is the same permutation ``_unalign_output`` applies, indexed over the
+    OUTPUT space instead of the aligned space. Every original position belongs to
+    exactly one sequence and therefore to exactly one aligned row, so restoring
+    the layout by reading each output row once is exact — no position is written
+    twice and none is left unwritten.
+    """
+    N = cu_seqlens.shape[0] - 1
+    pos = jnp.arange(T_orig, dtype=jnp.int32)
+    seq_idx = jnp.searchsorted(cu_seqlens[1:], pos, side="right")
+    seq_idx = jnp.clip(seq_idx, 0, N - 1)
+    return aligned_cu[seq_idx] + (pos - cu_seqlens[seq_idx])
+
+
 def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
     """Scatter the aligned-layout output back to the original packed layout."""
     T_aligned = o_aligned.shape[1]
@@ -937,6 +1164,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
         "single_chunk_state_elision",
         "zero_state_output_elision",
         "output_value_tiles",
+        "enable__chunk_fwd_o_pl_variant",
     ],
 )
 def chunk_simple_gla_fwd_varlen(
@@ -956,6 +1184,7 @@ def chunk_simple_gla_fwd_varlen(
     single_chunk_state_elision: bool = False,
     zero_state_output_elision: bool = False,
     output_value_tiles: int = 1,
+    enable__chunk_fwd_o_pl_variant: bool = False,
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
@@ -975,6 +1204,15 @@ def chunk_simple_gla_fwd_varlen(
 
     ``output_value_tiles`` controls how many independent full-BV output tiles
     each Pallas program computes, exposing the program tile grouping to callers.
+
+    ``enable__chunk_fwd_o_pl_variant`` selects the output stage's resident
+    schedule. The incumbent (False) keeps one chunk-wide masked score tile per
+    output tile and returns the aligned staging layout, which is then restored by
+    a scatter over the aligned index space. The variant walks the chunk in
+    fixed-height sub-chunks and reads older rows through a running intra-chunk
+    state — so the intra-chunk score tile stops growing with the square of
+    ``chunk_size`` — and lands its rows in token order inside the same stage, so
+    every output row is moved exactly once. Both paths emit the same values.
     """
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
     N = cu_seqlens_dev.shape[0] - 1 if cu_seqlens_dev is not None else B
@@ -1052,6 +1290,13 @@ def chunk_simple_gla_fwd_varlen(
             ht = jnp.where(zero_len_mask, h0, ht)
         else:
             ht = jnp.where(zero_len_mask, 0.0, ht)
+    # The resident output schedule restores the token layout inside the output
+    # stage, so the separate aligned-space scatter pass is not launched at all.
+    unalign_gather = (
+        _build_unalign_gather_idx(cu_seqlens_dev, aligned_cu, T_orig)
+        if enable__chunk_fwd_o_pl_variant
+        else None
+    )
     o = chunk_fwd_o(
         q=q_a,
         k=k_a,
@@ -1065,9 +1310,12 @@ def chunk_simple_gla_fwd_varlen(
         chunk_size=chunk_size,
         zero_state_output_elision=zero_state_output_elision,
         output_value_tiles=output_value_tiles,
+        enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
+        output_gather=unalign_gather,
     )
 
-    o = _unalign_output(o, cu_seqlens_dev, aligned_cu, T_orig)
+    if unalign_gather is None:
+        o = _unalign_output(o, cu_seqlens_dev, aligned_cu, T_orig)
     return o, ht
 
 
@@ -1095,16 +1343,15 @@ def simple_gla_fwd(
     single_chunk_state_elision: bool = False,
     zero_state_output_elision: bool = False,
     output_value_tiles: int = 1,
+    enable__chunk_fwd_o_pl_variant: bool = False,
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
-    if cu_seqlens_dev is not None:
-        fn = chunk_simple_gla_fwd_varlen
-    else:
+    if cu_seqlens_dev is None:
         raise NotImplementedError(
             f"Non-varlen simple_gla_fwd (mode={mode}) is not vendored. "
             "Only the varlen path (cu_seqlens_dev != None) is supported."
         )
-    return fn(
+    return chunk_simple_gla_fwd_varlen(
         q,
         k,
         v,
@@ -1120,4 +1367,5 @@ def simple_gla_fwd(
         single_chunk_state_elision=single_chunk_state_elision,
         zero_state_output_elision=zero_state_output_elision,
         output_value_tiles=output_value_tiles,
+        enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
     )

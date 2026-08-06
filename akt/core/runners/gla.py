@@ -2,15 +2,17 @@
 
 Tuned entry: `chunk_simple_gla_fwd_varlen(..., chunk_size,
 compact_alignment, single_chunk_state_elision,
-zero_state_output_elision, output_value_tiles)` (Pallas).
+zero_state_output_elision, output_value_tiles,
+enable__chunk_fwd_o_pl_variant)` (Pallas).
 The correctness contract (reference, tolerance, canonical inputs, native test) is
 FROZEN in `akt/benchmark/refs/gla.py` — this runner only owns the DesignSpace and
 the config->kernel run mapping.
 
-Design space: base `chunk_size` plus capability-elevated `compact_alignment` and
-`output_value_tiles`. Historical state/output-elision axes remain visible as
-runner-only experiments but are invalid in this serving objective because the
-nonzero initial state and final recurrent state are both observed.
+Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
+`output_value_tiles` and `enable__chunk_fwd_o_pl_variant`. Historical
+state/output-elision axes remain visible as runner-only experiments but are
+invalid in this serving objective because the nonzero initial state and final
+recurrent state are both observed.
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ _COMPACT_ALIGNMENT_CAPABILITY = "gla_compact_alignment"
 _STATE_ELISION_CAPABILITY = "gla_single_chunk_state_elision"
 _OUTPUT_ELISION_CAPABILITY = "gla_zero_state_output_elision"
 _VALUE_TILE_GROUPING_CAPABILITY = "gla_value_tile_grouping"
+_OUTPUT_SUBCHUNK_SCHEDULE_CAPABILITY = "gla_output_subchunk_schedule"
 
 
 @functools.lru_cache(maxsize=None)
@@ -43,6 +46,7 @@ def _jit_chunk(
     single_chunk_state_elision: bool,
     zero_state_output_elision: bool,
     output_value_tiles: int,
+    enable__chunk_fwd_o_pl_variant: bool,
 ):
     def f(q, k, v, g_gamma, initial_state, cu):
         o, ht = chunk_simple_gla_fwd_varlen(
@@ -52,7 +56,8 @@ def _jit_chunk(
             compact_alignment=compact_alignment,
             single_chunk_state_elision=single_chunk_state_elision,
             zero_state_output_elision=zero_state_output_elision,
-            output_value_tiles=output_value_tiles)
+            output_value_tiles=output_value_tiles,
+            enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant)
         return o, ht
     return jax.jit(f)
 
@@ -64,6 +69,7 @@ def _run(inp, cfg):
         bool(cfg.get("single_chunk_state_elision", False)),
         bool(cfg.get("zero_state_output_elision", False)),
         int(cfg.get("output_value_tiles", 1)),
+        bool(cfg.get("enable__chunk_fwd_o_pl_variant", False)),
     )(
         inp["q"],
         inp["k"],
@@ -137,6 +143,13 @@ def _space(seqlen: int, heads: int):
                 default=1,
                 elevated_by=_VALUE_TILE_GROUPING_CAPABILITY,
                 programmer_control="gla.output_value_tiles",
+            ),
+            Knob(
+                "enable__chunk_fwd_o_pl_variant",
+                [False, True],
+                default=False,
+                elevated_by=_OUTPUT_SUBCHUNK_SCHEDULE_CAPABILITY,
+                programmer_control="gla.enable__chunk_fwd_o_pl_variant",
             ),
         ],
         valid=_valid,

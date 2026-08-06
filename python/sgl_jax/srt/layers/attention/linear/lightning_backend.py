@@ -34,10 +34,11 @@ from sgl_jax.srt.utils.profiling_utils import named_scope
 
 logger = logging.getLogger(__name__)
 
-try:
-    from sgl_jax.srt.kernels.simple_gla.simple_gla import simple_gla_fwd
-except ModuleNotFoundError:
-    simple_gla_fwd = None
+# The chunked prefill entry is a hard dependency of this backend: it is the only
+# extend path, and its kernel module needs nothing this file does not already
+# require. Import it from its defining module so the control it receives is
+# statically traceable to the kernel argument.
+from sgl_jax.srt.kernels.simple_gla.simple_gla import simple_gla_fwd
 
 try:
     from sgl_jax.srt.kernels.simple_gla.simple_gla_fused import decode_simple_gla_fused
@@ -253,9 +254,6 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
         slope: jnp.ndarray,
     ) -> tuple[jax.Array, jax.Array]:
         """Extend forward via baseline simple_gla_fwd + JAX gather/scatter."""
-        if simple_gla_fwd is None:
-            raise ImportError("simple_gla kernel is required for GLA prefill")
-
         cu_seqlens = self.forward_metadata.cu_q_lens
         chunk_size = self.chunk_size
 
@@ -290,6 +288,9 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
                 single_chunk_state_elision=controls.single_chunk_state_elision,
                 zero_state_output_elision=controls.zero_state_output_elision,
                 output_value_tiles=controls.output_value_tiles,
+                enable__chunk_fwd_o_pl_variant=(
+                    controls.enable__chunk_fwd_o_pl_variant
+                ),
             )
 
             # Skip writing back to dummy slot 0.
