@@ -1,800 +1,261 @@
 {
- "generated": "2026-08-04 07:49:02",
+ "generated": "2026-08-06 08:31:41",
  "backend": "gpu",
  "pallas_interpret": true,
- "wl_iters": 2,
  "weight_mode": "count",
- "delta": 0.02,
- "redundancy": {
-  "per_family": {
-   "gla": {
-    "p5": 0.7848101265822784,
-    "p10": 1.0,
-    "p25": 1.0,
-    "p50": 1.0,
-    "p75": 1.0,
-    "p90": 1.0,
-    "p95": 1.0,
-    "n": 22,
-    "min": 0.7848101265822784,
-    "max": 1.0
-   },
-   "kda": {
-    "p5": 0.9236852510873863,
-    "p10": 0.9239580019090041,
-    "p25": 0.92410538733779,
-    "p50": 0.974816369359916,
-    "p75": 0.9989759344598055,
-    "p90": 0.9992805755395684,
-    "p95": 0.9992877492877493,
-    "n": 19,
-    "min": 0.5746563735643005,
-    "max": 1.0
-   },
-   "gmm": {
-    "p5": 1.0,
-    "p10": 1.0,
-    "p25": 1.0,
-    "p50": 1.0,
-    "p75": 1.0,
-    "p90": 1.0,
-    "p95": 1.0,
-    "n": 13,
-    "min": 1.0,
-    "max": 1.0
-   },
-   "gmm_v2": {},
-   "rpa_v3": {},
-   "moe_v1": {
-    "p5": 0.5435882177923237,
-    "p10": 0.5435882177923237,
-    "p25": 1.0,
-    "p50": 1.0,
-    "p75": 1.0,
-    "p90": 1.0,
-    "p95": 1.0,
-    "n": 6,
-    "min": 0.5435882177923237,
-    "max": 1.0
-   },
-   "moe_v2": {
-    "p5": 0.9044321329639889,
-    "p10": 0.9044321329639889,
-    "p25": 1.0,
-    "p50": 1.0,
-    "p75": 1.0,
-    "p90": 1.0,
-    "p95": 1.0,
-    "n": 6,
-    "min": 0.9044321329639889,
-    "max": 1.0
-   },
-   "fused_mlp": {},
-   "kv_cache": {}
-  },
-  "global": {
-   "p5": 0.7848101265822784,
-   "p10": 0.9239580019090041,
-   "p25": 0.9953134153485648,
-   "p50": 1.0,
-   "p75": 1.0,
-   "p90": 1.0,
-   "p95": 1.0,
+ "delta": {
+  "noise_floor": {
+   "p5": 0,
+   "p10": 0,
+   "p25": 0,
+   "p50": 0,
+   "p75": 7.0,
+   "p90": 267.0,
+   "p95": 1276.0,
    "n": 66,
-   "min": 0.5435882177923237,
-   "max": 1.0
+   "min": 0,
+   "max": 3722.0
   },
-  "per_case": {
+  "noise_by_case": {
    "gla:seq512_h8": {
-    "scores": [
-     {
-      "program": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "D": 1.0,
-      "closest": "chunk_size=16",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=16",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=32",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=128",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=256",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=512",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "compact_alignment=True",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "output_value_tiles=2",
-      "D": 1.0,
-      "closest": "output_value_tiles=4",
-      "R_ne": 1.0,
-      "R_en": 0.8629032258064516
-     },
-     {
-      "program": "output_value_tiles=4",
-      "D": 1.0,
-      "closest": "output_value_tiles=8",
-      "R_ne": 1.0,
-      "R_en": 0.7848101265822784
-     },
-     {
-      "program": "output_value_tiles=8",
-      "D": 0.7848101265822784,
-      "closest": "output_value_tiles=4",
-      "R_ne": 0.7848101265822784,
-      "R_en": 1.0
-     }
-    ],
-    "percentiles": {
-     "p5": 0.7848101265822784,
-     "p10": 1.0,
-     "p25": 1.0,
-     "p50": 1.0,
-     "p75": 1.0,
-     "p90": 1.0,
-     "p95": 1.0,
-     "n": 10,
-     "min": 0.7848101265822784,
-     "max": 1.0
-    }
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 0,
+    "p75": 0,
+    "p90": 0,
+    "p95": 0,
+    "n": 10,
+    "min": 0,
+    "max": 0
    },
    "gla:seq2048_h8": {
-    "scores": [
-     {
-      "program": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "D": 1.0,
-      "closest": "chunk_size=16",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=16",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=32",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=128",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=256",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=512",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=1024",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "chunk_size=2048",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "compact_alignment=True",
-      "D": 1.0,
-      "closest": "default:{\"chunk_size\":64,\"compact_alignment\":false,\"output_value_tiles\":1,\"single_chunk_state_elision\":false,\"zero_state_output_elision\":false}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "output_value_tiles=2",
-      "D": 1.0,
-      "closest": "output_value_tiles=4",
-      "R_ne": 1.0,
-      "R_en": 0.8629032258064516
-     },
-     {
-      "program": "output_value_tiles=4",
-      "D": 1.0,
-      "closest": "output_value_tiles=8",
-      "R_ne": 1.0,
-      "R_en": 0.7848101265822784
-     },
-     {
-      "program": "output_value_tiles=8",
-      "D": 0.7848101265822784,
-      "closest": "output_value_tiles=4",
-      "R_ne": 0.7848101265822784,
-      "R_en": 1.0
-     }
-    ],
-    "percentiles": {
-     "p5": 1.0,
-     "p10": 1.0,
-     "p25": 1.0,
-     "p50": 1.0,
-     "p75": 1.0,
-     "p90": 1.0,
-     "p95": 1.0,
-     "n": 12,
-     "min": 0.7848101265822784,
-     "max": 1.0
-    }
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 0,
+    "p75": 0,
+    "p90": 0,
+    "p95": 0,
+    "n": 12,
+    "min": 0,
+    "max": 0
    },
    "kda:seq128_h2_d64": {
-    "scores": [
-     {
-      "program": "default:{\"chunk_size\":64,\"compute_block_chunks\":1,\"intra_block_size\":16,\"scalar_intra_solve\":false,\"single_chunk_state_elision\":false,\"state_block_chunks\":1,\"state_dim_alignment\":128,\"zero_state_output_elision\":false}",
-      "D": 0.9989832231825114,
-      "closest": "compute_block_chunks=2",
-      "R_ne": 0.9989832231825114,
-      "R_en": 0.6224263541336712
-     },
-     {
-      "program": "chunk_size=16",
-      "D": 0.968722073279714,
-      "closest": "chunk_size=128",
-      "R_ne": 0.968722073279714,
-      "R_en": 0.35103626943005184
-     },
-     {
-      "program": "chunk_size=32",
-      "D": 0.9992877492877493,
-      "closest": "intra_block_size=32",
-      "R_ne": 0.9992877492877493,
-      "R_en": 0.5517105780574125
-     },
-     {
-      "program": "chunk_size=128",
-      "D": 0.9446243523316062,
-      "closest": "compute_block_chunks=2",
-      "R_ne": 0.9446243523316062,
-      "R_en": 0.9239784605638264
-     },
-     {
-      "program": "intra_block_size=8",
-      "D": 0.9953134153485648,
-      "closest": "chunk_size=128",
-      "R_ne": 0.9953134153485648,
-      "R_en": 0.5501943005181347
-     },
-     {
-      "program": "intra_block_size=32",
-      "D": 0.92410538733779,
-      "closest": "compute_block_chunks=2",
-      "R_ne": 0.92410538733779,
-      "R_en": 0.7443775736458663
-     },
-     {
-      "program": "compute_block_chunks=2",
-      "D": 0.9239784605638264,
-      "closest": "chunk_size=128",
-      "R_ne": 0.9239784605638264,
-      "R_en": 0.9446243523316062
-     },
-     {
-      "program": "state_block_chunks=2",
-      "D": 0.974816369359916,
-      "closest": "compute_block_chunks=2",
-      "R_ne": 0.974816369359916,
-      "R_en": 0.5885334178017105
-     },
-     {
-      "program": "state_dim_alignment=64",
-      "D": 0.9974437627811861,
-      "closest": "default:{\"chunk_size\":64,\"compute_block_chunks\":1,\"intra_block_size\":16,\"scalar_intra_solve\":false,\"single_chunk_state_elision\":false,\"state_block_chunks\":1,\"state_dim_alignment\":128,\"zero_state_output_elision\":false}",
-      "R_ne": 0.9974437627811861,
-      "R_en": 0.9918657854600915
-     }
-    ],
-    "percentiles": {
-     "p5": 0.9239784605638264,
-     "p10": 0.92410538733779,
-     "p25": 0.9446243523316062,
-     "p50": 0.974816369359916,
-     "p75": 0.9974437627811861,
-     "p90": 0.9989832231825114,
-     "p95": 0.9992877492877493,
-     "n": 9,
-     "min": 0.9239784605638264,
-     "max": 0.9992877492877493
-    }
+    "p5": 0,
+    "p10": 7.0,
+    "p25": 17.0,
+    "p50": 240.0,
+    "p75": 593.0,
+    "p90": 1276.0,
+    "p95": 1784.0,
+    "n": 9,
+    "min": 0,
+    "max": 1784.0
    },
    "kda:seq256_h4_d128": {
-    "scores": [
-     {
-      "program": "default:{\"chunk_size\":64,\"compute_block_chunks\":1,\"intra_block_size\":16,\"scalar_intra_solve\":false,\"single_chunk_state_elision\":false,\"state_block_chunks\":1,\"state_dim_alignment\":128,\"zero_state_output_elision\":false}",
-      "D": 0.9989759344598055,
-      "closest": "compute_block_chunks=2",
-      "R_ne": 0.9989759344598055,
-      "R_en": 0.6207445116131085
-     },
-     {
-      "program": "chunk_size=16",
-      "D": 0.9683257918552036,
-      "closest": "chunk_size=128",
-      "R_ne": 0.9683257918552036,
-      "R_en": 0.34808067664281067
-     },
-     {
-      "program": "chunk_size=32",
-      "D": 0.9992805755395684,
-      "closest": "intra_block_size=32",
-      "R_ne": 0.9992805755395684,
-      "R_en": 0.5492289442467378
-     },
-     {
-      "program": "chunk_size=128",
-      "D": 0.9928432010409889,
-      "closest": "chunk_size=256",
-      "R_ne": 0.9928432010409889,
-      "R_en": 0.5746563735643005
-     },
-     {
-      "program": "chunk_size=256",
-      "D": 0.5746563735643005,
-      "closest": "chunk_size=128",
-      "R_ne": 0.5746563735643005,
-      "R_en": 0.9928432010409889
-     },
-     {
-      "program": "intra_block_size=8",
-      "D": 0.9952746603662138,
-      "closest": "chunk_size=128",
-      "R_ne": 0.9952746603662138,
-      "R_en": 0.5481457384515289
-     },
-     {
-      "program": "intra_block_size=32",
-      "D": 0.9236852510873863,
-      "closest": "compute_block_chunks=2",
-      "R_ne": 0.9236852510873863,
-      "R_en": 0.7432389436843779
-     },
-     {
-      "program": "compute_block_chunks=2",
-      "D": 0.9239580019090041,
-      "closest": "chunk_size=256",
-      "R_ne": 0.9239580019090041,
-      "R_en": 0.5467896817925061
-     },
-     {
-      "program": "state_block_chunks=2",
-      "D": 1.0,
-      "closest": "state_block_chunks=4",
-      "R_ne": 1.0,
-      "R_en": 0.9682702149437052
-     },
-     {
-      "program": "state_block_chunks=4",
-      "D": 0.9682702149437052,
-      "closest": "state_block_chunks=2",
-      "R_ne": 0.9682702149437052,
-      "R_en": 1.0
-     }
-    ],
-    "percentiles": {
-     "p5": 0.5746563735643005,
-     "p10": 0.9236852510873863,
-     "p25": 0.9239580019090041,
-     "p50": 0.9683257918552036,
-     "p75": 0.9989759344598055,
-     "p90": 0.9992805755395684,
-     "p95": 1.0,
-     "n": 10,
-     "min": 0.5746563735643005,
-     "max": 1.0
-    }
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 240.0,
+    "p75": 1276.0,
+    "p90": 1779.0,
+    "p95": 3722.0,
+    "n": 10,
+    "min": 0,
+    "max": 3722.0
    },
    "gmm:m256_k512_n512_g4": {
-    "scores": [
-     {
-      "program": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "D": 1.0,
-      "closest": "tile_m=256",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_m=256",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_k=128",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_k=256",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_n=128",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_n=256",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     }
-    ],
-    "percentiles": {
-     "p5": 1.0,
-     "p10": 1.0,
-     "p25": 1.0,
-     "p50": 1.0,
-     "p75": 1.0,
-     "p90": 1.0,
-     "p95": 1.0,
-     "n": 6,
-     "min": 1.0,
-     "max": 1.0
-    }
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 0,
+    "p75": 0,
+    "p90": 0,
+    "p95": 0,
+    "n": 6,
+    "min": 0,
+    "max": 0
    },
    "gmm:m512_k512_n512_g8": {
-    "scores": [
-     {
-      "program": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "D": 1.0,
-      "closest": "tile_m=256",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_m=256",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_m=512",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_k=128",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_k=256",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_n=128",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "tile_n=256",
-      "D": 1.0,
-      "closest": "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     }
-    ],
-    "percentiles": {
-     "p5": 1.0,
-     "p10": 1.0,
-     "p25": 1.0,
-     "p50": 1.0,
-     "p75": 1.0,
-     "p90": 1.0,
-     "p95": 1.0,
-     "n": 7,
-     "min": 1.0,
-     "max": 1.0
-    }
-   },
-   "gmm_v2:m512_k1024_n1024_g8": {
-    "scores": [
-     {
-      "trace_errors": {
-       "default:{\"tile_k\":512,\"tile_m\":128,\"tile_n\":512}": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_m=256": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_m=512": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_k=128": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_k=256": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_k=1024": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_n=128": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_n=256": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "tile_n=1024": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090"
-      }
-     }
-    ],
-    "percentiles": {}
-   },
-   "rpa_v3:d_s2_q4kv2_hd128_p256_ctx512": {
-    "scores": [
-     {
-      "trace_errors": {
-       "default:{\"bkv_sz\":512}": "NotImplementedError: Unsupported tpu_version=-1.",
-       "bkv_sz=256": "NotImplementedError: Unsupported tpu_version=-1."
-      }
-     }
-    ],
-    "percentiles": {}
-   },
-   "rpa_v3:d_s3_q8kv8_hd128_p256_ctx1024": {
-    "scores": [
-     {
-      "trace_errors": {
-       "default:{\"bkv_sz\":1024}": "NotImplementedError: Unsupported tpu_version=-1.",
-       "bkv_sz=256": "NotImplementedError: Unsupported tpu_version=-1.",
-       "bkv_sz=512": "NotImplementedError: Unsupported tpu_version=-1."
-      }
-     }
-    ],
-    "percentiles": {}
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 0,
+    "p75": 0,
+    "p90": 0,
+    "p95": 0,
+    "n": 7,
+    "min": 0,
+    "max": 0
    },
    "moe_v1:t32_e8_k2_h2048_i1024": {
-    "scores": [
-     {
-      "program": "default:{\"bd1\":1024,\"bd2\":1024,\"bf\":512,\"bt\":32}",
-      "D": 1.0,
-      "closest": "bt=8",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "bt=8",
-      "D": 1.0,
-      "closest": "default:{\"bd1\":1024,\"bd2\":1024,\"bf\":512,\"bt\":32}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "bt=16",
-      "D": 1.0,
-      "closest": "default:{\"bd1\":1024,\"bd2\":1024,\"bf\":512,\"bt\":32}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "bf=128",
-      "D": 0.5435882177923237,
-      "closest": "bf=256",
-      "R_ne": 0.5435882177923237,
-      "R_en": 1.0
-     },
-     {
-      "program": "bf=256",
-      "D": 1.0,
-      "closest": "bf=128",
-      "R_ne": 1.0,
-      "R_en": 0.5435882177923237
-     },
-     {
-      "program": "bf=1024",
-      "D": 1.0,
-      "closest": "default:{\"bd1\":1024,\"bd2\":1024,\"bf\":512,\"bt\":32}",
-      "R_ne": 1.0,
-      "R_en": 0.6382075471698113
-     },
-     {
-      "trace_errors": {
-       "bt=2": "ValueError: Unsupported block_config.bt for topk tiling: bt=2 must be divisible by topk_tile0=8 (local_num_tokens=32).",
-       "bt=4": "ValueError: Unsupported block_config.bt for topk tiling: bt=4 must be divisible by topk_tile0=8 (local_num_tokens=32)."
-      }
-     }
-    ],
-    "percentiles": {
-     "p5": 0.5435882177923237,
-     "p10": 0.5435882177923237,
-     "p25": 1.0,
-     "p50": 1.0,
-     "p75": 1.0,
-     "p90": 1.0,
-     "p95": 1.0,
-     "n": 6,
-     "min": 0.5435882177923237,
-     "max": 1.0
-    }
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 0,
+    "p75": 0,
+    "p90": 0,
+    "p95": 28.0,
+    "n": 6,
+    "min": 0,
+    "max": 28.0
    },
    "moe_v2:t32_e8_k2_h512_i512": {
-    "scores": [
-     {
-      "program": "default:{\"bf\":512,\"bse\":256,\"bt\":32,\"btc\":32}",
-      "D": 1.0,
-      "closest": "btc=8",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "bf=256",
-      "D": 0.9044321329639889,
-      "closest": "default:{\"bf\":512,\"bse\":256,\"bt\":32,\"btc\":32}",
-      "R_ne": 0.9044321329639889,
-      "R_en": 0.9588839941262849
-     },
-     {
-      "program": "btc=8",
-      "D": 1.0,
-      "closest": "default:{\"bf\":512,\"bse\":256,\"bt\":32,\"btc\":32}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "btc=16",
-      "D": 1.0,
-      "closest": "default:{\"bf\":512,\"bse\":256,\"bt\":32,\"btc\":32}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "bse=128",
-      "D": 1.0,
-      "closest": "default:{\"bf\":512,\"bse\":256,\"bt\":32,\"btc\":32}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     },
-     {
-      "program": "bse=512",
-      "D": 1.0,
-      "closest": "default:{\"bf\":512,\"bse\":256,\"bt\":32,\"btc\":32}",
-      "R_ne": 1.0,
-      "R_en": 1.0
-     }
-    ],
-    "percentiles": {
-     "p5": 0.9044321329639889,
-     "p10": 0.9044321329639889,
-     "p25": 1.0,
-     "p50": 1.0,
-     "p75": 1.0,
-     "p90": 1.0,
-     "p95": 1.0,
-     "n": 6,
-     "min": 0.9044321329639889,
-     "max": 1.0
-    }
-   },
-   "fused_mlp:s128_h256_i512": {
-    "scores": [
-     {
-      "trace_errors": {
-       "default:{\"b_inter\":128,\"b_seq\":64}": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_seq=32": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_seq=128": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=32": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=64": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=256": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=512": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090"
-      }
-     }
-    ],
-    "percentiles": {}
-   },
-   "fused_mlp:s256_h512_i512": {
-    "scores": [
-     {
-      "trace_errors": {
-       "default:{\"b_inter\":128,\"b_seq\":64}": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_seq=32": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_seq=128": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_seq=256": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=32": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=64": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=256": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090",
-       "b_inter=512": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090"
-      }
-     }
-    ],
-    "percentiles": {}
-   },
-   "kv_cache:h8_cache4096_new256": {
-    "scores": [
-     {
-      "trace_errors": {
-       "default:{\"num_slices_per_block\":8,\"page_size\":64}": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=2": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=4": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=16": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=32": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=64": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=128": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=256": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=512": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "page_size=1": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "page_size=128": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi"
-      }
-     }
-    ],
-    "percentiles": {}
-   },
-   "kv_cache:h16_cache8192_new512": {
-    "scores": [
-     {
-      "trace_errors": {
-       "default:{\"num_slices_per_block\":8,\"page_size\":64}": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=2": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=4": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=16": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=32": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=64": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=128": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "num_slices_per_block=256": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "page_size=1": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi",
-       "page_size=128": "ConcretizationTypeError: Abstract tracer value encountered where concrete value is expected: traced array with shape int32[]\nThe problem arose wi"
-      }
-     }
-    ],
-    "percentiles": {}
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 0,
+    "p75": 0,
+    "p90": 0,
+    "p95": 54.0,
+    "n": 6,
+    "min": 0,
+    "max": 54.0
    }
-  }
+  },
+  "inter_api": {
+   "p5": 205.0,
+   "p10": 205.0,
+   "p25": 261.0,
+   "p50": 317.0,
+   "p75": 346.0,
+   "p90": 1890.0,
+   "p95": 1897.0,
+   "n": 25,
+   "min": 205.0,
+   "max": 1904.0,
+   "pairs": [
+    [
+     "gla:seq2048_h8",
+     "gmm:m256_k512_n512_g4",
+     317.0
+    ],
+    [
+     "gla:seq2048_h8",
+     "gmm:m512_k512_n512_g8",
+     317.0
+    ],
+    [
+     "gla:seq2048_h8",
+     "kda:seq128_h2_d64",
+     261.0
+    ],
+    [
+     "gla:seq2048_h8",
+     "kda:seq256_h4_d128",
+     261.0
+    ],
+    [
+     "gla:seq2048_h8",
+     "moe_v1:t32_e8_k2_h2048_i1024",
+     346.0
+    ],
+    [
+     "gla:seq2048_h8",
+     "moe_v2:t32_e8_k2_h512_i512",
+     346.0
+    ],
+    [
+     "gla:seq512_h8",
+     "gmm:m256_k512_n512_g4",
+     317.0
+    ],
+    [
+     "gla:seq512_h8",
+     "gmm:m512_k512_n512_g8",
+     317.0
+    ],
+    [
+     "gla:seq512_h8",
+     "kda:seq128_h2_d64",
+     261.0
+    ],
+    [
+     "gla:seq512_h8",
+     "kda:seq256_h4_d128",
+     261.0
+    ],
+    [
+     "gla:seq512_h8",
+     "moe_v1:t32_e8_k2_h2048_i1024",
+     346.0
+    ],
+    [
+     "gla:seq512_h8",
+     "moe_v2:t32_e8_k2_h512_i512",
+     346.0
+    ],
+    [
+     "gmm:m256_k512_n512_g4",
+     "kda:seq128_h2_d64",
+     205.0
+    ],
+    [
+     "gmm:m256_k512_n512_g4",
+     "kda:seq256_h4_d128",
+     205.0
+    ],
+    [
+     "gmm:m256_k512_n512_g4",
+     "moe_v1:t32_e8_k2_h2048_i1024",
+     283.0
+    ],
+    [
+     "gmm:m256_k512_n512_g4",
+     "moe_v2:t32_e8_k2_h512_i512",
+     283.0
+    ],
+    [
+     "gmm:m512_k512_n512_g8",
+     "kda:seq128_h2_d64",
+     205.0
+    ],
+    [
+     "gmm:m512_k512_n512_g8",
+     "kda:seq256_h4_d128",
+     205.0
+    ],
+    [
+     "gmm:m512_k512_n512_g8",
+     "moe_v1:t32_e8_k2_h2048_i1024",
+     283.0
+    ],
+    [
+     "gmm:m512_k512_n512_g8",
+     "moe_v2:t32_e8_k2_h512_i512",
+     283.0
+    ],
+    [
+     "kda:seq128_h2_d64",
+     "moe_v1:t32_e8_k2_h2048_i1024",
+     1897.0
+    ],
+    [
+     "kda:seq128_h2_d64",
+     "moe_v2:t32_e8_k2_h512_i512",
+     1904.0
+    ],
+    [
+     "kda:seq256_h4_d128",
+     "moe_v1:t32_e8_k2_h2048_i1024",
+     1883.0
+    ],
+    [
+     "kda:seq256_h4_d128",
+     "moe_v2:t32_e8_k2_h512_i512",
+     1890.0
+    ],
+    [
+     "moe_v1:t32_e8_k2_h2048_i1024",
+     "moe_v2:t32_e8_k2_h512_i512",
+     1485.0
+    ]
+   ]
+  },
+  "epsilon_ops": 4,
+  "coherence_min": 3,
+  "noise_percentile": 95
  },
  "genericity": {
   "per_control": {
@@ -876,9 +337,7 @@
   }
  },
  "policy": {
-  "redundancy_percentile": 10,
-  "generalization_percentile": 50,
   "genericity_percentile": 50
  },
- "fingerprint": "16b7c2ecb06e26c773cbed61ac62ea2c25f67d8f96025e90f4f790968132a9fd"
+ "fingerprint": "cf988790c5ffc769d3d13924831dc9268c16dafad48fcedd8105bd53ada3659a"
 }

@@ -62,6 +62,18 @@
   .trail-review .wide{grid-column:1/-1}
   .trail-files code{display:inline-block;margin:2px 4px 2px 0;overflow-wrap:anywhere}
   .config-line{margin:3px 0;overflow-wrap:anywhere}
+  .camp-title{font-size:12px;font-weight:600;color:var(--mut);margin:14px 0 6px}
+  .camp-title:first-child{margin-top:2px}
+  .camp-strip{display:flex;gap:2px;width:100%}
+  .camp-seg{min-width:26px;background:var(--panel2);border:1px solid var(--line);
+    border-top-width:3px;border-radius:5px;padding:4px 6px 5px;overflow:hidden}
+  .camp-seg.dom{background:var(--panel);box-shadow:inset 0 0 0 1px var(--accent)}
+  .camp-name{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .camp-track{height:4px;background:var(--line);border-radius:2px;margin-top:3px;overflow:hidden}
+  .camp-fill{height:100%;border-radius:2px}
+  .camp-note{color:var(--mut);font-size:11px;margin-top:5px}
+  .camp-limit{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-size:13px}
+  .camp-limit code{margin:2px 4px 2px 0;display:inline-block}
   @media (max-width:720px){
     .trail-change{min-width:260px}
     .trail-review{grid-template-columns:minmax(0,1fr)}
@@ -99,6 +111,9 @@
       <th class="num">paired ratio</th><th>correctness</th><th>DP / empirical</th>
     </tr></thead><tbody></tbody></table></div>
   </div>
+
+  <h2 id="camphead" style="display:none">Bottleneck campaign diagrams <span class="muted">— recursive latency × compute/bandwidth utilization walk (proxy)</span></h2>
+  <div class="panel" id="camppanel" style="display:none"><div id="campaign"></div></div>
 
   <h2>Capability-elevation trail</h2>
   <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
@@ -261,6 +276,65 @@ function gateBadges(empirical, live){
   if(live && live.status!=='not_run')
     badges.push(statusBadge('Kimi', live.status, live.ok));
   return badges.join(' ');
+}
+
+// Bottleneck campaign diagrams: one horizontal strip per level (segment width =
+// latency share) with two thin utilization bars per segment (cmp grey, bw blue)
+// and a verdict-colored top border; ends with the LIMITER + frontier-slot hints.
+function renderCampaign(b){
+  const head=document.getElementById('camphead'), panel=document.getElementById('camppanel'),
+        host=document.getElementById('campaign');
+  const c=b.campaign;
+  if(!c || (!c.unavailable && !(c.levels||[]).length)){
+    head.style.display='none'; panel.style.display='none'; return; }
+  head.style.display=''; panel.style.display='';
+  if(c.unavailable){
+    host.innerHTML='<div class="empty">campaign diagnosis unavailable: '+esc(c.unavailable)+'</div>';
+    return; }
+  const vCol=v=> v==='memory-bound'? (cssVar('--accent')||'#6ea8fe')
+    : v==='compute-bound'? (cssVar('--warn')||'#d29922') : (cssVar('--defer')||'#8b949e');
+  const mut=cssVar('--mut')||'#9aa4b2', acc=cssVar('--accent')||'#6ea8fe';
+  const bar=(v,col)=>'<div class="camp-track"><div class="camp-fill" style="width:'+
+    Math.max(0,Math.min(100,(v||0)*100)).toFixed(1)+'%;background:'+col+'"></div></div>';
+  const pc=v=>((v||0)*100).toFixed(0)+'%';
+  let html='';
+  (c.levels||[]).forEach(l=>{
+    const segs=(l.segments||[]).slice().sort((a,z)=>(z.share||0)-(a.share||0));
+    const shown=segs.slice(0,10), rest=segs.slice(10);
+    const restShare=rest.reduce((s,x)=>s+(x.share||0),0);
+    html+='<div class="camp-title">L'+l.level+' · '+esc(l.title)+'</div><div class="camp-strip">';
+    shown.forEach(s=>{
+      const dom=s.name===l.dominant;
+      const tip=s.name+' — share '+pc(s.share)+(s.latency_s!=null?' ('+(s.latency_s*1e3).toFixed(3)+' ms)':'')+
+        ' · cmp '+pc(s.cmp_util)+' · bw '+pc(s.bw_util)+' · '+s.verdict+(s.rule?' — '+s.rule:'');
+      html+='<div class="camp-seg'+(dom?' dom':'')+'" style="flex:'+Math.max(s.share||0,0.02)+
+        ' 1 0;border-top-color:'+vCol(s.verdict)+'" title="'+esc(tip)+'">'+
+        '<div class="camp-name">'+(dom?'★ ':'')+esc(s.name)+'</div>'+
+        bar(s.cmp_util,mut)+bar(s.bw_util,acc)+
+        '<div class="camp-name muted" style="font-size:9.5px">'+pc(s.share)+' · '+esc(s.verdict)+'</div></div>';
+    });
+    if(rest.length) html+='<div class="camp-seg" style="flex:'+Math.max(restShare,0.02)+
+      ' 1 0;border-top-color:'+(cssVar('--line')||'#2a2f3a')+'" title="'+rest.length+
+      ' smaller segments"><div class="camp-name muted">+'+rest.length+' more</div>'+
+      '<div class="camp-name muted" style="font-size:9.5px">'+pc(restShare)+'</div></div>';
+    html+='</div><div class="camp-note">'+esc(l.note||'')+'</div>';
+  });
+  const lim=c.limiter||{}, hints=c.hints||[];
+  html+='<div class="camp-limit"><b>LIMITER:</b> '+esc(lim.text||'undetermined')+
+    '<div style="margin-top:5px"><span class="muted">candidate frontier slots:</span> '+
+    (hints.length? hints.map(h=>'<code>'+esc(h)+'</code>').join(' ') : '<span class="muted">(none matched)</span>')+'</div>'+
+    '<div class="camp-note">proxy diagnosis: masses from the jaxpr operation graph ('+
+    esc(c.classifier||'')+'), fp32 bytes; utils normalized per level — no absolute hardware peaks on this host. generated '+
+    esc(c.generated||'')+'</div></div>';
+  host.innerHTML=html;
+  // legend
+  host.insertAdjacentHTML('afterbegin',
+    '<div class="muted" style="font-size:11.5px;margin-bottom:8px">bars per segment: '+
+    '<span style="display:inline-block;width:22px;height:4px;background:'+mut+';border-radius:2px;vertical-align:middle"></span> compute util · '+
+    '<span style="display:inline-block;width:22px;height:4px;background:'+acc+';border-radius:2px;vertical-align:middle"></span> bandwidth util · '+
+    'top border: <span style="color:'+vCol('memory-bound')+'">memory-bound</span> / '+
+    '<span style="color:'+vCol('compute-bound')+'">compute-bound</span> / '+
+    '<span style="color:'+vCol('dependency-bound')+'">dependency-bound</span> · ★ dominant (recursed into)</div>');
 }
 
 function renderFlexGraph(fg){
@@ -526,6 +600,7 @@ async function load(){
       '</div><div class="d">'+d+'</div></div>').join('');
 
   renderChart(b);
+  renderCampaign(b);
 
   const empirical=ev.empirical_dp||{}, kimi=ev.live_kimi||{};
   document.getElementById('gatebadges').innerHTML =

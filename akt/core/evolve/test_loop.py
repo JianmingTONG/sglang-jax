@@ -1,6 +1,7 @@
 import ast
 import json
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 from akt.core.evolve import loop
@@ -843,3 +844,181 @@ def test_novel_closure_requires_the_mined_finding_to_match(tmp_path, monkeypatch
     result = loop.candidate_action_graph_closure(manifest)
     assert result["ok"] is False
     assert any("still open" in e for e in result["errors"])
+
+
+# ---------------------------------------------------------------- testbench mode
+
+
+def test_testbench_live_document_is_accepted_as_clean():
+    """The synthetic live doc injected under --testbench must pass the frozen
+    live gate: not_applicable + no attempt + skipped is a clean skip."""
+    doc = loop._testbench_live_document()
+    assert doc["schema_version"] == "akt.live-model-eval.v1"
+    assert doc["status"] == "skipped"
+    evidence = loop.live_model_gate_evidence(doc)
+    assert evidence["ok"] is True, evidence["errors"]
+    assert evidence["not_applicable_candidates"] == 1
+    assert evidence["eligible_candidates"] == 0
+
+
+def test_testbench_relaxes_exactly_hardware_and_deferred_conjuncts():
+    """Only under a testbench campaign, and only the two named conjuncts."""
+    failing = {"target_hardware_ok": False, "n_deferred": 2}
+    strict = loop._testbench_gate_relaxations(
+        failing, {"expected_models": ["m1", "m2", "m3"]}
+    )
+    assert strict == {
+        "testbench": False,
+        "required_models": 3,
+        "target_hardware_ok": False,
+        "no_deferred": False,
+    }
+
+    relaxed = loop._testbench_gate_relaxations(
+        failing, {"testbench": True, "expected_models": ["tiny-linear-serving"]}
+    )
+    assert relaxed == {
+        "testbench": True,
+        "required_models": 1,
+        "target_hardware_ok": True,
+        "no_deferred": True,
+    }
+
+    passing = {"target_hardware_ok": True, "n_deferred": 0}
+    on_target = loop._testbench_gate_relaxations(passing, {})
+    assert on_target["target_hardware_ok"] is True
+    assert on_target["no_deferred"] is True
+    assert on_target["required_models"] == 3
+
+
+def _fake_stream_gate(seen, summary_payload):
+    def fake(command, log_path, *, progress_prefixes, capability, timeout=0, env=None):
+        seen["command"] = [str(part) for part in command]
+        seen["env"] = env
+        out = Path(seen["command"][seen["command"].index("--out") + 1])
+        out.write_text(json.dumps(summary_payload))
+        return 0
+
+    return fake
+
+
+def test_model_hw_eval_testbench_flags_env_and_synthetic_live_doc(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "akt/optimization_history").mkdir(parents=True)
+    seen = {}
+    monkeypatch.setattr(loop, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        loop, "_stream_gate", _fake_stream_gate(seen, {"testbench": True, "models": []})
+    )
+    live_calls = []
+    monkeypatch.setattr(
+        loop,
+        "_live_model_hw_eval",
+        lambda *args, **kwargs: live_calls.append((args, kwargs)),
+    )
+
+    summary = loop.model_hw_eval(3, testbench=True)
+
+    assert "--allow-non-target" in seen["command"]
+    assert seen["env"]["PALLAS_INTERPRET"] == "1"
+    assert live_calls == []                    # live gate skipped entirely
+    assert summary["live_model_evaluation"]["schema_version"] == (
+        "akt.live-model-eval.v1"
+    )
+    assert summary["live_model_evaluation"]["status"] == "skipped"
+    assert summary["live_model_gate"]["ok"] is True
+
+
+def test_model_hw_eval_non_testbench_path_is_unchanged(tmp_path, monkeypatch):
+    (tmp_path / "akt/optimization_history").mkdir(parents=True)
+    seen = {}
+    monkeypatch.setattr(loop, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        loop, "_stream_gate", _fake_stream_gate(seen, {"models": []})
+    )
+    live_doc = {
+        "schema_version": "akt.live-model-eval.v1",
+        "candidates": [
+            {"applicability": "not_applicable", "attempted": False, "status": "skipped"}
+        ],
+    }
+    live_calls = []
+    monkeypatch.setattr(
+        loop,
+        "_live_model_hw_eval",
+        lambda *args, **kwargs: (live_calls.append((args, kwargs)), live_doc)[1],
+    )
+
+    summary = loop.model_hw_eval(3)
+
+    assert "--allow-non-target" not in seen["command"]
+    assert seen["env"]["PALLAS_INTERPRET"] == "0"
+    assert len(live_calls) == 1                # strict path still runs the live gate
+    assert summary["live_model_evaluation"] == live_doc
+
+
+def test_query_prints_testbench_banner_only_for_testbench_campaigns(monkeypatch):
+    monkeypatch.setattr(loop, "bottleneck_block", lambda: "== BOTTLENECK test")
+    monkeypatch.setattr(
+        loop, "action_space_block", lambda: "== RED-LINK ACTION SPACE test"
+    )
+    monkeypatch.setattr(loop, "_cap_summaries", lambda: ([], []))
+    state = _legacy_state() | {"objective_scope": loop.OBJECTIVE_SCOPE}
+
+    assert loop.TESTBENCH_BANNER not in loop.query(state)
+    banner_rendered = loop.query(state | {"testbench": True})
+    assert loop.TESTBENCH_BANNER in banner_rendered
+    assert banner_rendered.index(loop.TESTBENCH_BANNER) < banner_rendered.index(
+        "CAPABILITY QUERY"
+    )
+
+
+def test_submit_and_run_refuse_a_testbench_flag_mismatch(monkeypatch, capsys):
+    state = {
+        **_legacy_state(),
+        "objective_scope": loop.OBJECTIVE_SCOPE,
+        "testbench": True,
+        "incumbent_plans": {"m1": {}},
+        "incumbent_case_spaces": {"case": [{}]},
+        "expected_models": ["m1"],
+    }
+    monkeypatch.setattr(loop, "load", lambda: state)
+
+    with pytest.raises(RuntimeError, match="testbench flag mismatch"):
+        loop.cmd_submit(SimpleNamespace(capability="x", runs=3, audit=False))
+
+    loop.cmd_run(SimpleNamespace(rounds=1, oracle="codex", oracle_cmd=None))
+    assert "--testbench flag mismatch" in capsys.readouterr().out
+
+
+# ------------------------------------------------------- api-novelty history cap
+
+
+def test_api_novelty_history_drops_oversized_delta_graph():
+    small = {"ok": True, "delta": {"graph": {"labels": ["a"], "edges": []}}}
+    assert loop._truncate_api_graph(small)["delta"]["graph"] == {
+        "labels": ["a"],
+        "edges": [],
+    }
+
+    big = {
+        "ok": False,
+        "delta": {"graph": {"labels": ["x" * 128] * 1024, "edges": []}},
+    }
+    truncated = loop._truncate_api_graph(big)["delta"]["graph"]
+    assert truncated["dropped"] is True
+    assert "64KB" in truncated["note"]
+    assert len(json.dumps(truncated).encode()) < loop._API_GRAPH_HISTORY_CAP
+
+    assert loop._truncate_api_graph({"ok": True}) == {"ok": True}
+
+
+def test_opus_oracle_forces_opus_model_at_max_effort():
+    command = loop.ORACLES["opus"]
+    assert "--model opus" in command
+    assert "--effort max" in command
+    assert "--dangerously-skip-permissions" in command
+    assert "--output-format stream-json" in command
+    assert "--verbose" in command
+    assert command.startswith("cat {prompt} | claude -p ")

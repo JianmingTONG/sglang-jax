@@ -258,22 +258,27 @@ that class out of the KEEP path (`akt/core/analysis/api_metrics.py`, thresholds
 in `akt/core/analysis/api_baseline.json`, both frozen; pinned at
 init/rebaseline):
 
-1. **Directional, ISA-grounded redundancy.** The candidate program N (the
-   affected case with the new control at its winning non-default value) and each
-   existing program E (the incumbent one-knob configuration population) are
-   lowered under identical shape/dtype/compiler settings to their operation
-   dependency graphs (jaxpr equation DAGs, recursing into Pallas kernel bodies —
-   dependency graphs, not instruction sequences, so scheduling cannot hide a
-   match). `R(N,E)` is the weight fraction of N reproducible by E via ancestry
-   Weisfeiler-Lehman matching; `D(N)=max_E R(N,E)` is the duplicate risk. Both
-   directions are computed: high both ways = duplicate; low `R(N,E*)` with high
-   `R(E*,N)` = N generalizes E* (admissible). Weights are instruction counts
-   first (`size` mode weighs by output elements as a cycle proxy). Thresholds
-   come from leave-one-out nearest-neighbor `D` among each family's existing
-   one-knob programs — the canonical parameter-tweak population — as catalog
-   percentiles, never the mean alone. A tile/chunk re-parameterization scores
-   `D≈1` and rejects; a genuinely different algorithm (e.g. the recurrent
-   reference vs the chunked kernel) scores `D≈0.1`.
+1. **Delta-residual substance (two-pass subtraction).** The candidate program N
+   (the affected case with the new control at its plan-selected non-default
+   value) and the catalog ⋃E (the same case's one-knob population plus every
+   other suite API's programs) are lowered under identical settings to operation
+   dependency graphs (jaxpr DAGs, recursing into Pallas kernel bodies; graph
+   inputs appear as typed ⊥ tokens). Subtraction runs in two passes: an
+   INSTANCE COVER strikes whole embedded catalog programs — anchored wherever
+   an API's entry micro-op matches, inputs binding to any values, whole-program
+   embedding required — so chained/interleaved/tapping compositions of existing
+   APIs read as duplicates; then a PER-OP ANCESTRY MATCH (fixpoint WL — one
+   Merkle hash per op's full computation history) strikes everything the
+   catalog's union signature multiset contains. What remains is Δ, judged on
+   its own substance: per-class mass (compute/MEMORY, roofline criterion,
+   total classifier with `unclassified` audit) must clear the MEASURED noise
+   floor (p95 of known tweaks' spurious residuals), the largest connected Δ
+   component must reach the coherence minimum, and the zero-embed self-check
+   must hold. Borderline masses are re-decided by a reversed-order exact retry.
+   δ = w(Δ)/w(N) is reported as a composition reference only (R ≡ 1−δ; the v1
+   R/D scores are removed). Measured separation: a chunk-size tweak leaves
+   Δ = 0; the recurrent reference vs the chunked-kernel catalog leaves
+   δ ≈ 0.58 with a connected 36-op Δ.
 
 2. **Genericity = upper-layer coverage.** `G_delta(N)` = the fraction of
    relevant frozen model callsites (each upper pattern counted once) whose best

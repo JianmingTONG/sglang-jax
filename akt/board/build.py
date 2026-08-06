@@ -25,6 +25,7 @@ HIST = ROOT / "optimization_history/evolve_history.jsonl"
 STATE = ROOT / "optimization_history/evolve_state.json"
 EVAL = ROOT / "optimization_history/.evolve_eval.json"
 STATUS = BOARD / "evolve_status.json"
+CAMPAIGN = BOARD / "campaign.json"
 CAPS = ROOT / "core/evolve/capabilities"
 CURRENT_OBJECTIVE_SCOPE = "model-serving-empirical-dp-v2"
 
@@ -125,6 +126,15 @@ def _kernels_from_eval():
             "note": (r.get("search_note") or r.get("reason") or r.get("note") or "")[:160],
         })
     return out, s
+
+
+def _campaign():
+    """Verbatim campaign-diagram diagnosis (akt/core/analysis/campaign.py), if
+    it has been generated; None keeps the board key absent."""
+    if not CAMPAIGN.exists():
+        return None
+    diagnosis = _load_json(CAMPAIGN, None)
+    return diagnosis if isinstance(diagnosis, dict) else None
 
 
 def _control_inventory():
@@ -600,6 +610,9 @@ def build():
         "trail": trail, "kept": kept, "rejected": rejected,
         "n_rounds": len(trail),
     }
+    campaign = _campaign()
+    if campaign is not None:
+        board["campaign"] = campaign
     (BOARD / "board.json").write_text(json.dumps(_clean(board), indent=1, allow_nan=False))
     (BOARD / "flexgraph.json").write_text(json.dumps(_clean(fg), indent=1, allow_nan=False))
     n_run = sum(1 for k in kernels if k.get("best_s"))

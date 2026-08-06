@@ -928,6 +928,12 @@ def _runtime_evidence(capability, models, case_by_id) -> dict:
 
 def evaluate(args) -> dict:
     hardware = _hardware_record(args.target_backend)
+    testbench = bool(args.allow_non_target)
+    if testbench and not hardware["ok"] and not hardware["pallas_interpret"]:
+        # TESTBENCH: off-target execution always proceeds in Pallas interpret
+        # mode so the TPU kernels that support it can run on this host.
+        os.environ["PALLAS_INTERPRET"] = "1"
+        hardware = _hardware_record(args.target_backend)
     summary = {
         "suite": "three-frozen-models",
         "objective_scope": OBJECTIVE_SCOPE,
@@ -953,6 +959,14 @@ def evaluate(args) -> dict:
             f"target={args.target_backend!r}, interpret={hardware['pallas_interpret']}"
         )
         return summary
+    if testbench:
+        summary["testbench"] = True
+        print(
+            "[akt-model-eval] TESTBENCH (--allow-non-target): interpret proxy on "
+            f"backend={hardware['backend']!r}; results are NOT target-hardware "
+            "evidence (target_hardware.ok stays False)",
+            flush=True,
+        )
 
     cases = load_cases("full")
     case_by_id = {case.case_id: case for case in cases}
@@ -960,14 +974,23 @@ def evaluate(args) -> dict:
     summary["backend_probes"] = _install_backend_probes(cases, args.capability)
     prepared = {}
     tensor_fingerprints = {}
+    deferred_calls: dict[str, str] = {}
     for workload in MODEL_WORKLOADS:
         for call in workload.calls:
             site = callsite_id(workload, call)
             print(f"[akt-model-eval] prepare fixed inputs/reference {site}", flush=True)
             case = case_by_id[call.case_id]
-            inputs = case.make_inputs(seed=call.seed)
-            reference = case.reference(inputs)
-            jax.block_until_ready(reference)
+            try:
+                inputs = case.make_inputs(seed=call.seed)
+                reference = case.reference(inputs)
+                jax.block_until_ready(reference)
+            except Exception as error:  # noqa: BLE001
+                if not testbench:
+                    raise
+                deferred_calls[site] = (
+                    f"prepare raised {type(error).__name__}: {str(error)[:200]}"
+                )
+                continue
             prepared[site] = (case, inputs, reference)
             tensor_fingerprints[site] = {
                 "input_weight_sha256": _hash_tree(inputs),
@@ -975,6 +998,56 @@ def evaluate(args) -> dict:
                 "seed": call.seed,
                 "phase": call.phase,
             }
+    if testbench:
+        # Probe every callsite once on the DEFAULT deployable config: a case that
+        # raises here cannot run on this host and is DEFERRED (per-call error
+        # recorded); a model workload containing any deferred call is excluded.
+        for site in sorted(prepared):
+            case, inputs, reference = prepared[site]
+            config = case.space.deployment_space().default_config()
+            print(
+                f"[akt-model-eval] testbench default-config probe {site}", flush=True
+            )
+            try:
+                output = case.run(inputs, config)
+                jax.block_until_ready(output)
+                _compare(case, output, reference)
+            except Exception as error:  # noqa: BLE001
+                deferred_calls[site] = (
+                    f"default-config probe raised {type(error).__name__}: "
+                    f"{str(error)[:200]}"
+                )
+                prepared.pop(site)
+                tensor_fingerprints.pop(site, None)
+    runnable_workloads = []
+    deferred_models = []
+    for workload in MODEL_WORKLOADS:
+        bad = {
+            site: deferred_calls[site]
+            for call in workload.calls
+            if (site := callsite_id(workload, call)) in deferred_calls
+        }
+        if bad:
+            deferred_models.append(
+                {"model": workload.model_id, "deferred_calls": bad}
+            )
+        else:
+            runnable_workloads.append(workload)
+    if testbench:
+        summary["deferred_models"] = deferred_models
+        summary["deferred_calls"] = deferred_calls
+        if not runnable_workloads:
+            summary["n_deferred"] = len(deferred_calls)
+            summary["error"] = (
+                "testbench: every model workload contains a deferred call: "
+                + "; ".join(sorted(deferred_calls))
+            )
+            return summary
+    elif deferred_models:
+        raise AssertionError("deferred calls are impossible outside testbench mode")
+    runnable_case_ids = {
+        call.case_id for workload in runnable_workloads for call in workload.calls
+    }
     summary["tensor_fingerprints"] = tensor_fingerprints
     summary["workload_fingerprint"] = hashlib.sha256(
         json.dumps(
@@ -989,6 +1062,8 @@ def evaluate(args) -> dict:
 
     case_search = {}
     for case_id, case in case_by_id.items():
+        if case_id not in runnable_case_ids:
+            continue                      # testbench-only: case has no runnable model
         print(f"[akt-model-eval] exhaustive local search {case_id}", flush=True)
         site = next(site for site, item in prepared.items() if item[0].case_id == case_id)
         _case, inputs, reference = prepared[site]
@@ -1006,7 +1081,7 @@ def evaluate(args) -> dict:
         incumbent_plans = json.loads(Path(args.incumbent_plans).read_text())
 
     model_results = []
-    for workload in MODEL_WORKLOADS:
+    for workload in runnable_workloads:
         print(f"[akt-model-eval] exact DP and bounded brute force {workload.model_id}", flush=True)
         stages = []
         stage_timing_samples = []
@@ -1145,11 +1220,11 @@ def evaluate(args) -> dict:
     ]
     summary["empirical_dp_certificate"] = {
         "scope": EMPIRICAL_SCOPE,
-        "ok": len(empirical_models) == len(MODEL_WORKLOADS)
+        "ok": len(empirical_models) == len(runnable_workloads)
         and all(model["ok"] for model in empirical_models),
         "status": (
             "validated"
-            if len(empirical_models) == len(MODEL_WORKLOADS)
+            if len(empirical_models) == len(runnable_workloads)
             and all(model["ok"] for model in empirical_models)
             else (
                 "falsified"
@@ -1171,8 +1246,11 @@ def evaluate(args) -> dict:
     summary["n_choices"] = sum(
         result["valid_configs"] for result in case_search.values()
     )
-    summary["n_deferred"] = sum(
-        1 for result in case_search.values() if not result.get("measurements")
+    summary["n_deferred"] = (
+        # testbench: the deferred CALLS (excluded from models above); honest count.
+        len(deferred_calls)
+        if testbench
+        else sum(1 for result in case_search.values() if not result.get("measurements"))
     )
     certificates_ok = all(
         model["certificate"]["certified_additive_optimum"]
@@ -1180,8 +1258,9 @@ def evaluate(args) -> dict:
         for model in model_results
     )
     summary["all_correct"] = (
-        hardware["ok"]
-        and summary["n_deferred"] == 0
+        # testbench relaxes ONLY the hardware and zero-deferred conjuncts; every
+        # correctness statement about the RUNNABLE cases/models stays enforced.
+        (testbench or (hardware["ok"] and summary["n_deferred"] == 0))
         and all(result["all_configs_correct"] for result in case_search.values())
         and all(model["selected_correct"] for model in model_results)
         and all(model["incumbent_correct"] for model in model_results)
@@ -1208,7 +1287,12 @@ def main():
     parser.add_argument(
         "--allow-non-target",
         action="store_true",
-        help="diagnostic only; all cases must still execute and loop.py never sets this",
+        help=(
+            "TESTBENCH: proceed off target hardware in Pallas interpret mode; "
+            "callsites whose default-config probe raises are deferred and their "
+            "model workloads excluded (summary gains testbench/deferred_models; "
+            "target_hardware.ok stays False). Set by loop.py --testbench."
+        ),
     )
     args = parser.parse_args()
     try:

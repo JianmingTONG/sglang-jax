@@ -1,52 +1,34 @@
-"""ISA-grounded API-novelty metrics for the AKT gate (two calibrated guardrails).
+"""Delta-residual API-novelty guardrail (v2) for the AKT gate.
 
-The campaign's audit showed every kept capability was a schedule/packaging change:
-efficient use of the EXISTING abstraction, not a new one. These guardrails filter
-that class out of the KEEP path so only abstraction-level changes survive.
+Start from the candidate program N, subtract everything the existing-API catalog
+can reproduce, and judge the REMAINDER (Δ) on its own substance. Subtraction is
+two-pass:
 
-1. DIRECTIONAL, ISA-GROUNDED REDUNDANCY.
-   For a candidate program N (the affected kernel case run with the new control at
-   its selected non-default value) and an existing program E (an incumbent
-   configuration of the same case), both are lowered under the same operation
-   pattern, shape, dtype and compiler configuration to their operation DEPENDENCY
-   GRAPHS: the jaxpr equation DAG, recursing into Pallas kernel bodies (this is
-   the operation stream the Mosaic/TPU compiler receives; dependency graphs, not
-   consecutive instruction sequences, so compiler reordering cannot hide a match).
-   Semantic compatibility is the frozen reference check the gate already enforces.
+  PASS 1 — instance cover: catalog programs are hashed with typed input tokens
+  (params → ⊥dtype·rank); every N op matching some catalog program's ENTRY
+  micro-op opens a whole-instance embedding attempt (inputs may bind to ANY N
+  values — a full embedding is itself the proof those ops are reproducible by
+  calling that API). Matched instances are struck; the cover iterates to
+  fixpoint, so chained / interleaved / intermediate-tapping compositions of
+  existing APIs are recognized as duplicates.
 
-       R(N, E) = matched_weight(N reproducible by E) / total_weight(N)
+  PASS 2 — per-op ancestry match: fixpoint Weisfeiler-Lehman signatures (one
+  Merkle hash = an op's entire computation history) looked up in the union
+  signature multiset of the catalog; found → struck, missing → Δ. Mismatch is
+  the SOUND direction: everything left in Δ has a provably new derivation, and
+  novelty is ancestry-closed (descendants of a new op are new).
 
-   computed as a maximum-weight dependency-preserving subgraph approximation via
-   Weisfeiler-Lehman signatures (label = primitive + output shapes/dtypes,
-   iterated over parent/child neighborhoods; equal signatures imply locally
-   isomorphic dependency contexts). Weights are instruction counts by default
-   (``weight_mode="count"``); ``"size"`` weighs each operation by its output
-   element count as a first cycle/resource proxy.
+The verdict reads Δ alone: per-class substantive mass (compute / MEMORY — the
+roofline criterion: memory ops relocate bits across addresses, cost ∝ bytes;
+compute ops produce new element values, cost ∝ FLOPs; classification is TOTAL,
+containers recursed with zero self-weight, unknown primitives default to
+compute + an `unclassified` audit list) against a MEASURED noise floor (p95 of
+known one-knob tweaks' spurious residuals), a coherence tie-break (largest
+connected Δ component), and a zero-embed self-check. δ = w(Δ)/w(N) is reported
+as a composition reference only — the similarity ratio R ≡ 1−δ carries no
+verdict and the v1 R/D scores are gone.
 
-       D(N) = max_E R(N, E)          (duplicate risk; E* = argmax)
-
-   Directionality: R(N, E*) and R(E*, N) high together => duplicate;
-   R(N, E*) low while R(E*, N) high => N GENERALIZES E* (admissible).
-
-   Threshold calibration: leave-one-out nearest-neighbor D among each family's
-   existing one-knob-off programs — the canonical parameter-tweak population —
-   summarized as catalog PERCENTILES (never the mean alone).
-
-2. GENERICITY = UPPER-LAYER COVERAGE.
-
-       G_delta(N) = |unique upper-layer patterns with a valid u -> N -> l path
-                     and local benefit >= delta| / |relevant upper-layer patterns|
-
-   Upper-layer patterns are the frozen model callsites (each counted once);
-   "valid path with benefit" means the callsite's best measured configuration
-   selects the new control at a non-default value and improves the callsite's
-   best incumbent-configuration latency by at least delta. Lower-layer fan-out
-   (how many kernel functions the control forwards into) is reported separately
-   as ``implementation_breadth`` — it is NOT genericity.
-
-Run ``profile`` on the target host to build the calibration baseline
-(``api_baseline.json``); the loop pins it at init/rebaseline and the gate keeps
-only candidates that clear the calibrated percentiles.
+The genericity guardrail G_delta (upper-layer coverage) is unchanged from v1.
 """
 from __future__ import annotations
 
@@ -56,6 +38,7 @@ import json
 import os
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 os.environ.setdefault("PALLAS_INTERPRET", "1")  # before any kernel import
@@ -63,33 +46,91 @@ os.environ.setdefault("PALLAS_INTERPRET", "1")  # before any kernel import
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "akt/core/analysis/api_baseline.json"
 
-DEFAULT_WL_ITERS = 2
 DEFAULT_WEIGHT_MODE = "count"
 DEFAULT_DELTA = 0.02
-# Catalog-percentile policy (stored in the baseline so the gate and the profile
-# agree): a candidate is non-redundant when its duplicate risk sits BELOW the
-# parameter-tweak population's low tail; generalization needs the reverse
-# direction at or above the population median.
-DEFAULT_REDUNDANCY_PERCENTILE = 10
-DEFAULT_GENERALIZATION_PERCENTILE = 50
+DEFAULT_COHERENCE_MIN = 3
+DEFAULT_EPSILON_OPS = 4
+DEFAULT_MIN_INSTANCE_OPS = 2
+DEFAULT_NOISE_PERCENTILE = 95
 DEFAULT_GENERICITY_PERCENTILE = 50
-# The redundancy cut never rises above this ceiling: a candidate that an
-# existing API can reproduce at >=90% weight is a duplicate no matter how
-# self-similar the calibration population is (a degenerate tweak population
-# with p10 = 1.0 must not make the guard vacuous).
-DEFAULT_REDUNDANCY_CEILING = 0.9
 # The genericity cut never drops below covering HALF the relevant upper-layer
-# patterns, even when a proxy-host calibration degenerates (e.g. interpret
-# timings flattening every existing control's G to zero). A new abstraction
-# must be broadly useful, not a single-callsite special case.
+# patterns even when a proxy-host calibration degenerates.
 DEFAULT_GENERICITY_FLOOR = 0.5
+FIXPOINT_CAP = 96
+COVER_MAP_CAP = 128
+
+# ------------------------------------------------------------- classification
+# Roofline criterion: MEMORY ⇔ relocate/replicate/reinterpret/select bits
+# across addresses (cost ∝ bytes, no new element values); COMPUTE ⇔ new element
+# values or lane-local transforms (cost ∝ FLOPs); CONTAINER ⇔ executes nothing
+# itself (body recursed). Total: unknown primitives default to COMPUTE
+# (fail-substantive — never dropped from Δ) and are logged for audit.
+
+CONTAINER_PRIMS = frozenset(
+    {
+        "pjit", "closed_call", "core_call", "custom_jvp_call", "custom_vjp_call",
+        "custom_vjp_call_jaxpr", "remat", "checkpoint", "scan", "while", "cond",
+        "pallas_call", "shard_map", "custom_partitioning", "xla_call",
+    }
+)
+_MEMORY_TOKENS = (
+    "dma", "copy", "swap", "gather", "scatter", "slice", "transpose",
+    "broadcast", "reshape", "squeeze", "expand_dims", "bitcast", "concatenate",
+    "pad", "rev", "roll", "masked_load", "masked_store", "get", "store",
+    "load", "device_put",
+)
+_KNOWN_COMPUTE = frozenset(
+    {
+        "dot_general", "add", "add_any", "sub", "mul", "div", "rem", "neg",
+        "exp", "exp2", "log", "log1p", "expm1", "tanh", "logistic", "erf",
+        "erf_inv", "sin", "cos", "atan2", "sqrt", "rsqrt", "cbrt", "square",
+        "abs", "sign", "floor", "ceil", "round", "clamp", "max", "min", "pow",
+        "integer_pow", "cumsum", "cumlogsumexp", "cummax", "cummin", "cumprod",
+        "reduce_sum", "reduce_max", "reduce_min", "reduce_prod", "reduce_and",
+        "reduce_or", "argmax", "argmin", "select_n", "iota",
+        "convert_element_type", "eq", "ne", "lt", "le", "gt", "ge", "and",
+        "or", "xor", "not", "shift_left", "shift_right_logical",
+        "shift_right_arithmetic", "is_finite", "nextafter", "population_count",
+        "clz", "stop_gradient", "sort", "top_k", "erfc", "atanh", "asinh",
+        "acosh", "sinh", "cosh", "tan", "asin", "acos", "atan", "real", "imag",
+        "conj", "split", "log_sigmoid", "random_bits", "random_seed",
+        "random_wrap", "random_unwrap", "threefry2x32", "reduce_precision",
+    }
+)
+
+
+def classify_primitive(name: str) -> str:
+    if name in CONTAINER_PRIMS:
+        return "container"
+    if any(token in name for token in _MEMORY_TOKENS):
+        return "memory"
+    return "compute"
+
+
+def classify_labels(labels: list[str]) -> list[str]:
+    """Total per-node classification from base labels (stable public seam)."""
+    return [classify_primitive(label.split("|", 1)[0]) for label in labels]
+
+
+def unclassified_primitives(labels: list[str]) -> list[str]:
+    """Primitives that hit the compute DEFAULT rather than a known rule."""
+    seen = []
+    for label in labels:
+        name = label.split("|", 1)[0]
+        if (
+            name not in CONTAINER_PRIMS
+            and name not in _KNOWN_COMPUTE
+            and not any(token in name for token in _MEMORY_TOKENS)
+            and name not in seen
+        ):
+            seen.append(name)
+    return seen
 
 
 # ------------------------------------------------------------ operation graphs
 
 
 def _sub_jaxprs(value):
-    """Yield every Jaxpr nested inside one eqn-params value (any container)."""
     import jax.extend.core as jex_core
 
     if isinstance(value, jex_core.ClosedJaxpr):
@@ -107,30 +148,24 @@ def _sub_jaxprs(value):
             yield from _sub_jaxprs(item)
 
 
-def _eqn_label(eqn, label_mode: str = "rank") -> str:
-    """Matching label for one operation.
+def _aval_token(var, prefix: str) -> str:
+    aval = getattr(var, "aval", None)
+    dtype = getattr(aval, "dtype", "?")
+    rank = len(getattr(aval, "shape", ()) or ())
+    return f"{prefix}{dtype}r{rank}"
 
-    ``rank`` (default) abstracts shape EXTENTS away (primitive + dtype + rank):
-    a tile/chunk-size re-parameterization of the same algorithm then matches its
-    peers almost fully (high R => correctly flagged as a parameter tweak), while
-    a different operation composition/wiring still mismatches. ``shape`` keeps
-    full extents for finer structural studies; extents always contribute via the
-    ``size`` weight mode regardless of label mode.
-    """
-    if label_mode == "shape":
-        outs = ",".join(
-            f"{getattr(v.aval, 'dtype', '?')}{list(getattr(v.aval, 'shape', []))}"
-            for v in eqn.outvars
-        )
-    else:
-        outs = ",".join(
-            f"{getattr(v.aval, 'dtype', '?')}r{len(getattr(v.aval, 'shape', []) or ())}"
-            for v in eqn.outvars
-        )
+
+def _eqn_label(eqn) -> str:
+    outs = ",".join(
+        f"{getattr(v.aval, 'dtype', '?')}r{len(getattr(v.aval, 'shape', ()) or ())}"
+        for v in eqn.outvars
+    )
     return f"{eqn.primitive.name}|{outs}"
 
 
 def _eqn_weight(eqn, mode: str) -> float:
+    if eqn.primitive.name in CONTAINER_PRIMS:
+        return 0.0  # containers execute nothing themselves; bodies are counted
     if mode == "count":
         return 1.0
     size = 1
@@ -147,110 +182,294 @@ def operation_graph(
     trace_fn,
     *,
     weight_mode: str = DEFAULT_WEIGHT_MODE,
-    label_mode: str = "rank",
+    label_mode: str = "rank",  # retained for API stability; rank is the mode
 ) -> dict:
-    """Dependency graph of every operation the program emits, at every nesting
-    level (pjit / scan / cond / pallas_call kernel bodies included). Edges are
-    data dependencies within each jaxpr level; sub-jaxpr boundaries are level
-    breaks (documented approximation — the intra-kernel structure is what
-    distinguishes algorithms)."""
+    """Dependency graph of every operation, at every nesting level.
+
+    Returns {labels, weights, edges, in_tokens, contain}: edges are data
+    dependencies within each jaxpr level; graph/sub-jaxpr inputs appear as
+    TYPED tokens (⊥dtype·rank) folded into the consuming op's signature —
+    that is the input-anonymization the instance cover relies on. `contain`
+    edges (container → body op) exist for coherence only, never for ancestry.
+    """
     import jax
+    from jax._src import core as jcore
 
     closed = jax.make_jaxpr(trace_fn)()
     labels: list[str] = []
     weights: list[float] = []
     edges: list[tuple[int, int]] = []
+    in_tokens: list[list[str]] = []
+    contain: list[tuple[int, int]] = []
 
-    def visit(jaxpr):
+    def visit(jaxpr, parent: int | None):
         producer: dict = {}
         for eqn in jaxpr.eqns:
             index = len(labels)
-            labels.append(_eqn_label(eqn, label_mode))
+            labels.append(_eqn_label(eqn))
             weights.append(_eqn_weight(eqn, weight_mode))
+            tokens: list[str] = []
             for var in eqn.invars:
-                key = id(var)
-                if key in producer:
-                    edges.append((producer[key], index))
+                if isinstance(var, jcore.Literal):
+                    tokens.append(_aval_token(var, "L"))
+                elif id(var) in producer:
+                    edges.append((producer[id(var)], index))
+                else:
+                    tokens.append(_aval_token(var, "⊥"))
+            in_tokens.append(tokens)
+            if parent is not None:
+                contain.append((parent, index))
             for var in eqn.outvars:
                 producer[id(var)] = index
             for sub in _sub_jaxprs(eqn.params):
-                visit(sub)
+                visit(sub, index)
 
-    visit(closed.jaxpr)
-    return {"labels": labels, "weights": weights, "edges": edges}
+    visit(closed.jaxpr, None)
+    return {
+        "labels": labels,
+        "weights": weights,
+        "edges": edges,
+        "in_tokens": in_tokens,
+        "contain": contain,
+    }
 
 
 def _digest(text: str) -> str:
     return hashlib.md5(text.encode()).hexdigest()
 
 
-def wl_signatures(graph: dict, iters: int = DEFAULT_WL_ITERS) -> list[str]:
-    """Ancestry Weisfeiler-Lehman signature per node: label refined by the
-    sorted PARENT signature multiset only. An operation is "reproducible by E"
-    when E computes the same value the same way — that is a property of its
-    ancestor structure, not of what happens to consume it later, so children are
-    deliberately excluded (a superset program must still match every op of the
-    program it extends). Equal signatures => locally isomorphic dependency
-    ancestries, the dependency-preserving matching unit."""
+def signatures(graph: dict, *, iters: int | None = None) -> list[str]:
+    """Fixpoint ancestry Weisfeiler-Lehman signatures.
+
+    Base = own label + sorted typed input tokens; each round folds in the
+    sorted parent-signature multiset; iterated until stable (Merkle hash of
+    the full ancestry DAG). Different hash ⇒ provably different derivation.
+    """
     n = len(graph["labels"])
     parents: list[list[int]] = [[] for _ in range(n)]
     for src, dst in graph["edges"]:
         parents[dst].append(src)
-    sigs = [_digest(label) for label in graph["labels"]]
-    for _ in range(iters):
-        sigs = [
-            _digest(
-                sigs[i]
-                + "|P:" + ",".join(sorted(sigs[p] for p in parents[i]))
-            )
+    sigs = [
+        _digest(label + "|I:" + ",".join(sorted(tokens)))
+        for label, tokens in zip(graph["labels"], graph["in_tokens"])
+    ]
+    cap = FIXPOINT_CAP if iters is None else iters
+    for _ in range(cap):
+        nxt = [
+            _digest(sigs[i] + "|P:" + ",".join(sorted(sigs[p] for p in parents[i])))
             for i in range(n)
         ]
+        if nxt == sigs:
+            break
+        sigs = nxt
     return sigs
 
 
-def redundancy(
-    graph_n: dict, graph_e: dict, *, wl_iters: int = DEFAULT_WL_ITERS
-) -> float:
-    """R(N, E): weight fraction of N's operations reproducible by E, matched by
-    WL signature multisets (a deterministic under-approximation of the
-    maximum-weight dependency-preserving common subgraph)."""
-    total = sum(graph_n["weights"])
-    if total <= 0:
-        return 0.0
-    sig_n = wl_signatures(graph_n, wl_iters)
-    sig_e = wl_signatures(graph_e, wl_iters)
-    counts_e: dict[str, int] = {}
-    for sig in sig_e:
-        counts_e[sig] = counts_e.get(sig, 0) + 1
-    matched = 0.0
-    budget = dict(counts_e)
-    # ops sharing a signature share a label, hence a weight — greedy is exact here
-    for sig, weight in zip(sig_n, graph_n["weights"]):
-        if budget.get(sig, 0) > 0:
-            budget[sig] -= 1
-            matched += weight
-    return matched / total
+# ------------------------------------------------------------- instance cover
 
 
-def duplicate_risk(
-    graph_n: dict,
+def _parent_lists(graph: dict) -> list[list[int]]:
+    parents: list[list[int]] = [[] for _ in graph["labels"]]
+    for src, dst in graph["edges"]:
+        parents[dst].append(src)
+    return parents
+
+
+def instance_cover(
+    n_graph: dict,
     catalog: dict[str, dict],
     *,
-    wl_iters: int = DEFAULT_WL_ITERS,
+    reverse: bool = False,
+    min_instance_ops: int = DEFAULT_MIN_INSTANCE_OPS,
+) -> tuple[set[int], list[dict]]:
+    """PASS 1: strike whole embedded catalog programs out of N.
+
+    Deterministic greedy cover: programs largest-first (then id), anchors in
+    increasing N-node order (decreasing when ``reverse`` — the borderline
+    retry), catalog program nodes matched in topological (index) order with
+    min-index candidate choice. An instance's inputs bind to ANY N values;
+    soundness comes from requiring the ENTIRE program to embed with exact
+    per-op arity and mapped-parent consistency. Greedy failure only shrinks
+    the cover (more Δ) — the strict, fail-closed direction.
+    """
+    n_labels = n_graph["labels"]
+    n_parents = _parent_lists(n_graph)
+    n_tokens = n_graph["in_tokens"]
+    n_arity = [len(p) + len(t) for p, t in zip(n_parents, n_tokens)]
+    by_label: dict[str, list[int]] = {}
+    for i, label in enumerate(n_labels):
+        by_label.setdefault(label, []).append(i)
+
+    classes_cache: dict[str, list[str]] = {}
+
+    def substantive_ops(graph):
+        key = id(graph)
+        return sum(
+            1 for c in classify_labels(graph["labels"]) if c != "container"
+        )
+
+    order = sorted(
+        catalog.items(),
+        key=lambda kv: (-len(kv[1]["labels"]), kv[0]),
+    )
+    struck: set[int] = set()
+    instances: list[dict] = []
+
+    for pid, e_graph in order:
+        if substantive_ops(e_graph) < min_instance_ops:
+            continue
+        e_labels = e_graph["labels"]
+        e_parents = _parent_lists(e_graph)
+        e_tokens = e_graph["in_tokens"]
+        e_arity = [len(p) + len(t) for p, t in zip(e_parents, e_tokens)]
+        anchors = list(by_label.get(e_labels[0], []))
+        if reverse:
+            anchors = list(reversed(anchors))
+        for anchor in anchors:
+            if anchor in struck:
+                continue
+            mapping: dict[int, int] = {}
+            used: set[int] = set()
+            ok = True
+            for k in range(len(e_labels)):
+                needed = Counter(mapping[p] for p in e_parents[k])
+                candidates = [anchor] if k == 0 else by_label.get(e_labels[k], [])
+                if reverse and k > 0:
+                    candidates = list(reversed(candidates))
+                chosen = None
+                for cand in candidates:
+                    if cand in struck or cand in used:
+                        continue
+                    if n_arity[cand] != e_arity[k]:
+                        continue
+                    have = Counter(n_parents[cand])
+                    if any(have[p] < c for p, c in needed.items()):
+                        continue
+                    # remaining (unmapped) operands of cand are free bindings —
+                    # exactly the instance's ⊥ inputs; arity equality bounds them
+                    chosen = cand
+                    break
+                if chosen is None:
+                    ok = False
+                    break
+                mapping[k] = chosen
+                used.add(chosen)
+            if ok and len(mapping) == len(e_labels):
+                struck |= set(mapping.values())
+                instances.append(
+                    {"program": pid, "anchor": anchor, "ops": len(mapping)}
+                )
+    return struck, instances
+
+
+# ---------------------------------------------------------------- subtraction
+
+
+def subtract_catalog(
+    n_graph: dict,
+    catalog: dict[str, dict],
+    *,
+    reverse: bool = False,
 ) -> dict:
-    """D(N) = max_E R(N, E) over the catalog, with the directional pair for E*."""
-    best_id, best_r = None, -1.0
-    for program_id, graph_e in catalog.items():
-        score = redundancy(graph_n, graph_e, wl_iters=wl_iters)
-        if score > best_r:
-            best_id, best_r = program_id, score
-    if best_id is None:
-        return {"D": 0.0, "closest": None, "R_ne": 0.0, "R_en": 0.0}
-    reverse = redundancy(catalog[best_id], graph_n, wl_iters=wl_iters)
-    return {"D": best_r, "closest": best_id, "R_ne": best_r, "R_en": reverse}
+    """Two-pass subtraction: instance cover, then per-op ancestry match.
+
+    Returns the Δ record: per-class substantive masses, coherence, δ, the
+    zero-embed self-check, and the minimized Δ subgraph.
+    """
+    struck, instances = instance_cover(n_graph, catalog, reverse=reverse)
+    n_sigs = signatures(n_graph)
+    budget: Counter = Counter()
+    for e_graph in catalog.values():
+        budget.update(signatures(e_graph))
+    classes = classify_labels(n_graph["labels"])
+    weights = n_graph["weights"]
+
+    matched: set[int] = set()
+    consumed: Counter = Counter()
+    order = range(len(n_sigs)) if not reverse else reversed(range(len(n_sigs)))
+    for i in order:
+        if i in struck:
+            continue
+        sig = n_sigs[i]
+        if budget[sig] > 0:
+            budget[sig] -= 1
+            consumed[sig] += 1
+            matched.add(i)
+
+    delta = [
+        i
+        for i in range(len(n_sigs))
+        if i not in struck and i not in matched and classes[i] != "container"
+    ]
+    mass_cmp = sum(weights[i] for i in delta if classes[i] == "compute")
+    mass_mem = sum(weights[i] for i in delta if classes[i] == "memory")
+    total = sum(w for w, c in zip(weights, classes) if c != "container")
+    # SELF-CHECK: a Δ op whose signature still has catalog budget left should
+    # have been matched — nonzero means the subtraction itself is buggy.
+    zero_embed = sum(1 for i in delta if budget[n_sigs[i]] > 0)
+
+    delta_set = set(delta)
+    adjacency: dict[int, set[int]] = {i: set() for i in delta}
+    for src, dst in list(n_graph["edges"]) + list(n_graph["contain"]):
+        if src in delta_set and dst in delta_set:
+            adjacency[src].add(dst)
+            adjacency[dst].add(src)
+    components = 0
+    largest = 0
+    seen: set[int] = set()
+    for start in delta:
+        if start in seen:
+            continue
+        components += 1
+        stack, size = [start], 0
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            size += 1
+            stack.extend(adjacency[node] - seen)
+        largest = max(largest, size)
+    depth: dict[int, int] = {}
+    for i in delta:  # index order is topological within each level
+        preds = [
+            src
+            for src, dst in n_graph["edges"]
+            if dst == i and src in delta_set
+        ]
+        depth[i] = 1 + max((depth.get(p, 0) for p in preds), default=0)
+    max_depth = max(depth.values(), default=0)
+
+    return {
+        "struck_instances": instances,
+        "n_struck": len(struck),
+        "n_matched": len(matched),
+        "delta_ops": len(delta),
+        "mass": {"compute": mass_cmp, "memory": mass_mem},
+        "total_mass": total,
+        "delta_pct": ((mass_cmp + mass_mem) / total) if total else 0.0,
+        "coherence": {
+            "components": components,
+            "largest": largest,
+            "max_depth": max_depth,
+        },
+        "zero_embed": zero_embed,
+        "unclassified": unclassified_primitives(
+            [n_graph["labels"][i] for i in delta]
+        ),
+        "graph": {
+            "labels": [n_graph["labels"][i] for i in delta],
+            "classes": [classes[i] for i in delta],
+            "edges": [
+                [delta.index(src), delta.index(dst)]
+                for src, dst in n_graph["edges"]
+                if src in delta_set and dst in delta_set
+            ],
+        },
+    }
 
 
-# ------------------------------------------------------------ program catalogs
+# ------------------------------------------------------------ program helpers
 
 
 def _config_key(config: dict) -> str:
@@ -263,9 +482,7 @@ def program_graph(case, config: dict, *, weight_mode: str = DEFAULT_WEIGHT_MODE)
 
 
 def one_knob_programs(case, *, exclude_knobs: set[str] | None = None) -> dict[str, dict]:
-    """The canonical existing-API population of one case: the default program and
-    every single-knob deviation (the parameter-tweak neighborhood). Returns
-    {program_id: config}."""
+    """Default + every single-knob deviation of one case ({program_id: config})."""
     exclude = exclude_knobs or set()
     space = case.space
     default = space.default_config()
@@ -286,7 +503,53 @@ def one_knob_programs(case, *, exclude_knobs: set[str] | None = None) -> dict[st
     return programs
 
 
-def _percentiles(scores: list[float]) -> dict[str, float]:
+def _trace_many(case, programs: dict[str, dict], *, weight_mode: str) -> dict[str, dict]:
+    graphs: dict[str, dict] = {}
+    for pid, config in programs.items():
+        try:
+            graphs[pid] = program_graph(case, config, weight_mode=weight_mode)
+        except Exception as error:  # noqa: BLE001 - untraceable → excluded, recorded
+            graphs[pid] = {"error": f"{type(error).__name__}: {str(error)[:120]}"}
+    return {pid: g for pid, g in graphs.items() if "error" not in g}
+
+
+def catalog_for_case(
+    cases: dict[str, object],
+    case_id: str,
+    *,
+    exclude_knob: str | None = None,
+    weight_mode: str = DEFAULT_WEIGHT_MODE,
+    cache: dict | None = None,
+) -> dict[str, dict]:
+    """⋃E for one candidate: the same case's one-knob population (minus the new
+    knob) PLUS every other suite API's default program (cross-API cover)."""
+    cache = cache if cache is not None else {}
+    catalog: dict[str, dict] = {}
+    case = cases[case_id]
+    exclude = {exclude_knob} if exclude_knob else set()
+    key = ("same", case_id, exclude_knob, weight_mode)
+    if key not in cache:
+        cache[key] = _trace_many(
+            case, one_knob_programs(case, exclude_knobs=exclude), weight_mode=weight_mode
+        )
+    for pid, graph in cache[key].items():
+        catalog[f"{case_id}:{pid}"] = graph
+    for other_id, other in cases.items():
+        if other_id == case_id:
+            continue
+        okey = ("default", other_id, weight_mode)
+        if okey not in cache:
+            cache[okey] = _trace_many(
+                other,
+                {"default": other.space.default_config()},
+                weight_mode=weight_mode,
+            )
+        for pid, graph in cache[okey].items():
+            catalog[f"{other_id}:{pid}"] = graph
+    return catalog
+
+
+def _percentiles(scores: list[float]) -> dict:
     if not scores:
         return {}
     ordered = sorted(scores)
@@ -299,35 +562,8 @@ def _percentiles(scores: list[float]) -> dict[str, float]:
     return out
 
 
-def loo_duplicate_scores(
-    case,
-    *,
-    wl_iters: int = DEFAULT_WL_ITERS,
-    weight_mode: str = DEFAULT_WEIGHT_MODE,
-) -> list[dict]:
-    """Leave-one-out nearest-neighbor D among one case's existing programs."""
-    programs = one_knob_programs(case)
-    graphs: dict[str, dict] = {}
-    for program_id, config in programs.items():
-        try:
-            graphs[program_id] = program_graph(case, config, weight_mode=weight_mode)
-        except Exception as error:  # noqa: BLE001 - untraceable => excluded, recorded
-            graphs[program_id] = {"error": f"{type(error).__name__}: {str(error)[:120]}"}
-    scores = []
-    valid = {pid: g for pid, g in graphs.items() if "error" not in g}
-    for program_id, graph in valid.items():
-        rest = {pid: g for pid, g in valid.items() if pid != program_id}
-        if not rest:
-            continue
-        result = duplicate_risk(graph, rest, wl_iters=wl_iters)
-        scores.append({"program": program_id, **result})
-    errors = {pid: g["error"] for pid, g in graphs.items() if "error" in g}
-    if errors:
-        scores.append({"trace_errors": errors})
-    return scores
-
-
 # ------------------------------------------------------------------ genericity
+# (unchanged v1 guardrail — upper-layer coverage)
 
 
 def genericity_from_case_search(
@@ -337,12 +573,6 @@ def genericity_from_case_search(
     relevant_case_to_callsites: dict[str, list[str]],
     delta: float = DEFAULT_DELTA,
 ) -> dict:
-    """G_delta over the frozen model callsites (each upper pattern counted once).
-
-    benefit(callsite) = (best latency among configs with the control at DEFAULT
-    minus best among NON-default) / best-default, from the gate's own measured
-    ``case_search`` population.
-    """
     covered, relevant, per_site = [], [], {}
     for case_id, callsites in relevant_case_to_callsites.items():
         result = case_search.get(case_id) or {}
@@ -386,8 +616,6 @@ def genericity_from_case_search(
 
 
 def implementation_breadth(forwarding_paths: dict) -> int:
-    """Lower-layer fan-out: distinct kernel functions the control reaches.
-    Reported separately from genericity, per the metric definition."""
     functions = set()
     for trail in (forwarding_paths or {}).values():
         for step in trail or []:
@@ -417,38 +645,75 @@ def _callsites_by_case() -> dict[str, list[str]]:
 
 def build_baseline(
     *,
-    wl_iters: int = DEFAULT_WL_ITERS,
     weight_mode: str = DEFAULT_WEIGHT_MODE,
     delta: float = DEFAULT_DELTA,
     genericity_iters: int = 5,
 ) -> dict:
-    """Profile the EXISTING APIs to calibrate both guardrail thresholds.
+    """Calibrate both guardrails from the EXISTING APIs.
 
-    Redundancy: per-family leave-one-out D percentiles over one-knob-off
-    programs. Genericity: G_delta of every already-registered programmer control,
-    measured with the runner timer over the same one-knob population (recomputed
-    on the target host at rebaseline; the recorded regime marks proxy timings).
+    Noise floor: run every one-knob tweak of every traceable case through the
+    full two-pass subtraction against its own catalog — the residual substantive
+    op counts are pure matcher noise, and their p95 is the floor a candidate's
+    Δ must clear. Inter-API scale: pairwise Δ between different kernel families'
+    default programs — what "as different as separate APIs" measures. Genericity
+    percentiles as in v1.
     """
     import jax
 
     from akt.benchmark.runners.base import time_config
 
-    cases = _load_cases()
+    cases = {case.case_id: case for case in _load_cases()}
     case_to_sites = _callsites_by_case()
-    families: dict[str, list[float]] = {}
-    per_case: dict[str, dict] = {}
-    for case in cases:
-        scores = loo_duplicate_scores(case, wl_iters=wl_iters, weight_mode=weight_mode)
-        d_values = [s["D"] for s in scores if "D" in s]
-        families.setdefault(case.kernel_id, []).extend(d_values)
-        per_case[case.case_id] = {
-            "scores": scores,
-            "percentiles": _percentiles(d_values),
-        }
+    cache: dict = {}
 
-    all_scores = [d for values in families.values() for d in values]
+    noise_masses: list[float] = []
+    per_case_noise: dict[str, list[float]] = {}
+    defaults: dict[str, dict] = {}
+    kernel_of: dict[str, str] = {}
+    for case_id, case in cases.items():
+        kernel_of[case_id] = case.kernel_id
+        traced = _trace_many(
+            case, {"default": case.space.default_config()}, weight_mode=weight_mode
+        )
+        if "default" in traced:
+            defaults[case_id] = traced["default"]
+
+    for case_id, case in cases.items():
+        key = ("same", case_id, None, weight_mode)
+        cache[key] = _trace_many(case, one_knob_programs(case), weight_mode=weight_mode)
+        programs = cache[key]
+        if not programs:
+            continue
+        for pid, graph in programs.items():
+            rest = {
+                f"{case_id}:{other}": g
+                for other, g in programs.items()
+                if other != pid
+            }
+            for other_id, other_graph in defaults.items():
+                if other_id != case_id:
+                    rest[f"{other_id}:default"] = other_graph
+            if not rest:
+                continue
+            record = subtract_catalog(graph, rest)
+            mass = record["mass"]["compute"] + record["mass"]["memory"]
+            noise_masses.append(mass)
+            per_case_noise.setdefault(case_id, []).append(mass)
+
+    inter_masses: list[float] = []
+    inter_pairs: list[list] = []
+    ids = sorted(defaults)
+    for a in ids:
+        for b in ids:
+            if a >= b or kernel_of[a] == kernel_of[b]:
+                continue
+            record = subtract_catalog(defaults[a], {b: defaults[b]})
+            mass = record["mass"]["compute"] + record["mass"]["memory"]
+            inter_masses.append(mass)
+            inter_pairs.append([a, b, mass])
+
     genericity_scores: dict[str, dict] = {}
-    for case in cases:
+    for case in cases.values():
         controls = [k for k in case.space.knobs if k.programmer_control]
         if not controls:
             continue
@@ -461,7 +726,7 @@ def build_baseline(
                         "median_s"
                     ],
                 }
-        except Exception as error:  # noqa: BLE001 - untimeable on this host
+        except Exception as error:  # noqa: BLE001
             for knob in controls:
                 genericity_scores.setdefault(
                     knob.programmer_control,
@@ -499,7 +764,7 @@ def build_baseline(
             entry["G_by_case"][case.case_id] = result["G"]
 
     g_values = []
-    for control, entry in genericity_scores.items():
+    for entry in genericity_scores.values():
         by_case = entry.get("G_by_case") or {}
         if by_case:
             entry["G"] = sum(by_case.values()) / len(by_case)
@@ -509,23 +774,23 @@ def build_baseline(
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "backend": jax.default_backend(),
         "pallas_interpret": os.environ.get("PALLAS_INTERPRET") == "1",
-        "wl_iters": wl_iters,
         "weight_mode": weight_mode,
-        "delta": delta,
-        "redundancy": {
-            "per_family": {
-                family: _percentiles(values) for family, values in families.items()
+        "delta": {
+            "noise_floor": _percentiles(noise_masses),
+            "noise_by_case": {
+                case_id: _percentiles(values)
+                for case_id, values in per_case_noise.items()
             },
-            "global": _percentiles(all_scores),
-            "per_case": per_case,
+            "inter_api": {**_percentiles(inter_masses), "pairs": inter_pairs},
+            "epsilon_ops": DEFAULT_EPSILON_OPS,
+            "coherence_min": DEFAULT_COHERENCE_MIN,
+            "noise_percentile": DEFAULT_NOISE_PERCENTILE,
         },
         "genericity": {
             "per_control": genericity_scores,
             "global": _percentiles(g_values),
         },
         "policy": {
-            "redundancy_percentile": DEFAULT_REDUNDANCY_PERCENTILE,
-            "generalization_percentile": DEFAULT_GENERALIZATION_PERCENTILE,
             "genericity_percentile": DEFAULT_GENERICITY_PERCENTILE,
         },
     }
@@ -542,6 +807,78 @@ def _threshold(percentiles: dict, pct: int, fallback: float) -> float:
     return value if isinstance(value, (int, float)) else fallback
 
 
+def delta_verdict(
+    case,
+    knob_name: str,
+    selected_value,
+    catalog: dict[str, dict],
+    *,
+    noise_floor: float,
+    coherence_min: int,
+    epsilon: float,
+    weight_mode: str = DEFAULT_WEIGHT_MODE,
+) -> dict:
+    """Judge one candidate program's Δ substance (with borderline retry)."""
+    config = case.space.default_config()
+    config[knob_name] = selected_value
+    n_graph = program_graph(case, config, weight_mode=weight_mode)
+    record = subtract_catalog(n_graph, catalog)
+    mass = record["mass"]["compute"] + record["mass"]["memory"]
+    exact_verified = None
+    if abs(mass - noise_floor) <= epsilon:
+        # borderline: deterministic retry with reversed cover/anchor order —
+        # take the SMALLER Δ (most coverage found); certifies the region.
+        retry = subtract_catalog(n_graph, catalog, reverse=True)
+        retry_mass = retry["mass"]["compute"] + retry["mass"]["memory"]
+        if retry_mass < mass:
+            record, mass = retry, retry_mass
+        exact_verified = True
+    passes = (
+        mass > noise_floor
+        and record["coherence"]["largest"] >= coherence_min
+        and record["zero_embed"] == 0
+    )
+    return {
+        **record,
+        "mass_total": mass,
+        "noise_floor": noise_floor,
+        "epsilon": epsilon,
+        "coherence_min": coherence_min,
+        "exact_verified": exact_verified,
+        "pass": passes,
+    }
+
+
+def cover_map_for_case(
+    case,
+    knob_name: str,
+    catalog: dict[str, dict],
+    *,
+    weight_mode: str = DEFAULT_WEIGHT_MODE,
+    cap: int = COVER_MAP_CAP,
+) -> dict:
+    """Per-config bidirectional exact cover: some config of N ≡ an existing API
+    (signature multisets equal both ways — zero surplus either direction)."""
+    catalog_sigs = {
+        pid: Counter(signatures(graph)) for pid, graph in catalog.items()
+    }
+    result: dict[str, str] = {}
+    space = case.space.deployment_space()
+    for index, config in enumerate(space.enumerate(cap=cap)):
+        try:
+            graph = program_graph(case, config, weight_mode=weight_mode)
+        except Exception:  # noqa: BLE001
+            continue
+        sigs = Counter(signatures(graph))
+        for pid, e_sigs in catalog_sigs.items():
+            if sigs == e_sigs:
+                result[_config_key(config)] = pid
+                break
+        if index >= cap:
+            break
+    return result
+
+
 def gate_metrics(
     *,
     baseline: dict,
@@ -551,83 +888,95 @@ def gate_metrics(
     forwarding_paths: dict | None = None,
     delta: float | None = None,
 ) -> dict:
-    """Compute both guardrails for one pending capability and apply the pinned,
-    catalog-percentile thresholds.
-
-    ``capability_controls``: [{"case_id", "knob", "selected_value"}] — the new
-    control per affected case with the plan-selected non-default value. The
-    candidate program N is that case at default+{knob: selected}; the existing
-    catalog E is the case's one-knob-off population with the new knob held at
-    default (the incumbent APIs). Uniform for ELEVATE and NOVEL rounds: a pure
-    parameter tweak scores D ~= tweak-population percentiles and fails.
-    """
-    wl_iters = baseline.get("wl_iters", DEFAULT_WL_ITERS)
+    """Both guardrails for one pending capability, on the pinned thresholds."""
     weight_mode = baseline.get("weight_mode", DEFAULT_WEIGHT_MODE)
     policy = baseline.get("policy") or {}
-    delta = baseline.get("delta", DEFAULT_DELTA) if delta is None else delta
+    dcfg = baseline.get("delta") or {}
+    delta = (
+        (baseline.get("genericity") or {}).get("delta", DEFAULT_DELTA)
+        if delta is None
+        else delta
+    )
+    global_floor = _threshold(
+        dcfg.get("noise_floor") or {},
+        dcfg.get("noise_percentile", DEFAULT_NOISE_PERCENTILE),
+        2.0,
+    )
+    noise_by_case = dcfg.get("noise_by_case") or {}
+
+    def floor_for(case_id: str) -> float:
+        # Per-case calibration: a family whose mere re-parameterization already
+        # restructures the unrolled program (e.g. kda's chunk loops) gets its own
+        # measured floor; families whose tweaks leave zero residual get the
+        # absolute minimum instead of a vacuous 0.
+        case_floor = _threshold(
+            noise_by_case.get(case_id) or {},
+            dcfg.get("noise_percentile", DEFAULT_NOISE_PERCENTILE),
+            global_floor,
+        )
+        return max(case_floor, float(dcfg.get("min_mass", DEFAULT_EPSILON_OPS)))
+
+    epsilon = dcfg.get("epsilon_ops", DEFAULT_EPSILON_OPS)
+    coherence_min = dcfg.get("coherence_min", DEFAULT_COHERENCE_MIN)
     cases = {case.case_id: case for case in _load_cases()}
+    cache: dict = {}
 
     per_case = []
     errors = []
-    worst = {"D": -1.0}
+    worst = None
+    delta_summary = None
+    cover_map: dict = {}
     for record in capability_controls:
         case = cases.get(record["case_id"])
         knob_name = record["knob"]
         if case is None:
             errors.append(f"unknown case {record['case_id']!r}")
             continue
-        default_config = case.space.default_config()
-        candidate_config = dict(default_config)
-        candidate_config[knob_name] = record["selected_value"]
         try:
-            graph_n = program_graph(case, candidate_config, weight_mode=weight_mode)
-            catalog = {}
-            for program_id, config in one_knob_programs(
-                case, exclude_knobs={knob_name}
-            ).items():
-                catalog[program_id] = program_graph(
-                    case, config, weight_mode=weight_mode
-                )
+            catalog = catalog_for_case(
+                cases,
+                record["case_id"],
+                exclude_knob=knob_name,
+                weight_mode=weight_mode,
+                cache=cache,
+            )
+            verdict = delta_verdict(
+                case,
+                knob_name,
+                record["selected_value"],
+                catalog,
+                noise_floor=floor_for(record["case_id"]),
+                coherence_min=coherence_min,
+                epsilon=epsilon,
+                weight_mode=weight_mode,
+            )
         except Exception as error:  # noqa: BLE001 - fail closed
             errors.append(
-                f"cannot trace {record['case_id']}: "
+                f"cannot evaluate {record['case_id']}: "
                 f"{type(error).__name__}: {str(error)[:160]}"
             )
             continue
-        result = duplicate_risk(graph_n, catalog, wl_iters=wl_iters)
-        family = case.kernel_id
-        family_pct = (baseline.get("redundancy") or {}).get("per_family", {}).get(
-            family
-        ) or (baseline.get("redundancy") or {}).get("global") or {}
-        cut = min(
-            _threshold(
-                family_pct,
-                policy.get("redundancy_percentile", DEFAULT_REDUNDANCY_PERCENTILE),
-                0.5,
-            ),
-            DEFAULT_REDUNDANCY_CEILING,
-        )
-        general_floor = _threshold(
-            family_pct,
-            policy.get(
-                "generalization_percentile", DEFAULT_GENERALIZATION_PERCENTILE
-            ),
-            0.9,
-        )
-        generalizes = result["R_ne"] < cut and result["R_en"] >= general_floor
-        record_out = {
+        entry = {
             **record,
-            **result,
-            "family": family,
-            "redundancy_cut": cut,
-            "generalization_floor": general_floor,
-            "non_redundant": result["D"] < cut,
-            "generalizes_closest": generalizes,
-            "redundancy_ok": result["D"] < cut or generalizes,
+            "mass_compute": verdict["mass"]["compute"],
+            "mass_memory": verdict["mass"]["memory"],
+            "mass_total": verdict["mass_total"],
+            "largest_component": verdict["coherence"]["largest"],
+            "zero_embed": verdict["zero_embed"],
+            "exact_verified": verdict["exact_verified"],
+            "pass": verdict["pass"],
         }
-        per_case.append(record_out)
-        if result["D"] > worst["D"]:
-            worst = {**record_out}
+        per_case.append(entry)
+        if worst is None or verdict["mass_total"] < worst["mass_total"]:
+            worst = entry
+            delta_summary = verdict
+        if not cover_map:
+            try:
+                cover_map = cover_map_for_case(
+                    case, knob_name, catalog, weight_mode=weight_mode
+                )
+            except Exception as error:  # noqa: BLE001
+                errors.append(f"cover map failed: {str(error)[:120]}")
 
     knob_names = {record["knob"] for record in capability_controls}
     genericity = {}
@@ -648,15 +997,31 @@ def gate_metrics(
     )
     g_min = min((entry["G"] for entry in genericity.values()), default=0.0)
 
-    redundancy_ok = bool(per_case) and all(r["redundancy_ok"] for r in per_case)
+    redundancy_ok = bool(per_case) and all(r["pass"] for r in per_case)
     genericity_ok = bool(genericity) and g_min >= g_cut
     ok = redundancy_ok and genericity_ok and not errors
     return {
         "ok": ok,
         "redundancy_ok": redundancy_ok,
         "genericity_ok": genericity_ok,
-        "per_case": per_case,
-        "worst_duplicate_risk": worst if worst["D"] >= 0 else None,
+        "delta": (
+            {
+                "mass": delta_summary["mass"],
+                "total_ops": delta_summary["delta_ops"],
+                "delta_pct": delta_summary["delta_pct"],
+                "coherence": delta_summary["coherence"],
+                "zero_embed": delta_summary["zero_embed"],
+                "noise_floor": delta_summary["noise_floor"],
+                "epsilon": epsilon,
+                "exact_verified": delta_summary["exact_verified"],
+                "unclassified": delta_summary["unclassified"],
+                "graph": delta_summary["graph"],
+                "per_case": per_case,
+            }
+            if delta_summary is not None
+            else {"per_case": per_case, "noise_floor": global_floor}
+        ),
+        "cover_map": cover_map,
         "genericity": genericity,
         "genericity_min": g_min,
         "genericity_cut": g_cut,
@@ -676,7 +1041,6 @@ def main():
         "profile", help="calibrate both guardrails from the existing APIs"
     )
     profile.add_argument("--out", default=str(BASELINE))
-    profile.add_argument("--wl-iters", type=int, default=DEFAULT_WL_ITERS)
     profile.add_argument(
         "--weight-mode", choices=("count", "size"), default=DEFAULT_WEIGHT_MODE
     )
@@ -688,9 +1052,43 @@ def main():
     gate = sub.add_parser(
         "gate", help="compute both guardrails for one pending capability"
     )
-    gate.add_argument("--spec", required=True, help="JSON spec path (see gate_metrics)")
+    gate.add_argument("--spec", required=True)
     gate.add_argument("--out", required=True)
     args = parser.parse_args()
+
+    if args.cmd == "profile":
+        baseline = build_baseline(weight_mode=args.weight_mode, delta=args.delta)
+        Path(args.out).write_text(json.dumps(baseline, indent=1))
+        nf = baseline["delta"]["noise_floor"]
+        ia = baseline["delta"]["inter_api"]
+        print(
+            f"[api-metrics] baseline -> {args.out}\n"
+            f"[api-metrics] tweak-residual noise floor (substantive ops): "
+            + (
+                ", ".join(f"{k}={v:.1f}" for k, v in nf.items() if k.startswith("p"))
+                if nf
+                else "(no traceable tweaks)"
+            )
+            + f" (n={nf.get('n', 0)})\n"
+            f"[api-metrics] inter-API Δ scale: "
+            + (
+                ", ".join(
+                    f"{k}={v:.1f}"
+                    for k, v in ia.items()
+                    if k.startswith("p") and isinstance(v, (int, float))
+                )
+                if ia.get("n")
+                else "(none)"
+            )
+            + "\n[api-metrics] AKT_API_BASELINE "
+            + json.dumps(
+                {
+                    "fingerprint": baseline["fingerprint"],
+                    "backend": baseline["backend"],
+                }
+            )
+        )
+        return
 
     if args.cmd == "gate":
         spec = json.loads(Path(args.spec).read_text())
@@ -705,52 +1103,41 @@ def main():
             delta=spec.get("delta"),
         )
         Path(args.out).write_text(json.dumps(result, indent=1, allow_nan=False))
-        print("AKT_API_NOVELTY " + json.dumps(
-            {
-                "ok": result["ok"],
-                "redundancy_ok": result["redundancy_ok"],
-                "genericity_ok": result["genericity_ok"],
-                "genericity_min": result["genericity_min"],
-                "worst_D": (result.get("worst_duplicate_risk") or {}).get("D"),
-            }
-        ))
-        return
-
-    if args.cmd == "profile":
-        baseline = build_baseline(
-            wl_iters=args.wl_iters, weight_mode=args.weight_mode, delta=args.delta
-        )
-        Path(args.out).write_text(json.dumps(baseline, indent=1))
-        red = baseline["redundancy"]["global"]
-        gen = baseline["genericity"]["global"]
+        d = result.get("delta") or {}
         print(
-            f"[api-metrics] baseline -> {args.out}\n"
-            f"[api-metrics] redundancy LOO D percentiles (global): "
-            + ", ".join(f"{k}={v:.3f}" for k, v in red.items() if k.startswith("p"))
-            + f" (n={red.get('n', 0)})\n"
-            f"[api-metrics] existing-control genericity percentiles: "
-            + (
-                ", ".join(
-                    f"{k}={v:.3f}" for k, v in gen.items() if k.startswith("p")
-                )
-                if gen
-                else "(no timed controls on this host)"
+            "AKT_API_NOVELTY "
+            + json.dumps(
+                {
+                    "ok": result["ok"],
+                    "redundancy_ok": result["redundancy_ok"],
+                    "genericity_ok": result["genericity_ok"],
+                    "mass": d.get("mass"),
+                    "noise_floor": d.get("noise_floor"),
+                    "genericity_min": result["genericity_min"],
+                }
             )
-            + f"\n[api-metrics] AKT_API_BASELINE {json.dumps({'fingerprint': baseline['fingerprint'], 'backend': baseline['backend']})}"
         )
         return
 
     cases = {case.case_id: case for case in _load_cases()}
     case = cases[args.case]
     knob_value = json.loads(args.value)
-    config = case.space.default_config()
-    config[args.knob] = knob_value
-    graph_n = program_graph(case, config)
-    catalog = {
-        pid: program_graph(case, cfg)
-        for pid, cfg in one_knob_programs(case, exclude_knobs={args.knob}).items()
-    }
-    print(json.dumps(duplicate_risk(graph_n, catalog), indent=1))
+    baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
+    dcfg = baseline.get("delta") or {}
+    catalog = catalog_for_case(cases, args.case, exclude_knob=args.knob)
+    verdict = delta_verdict(
+        case,
+        args.knob,
+        knob_value,
+        catalog,
+        noise_floor=_threshold(
+            dcfg.get("noise_floor") or {}, DEFAULT_NOISE_PERCENTILE, 2.0
+        ),
+        coherence_min=dcfg.get("coherence_min", DEFAULT_COHERENCE_MIN),
+        epsilon=dcfg.get("epsilon_ops", DEFAULT_EPSILON_OPS),
+    )
+    verdict.pop("graph", None)
+    print(json.dumps(verdict, indent=1, default=str))
 
 
 if __name__ == "__main__":

@@ -37,6 +37,18 @@ EVAL_OUT = AKT / "optimization_history/.evolve_eval.json"
 
 
 # ------------------------------------------------------------------ bottleneck
+def _campaign_lines():
+    """Recursive campaign-diagram diagnosis (latency x compute/bandwidth
+    utilization per level) so the oracle sees WHY, not just WHICH. Never raises:
+    returns (lines, ok)."""
+    try:
+        from akt.core.analysis.campaign import campaign_query_block
+
+        return campaign_query_block().splitlines(), True
+    except Exception as error:  # noqa: BLE001
+        return [f"(campaign diagnosis unavailable: {error})"], False
+
+
 def cmd_bottleneck(_args):
     """Rank models and selected callsites from the freshest target-HW evaluation."""
     if not EVAL_OUT.exists():
@@ -104,12 +116,15 @@ def cmd_bottleneck(_args):
                         f"{event.get('backend')}({event.get('value')!r}) "
                         f"probe={'verified' if event.get('verified_backend_probe') else 'untrusted'}"
                     )
+        campaign_extra, campaign_ok = _campaign_lines()
+        lines.extend(campaign_extra)
         print(
             "AKT_BOTTLENECK "
             + json.dumps(
                 {
                     "title": "paired target-hardware three-model latency and selected callsites",
                     "lines": lines,
+                    "campaign": campaign_ok,
                     "models": models,
                     "runtime_evidence": runtime,
                     "note": (
@@ -124,7 +139,12 @@ def cmd_bottleneck(_args):
             )
         )
         return
-    print("AKT_BOTTLENECK " + json.dumps({"missing": "evaluation has no model results"}))
+    campaign_extra, campaign_ok = _campaign_lines()
+    print("AKT_BOTTLENECK " + json.dumps({
+        "missing": "evaluation has no model results",
+        "lines": campaign_extra,
+        "campaign": campaign_ok,
+    }))
 
 
 def _auto_gap_lines():

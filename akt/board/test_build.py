@@ -315,6 +315,26 @@ def test_board_keeps_compact_gate_ui_without_latent_audit_redesign():
     assert "live_model_evaluation" not in html
 
 
+def test_campaign_diagnosis_is_included_verbatim_when_present(tmp_path, monkeypatch):
+    diagnosis = {
+        "generated": "2026-08-06 00:00:00", "proxy": True,
+        "levels": [{"level": 0, "title": "L0", "segments": [], "dominant": None,
+                    "note": ""}],
+        "hints": ["kda:enable_kda_fwd_intra_variant:schedule-toggle"],
+    }
+    path = tmp_path / "campaign.json"
+    path.write_text(json.dumps(diagnosis))
+    monkeypatch.setattr(board_build, "CAMPAIGN", path)
+    assert board_build._campaign() == diagnosis          # verbatim passthrough
+
+    monkeypatch.setattr(board_build, "CAMPAIGN", tmp_path / "missing.json")
+    assert board_build._campaign() is None               # key stays absent
+
+    html = (ROOT / "akt/board/index.html").read_text()
+    assert "renderCampaign" in html
+    assert "b.campaign" in html
+
+
 def test_design_funnel_attributes_selection_to_cases_and_knobs():
     summary = {
         "case_search": {

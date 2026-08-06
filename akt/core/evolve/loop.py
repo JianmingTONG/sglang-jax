@@ -114,6 +114,11 @@ ORACLES = {
     # the oracle works, instead of one silent block at the end.
     "claude": ("cat {prompt} | claude -p --dangerously-skip-permissions "
                "--output-format stream-json --verbose"),
+    # Same Claude CLI, model pinned to Opus (documented alias for the latest Opus)
+    # at the CLI's maximum reasoning effort (--effort accepts
+    # low|medium|high|xhigh|max; max is the highest).
+    "opus":   ("cat {prompt} | claude -p --model opus --effort max "
+               "--dangerously-skip-permissions --output-format stream-json --verbose"),
     "codex":  "cat {prompt} | codex exec --dangerously-bypass-approvals-and-sandbox -",
 }
 ORACLE_PROMPT = """You are the ORACLE for the AKT capability-elevation loop, working in \
@@ -277,6 +282,64 @@ def _tracked_at_commit(commit, relative):
     return relative in output.split("\0")
 
 
+# ---- TESTBENCH mode (GPU interpret proxy) -----------------------------------
+# A clearly-labeled sanity-bench regime: the loop runs end-to-end on a non-TPU
+# host (model_eval --allow-non-target + Pallas interpret), the live Kimi gate is
+# skipped with a synthetic clean non-applicability document, and exactly two gate
+# conjuncts are relaxed (target_hardware_ok, n_deferred==0) plus the model count
+# is pinned to what actually ran. Nothing measured here is TPU evidence.
+TESTBENCH_BANNER = "TESTBENCH (GPU interpret proxy — not TPU evidence)"
+
+
+def _campaign_testbench() -> bool:
+    """Whether the persisted campaign state is a testbench campaign."""
+    try:
+        return bool(json.loads(STATE.read_text()).get("testbench"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _testbench_live_document() -> dict:
+    """Synthetic live-model document injected when the live gate is skipped.
+
+    live_model_gate_evidence accepts it as clean: the single candidate is
+    not_applicable, never attempted, and status=skipped."""
+    return {
+        "schema_version": "akt.live-model-eval.v1",
+        "suite": "akt-live-model-candidates",
+        "status": "skipped",
+        "testbench": True,
+        "note": TESTBENCH_BANNER + ": live Kimi-Linear gate not attempted",
+        "candidates": [
+            {
+                "applicability": "not_applicable",
+                "attempted": False,
+                "status": "skipped",
+            }
+        ],
+    }
+
+
+def _testbench_gate_relaxations(summary, st) -> dict:
+    """EXACTLY the guard conjuncts a testbench campaign relaxes.
+
+    Under testbench: target_hardware_ok may be False, deferred calls are allowed,
+    and the required model count is pinned to the campaign's expected_models
+    (what actually ran at init/rebaseline) instead of the strict 3. Everything
+    else — correctness of runnable cases, DP certificates, empirical panel,
+    paired measurement over the pinned models, api-novelty, exposure, contract,
+    space extension, runtime evidence, >2% threshold — stays enforced."""
+    testbench = bool(st.get("testbench"))
+    return {
+        "testbench": testbench,
+        "required_models": (
+            len(st.get("expected_models") or []) if testbench else 3
+        ),
+        "target_hardware_ok": bool(summary.get("target_hardware_ok")) or testbench,
+        "no_deferred": summary.get("n_deferred") == 0 or testbench,
+    }
+
+
 def _read_status() -> dict:
     """Current run-status heartbeat ({} when absent/corrupt)."""
     try:
@@ -299,6 +362,7 @@ def write_status(state, round=None, capability=None, phase=None, last=None, rese
     out = {"state": state, "updated_ts": now, "init_ts": init_ts,
            "round": round if round is not None else cur.get("round"),
            "capability": capability, "phase": phase, "started_ts": started,
+           "testbench": _campaign_testbench(),
            "last": last if last is not None else cur.get("last")}
     try:
         STATUS.parent.mkdir(parents=True, exist_ok=True)
@@ -519,8 +583,15 @@ def query(st):
         if not scope_ok
         else "\n"
     )
+    banner = (
+        f"!!!! {TESTBENCH_BANNER} !!!!\n"
+        "!!!! every number below is a GPU-interpret sanity bench, NOT TPU evidence !!!!\n"
+        if st.get("testbench")
+        else ""
+    )
     return (
-        f"== CAPABILITY QUERY round={st['round'] + 1} -> {cond}\n"
+        banner
+        + f"== CAPABILITY QUERY round={st['round'] + 1} -> {cond}\n"
         f"{scope_line}"
         f"   action_graph_fingerprint={st.get('action_graph_fingerprint', 'unversioned')}\n"
         f"   incumbent {st['objective_name']}={st['incumbent_geomean']:.6f}{unit} "
@@ -716,13 +787,20 @@ def model_hw_eval(
     runs,
     incumbent_plans=None,
     capability=None,
+    testbench=False,
 ):
-    """Run synthetic TPU search, then the separate conditional live-model gate."""
+    """Run synthetic TPU search, then the separate conditional live-model gate.
+
+    ``testbench=True`` is the GPU-interpret sanity-bench regime: model_eval runs
+    with --allow-non-target under Pallas interpret, and the live Kimi gate is
+    skipped entirely in favor of a synthetic clean non-applicability document."""
     out_path = ROOT / "akt/optimization_history/.evolve_eval.json"
     incumbent_path = ROOT / "akt/optimization_history/.incumbent_plans.json"
     out_path.unlink(missing_ok=True)
     incumbent_path.unlink(missing_ok=True)
     command = [*PY, MODEL_EVAL, "--runs", str(int(runs)), "--out", str(out_path)]
+    if testbench:
+        command.append("--allow-non-target")
     if incumbent_plans is not None:
         incumbent_path.write_text(json.dumps(incumbent_plans, indent=1))
         command.extend(("--incumbent-plans", str(incumbent_path)))
@@ -734,7 +812,7 @@ def model_hw_eval(
         log_path,
         progress_prefixes=("[akt-model-eval]",),
         capability=capability,
-        env=harness_env(interpret=False),
+        env=harness_env(interpret=bool(testbench)),
     )
     if not out_path.exists():
         return {
@@ -745,13 +823,18 @@ def model_hw_eval(
             "models": [],
         }
     summary = json.loads(out_path.read_text())
-    # The synthetic evaluator process has fully exited at this point, so its JAX
-    # client and device allocations cannot contend with the live server process.
-    live = _live_model_hw_eval(
-        out_path,
-        runs=runs,
-        capability=capability,
-    )
+    if testbench:
+        print(f"[evolve] {TESTBENCH_BANNER}: skipping live Kimi-Linear gate")
+        live = _testbench_live_document()
+    else:
+        # The synthetic evaluator process has fully exited at this point, so its
+        # JAX client and device allocations cannot contend with the live server
+        # process.
+        live = _live_model_hw_eval(
+            out_path,
+            runs=runs,
+            capability=capability,
+        )
     summary["live_model_evaluation"] = live
     summary["live_model_gate"] = live_model_gate_evidence(live)
     out_path.write_text(json.dumps(summary, indent=1, allow_nan=False))
@@ -1266,25 +1349,30 @@ def cmd_init(args):
         print(f"         commit or stash these first ({len(dirty)}): {dirty[:8]}"
               + (" ..." if len(dirty) > 8 else ""))
         return
-    summary = model_hw_eval(args.runs)
+    testbench = bool(getattr(args, "testbench", False))
+    if testbench:
+        print(f"[evolve] !!!! {TESTBENCH_BANNER} !!!! sanity bench only.")
+    summary = model_hw_eval(args.runs, testbench=testbench)
     models = summary.get("models") or []
     geo = summary.get("candidate_geomean_s")
     if (
         not summary.get("all_correct")
-        or not summary.get("target_hardware_ok")
+        or not (summary.get("target_hardware_ok") or testbench)
         or not (summary.get("live_model_gate") or {}).get("ok")
-        or summary.get("n_deferred") != 0
+        or not (summary.get("n_deferred") == 0 or testbench)
         or summary.get("objective_scope") != OBJECTIVE_SCOPE
-        or len(models) != 3
+        or (len(models) < 1 if testbench else len(models) != 3)
         or not isinstance(geo, (int, float))
     ):
+        mode = "testbench (>=1 runnable model)" if testbench else "strict three-model"
         print(
-            "[evolve] init ABORTED: strict three-model target-hardware gate failed: "
+            f"[evolve] init ABORTED: {mode} target-hardware gate failed: "
             + str(summary.get("error") or {
                 "all_correct": summary.get("all_correct"),
                 "target_hardware_ok": summary.get("target_hardware_ok"),
                 "n_deferred": summary.get("n_deferred"),
                 "models": len(models),
+                "deferred_models": summary.get("deferred_models"),
             })
         )
         return
@@ -1296,6 +1384,7 @@ def cmd_init(args):
     )
     st = {"start_ts": time.time(), "deadline_ts": time.time() + args.hours * 3600,
           "api_baseline": api_baseline,
+          "testbench": testbench,
           "round": 0, "target_improvement": max(args.target, 0.02),
           "incumbent_geomean": geo, "incumbent_choices": summary.get("n_choices"),
           "base_search_geomean": geo,
@@ -1315,7 +1404,9 @@ def cmd_init(args):
           "objective_baseline_round": 0}
     save(st)
     write_status("idle", round=0, reset=True)   # start a fresh campaign clock
-    print(f"[evolve] initialized: paired three-model incumbent geomean={geo*1e3:.2f}ms "
+    mode_tag = f" [{TESTBENCH_BANNER}]" if testbench else ""
+    print(f"[evolve] initialized{mode_tag}: paired {len(models)}-model incumbent "
+          f"geomean={geo*1e3:.2f}ms "
           f"| measured local configs={summary.get('n_choices')} "
           f"commit={str(st['incumbent_commit'])[:8]}, "
           f"KEEP bar > {st['target_improvement']*100:.0f}%.")
@@ -1336,20 +1427,24 @@ def cmd_rebaseline(args):
         )
         return
     st = load()
-    summary = model_hw_eval(args.runs)
+    testbench = bool(getattr(args, "testbench", False))
+    if testbench:
+        print(f"[evolve] !!!! {TESTBENCH_BANNER} !!!! sanity bench only.")
+    summary = model_hw_eval(args.runs, testbench=testbench)
     models = summary.get("models") or []
     geo = summary.get("candidate_geomean_s")
     if (
         not summary.get("all_correct")
-        or not summary.get("target_hardware_ok")
+        or not (summary.get("target_hardware_ok") or testbench)
         or not (summary.get("live_model_gate") or {}).get("ok")
-        or summary.get("n_deferred") != 0
+        or not (summary.get("n_deferred") == 0 or testbench)
         or summary.get("objective_scope") != OBJECTIVE_SCOPE
-        or len(models) != 3
+        or (len(models) < 1 if testbench else len(models) != 3)
         or not isinstance(geo, (int, float))
     ):
+        mode = "testbench (>=1 runnable model)" if testbench else "strict three-model"
         print(
-            "[evolve] rebaseline ABORTED: strict three-model target-hardware gate failed: "
+            f"[evolve] rebaseline ABORTED: {mode} target-hardware gate failed: "
             + str(summary.get("error") or summary.get("target_hardware"))
         )
         return
@@ -1357,6 +1452,7 @@ def cmd_rebaseline(args):
     api_baseline = _build_api_baseline()
     st.update(
         api_baseline=api_baseline,
+        testbench=testbench,
         incumbent_geomean=geo,
         incumbent_choices=summary.get("n_choices"),
         incumbent_case_spaces=_case_space_inventory(summary),
@@ -1443,29 +1539,60 @@ def _build_api_baseline():
             f"API-metrics baseline profiling failed (rc={rc}): {output[-400:]}"
         )
     baseline = json.loads((ROOT / API_BASELINE).read_text())
+    # Compact state pin against the delta-based baseline schema:
+    # {"fingerprint", "delta": {"noise_floor", "inter_api", "epsilon_ops",
+    #  "coherence_min"}, "genericity", "policy"}.
     return {
         "fingerprint": baseline.get("fingerprint"),
         "backend": baseline.get("backend"),
-        "wl_iters": baseline.get("wl_iters"),
-        "weight_mode": baseline.get("weight_mode"),
         "delta": baseline.get("delta"),
-        "policy": baseline.get("policy"),
-        "redundancy_global": (baseline.get("redundancy") or {}).get("global"),
         "genericity_global": (baseline.get("genericity") or {}).get("global"),
     }
+
+
+_API_GRAPH_HISTORY_CAP = 64 * 1024
+
+
+def _truncate_api_graph(result):
+    """Cap the api-metrics ``delta.graph`` payload stored in round history.
+
+    The gate result is stored verbatim except for delta.graph, which can be
+    arbitrarily large: when its JSON exceeds 64KB it is dropped and replaced
+    with a note. Mutates and returns ``result``."""
+    delta = result.get("delta") if isinstance(result, dict) else None
+    if not isinstance(delta, dict) or "graph" not in delta:
+        return result
+    try:
+        encoded = json.dumps(
+            delta["graph"], separators=(",", ":"), allow_nan=False
+        ).encode()
+    except (TypeError, ValueError):
+        delta["graph"] = {"dropped": True, "note": "delta.graph was not serializable"}
+        return result
+    if len(encoded) > _API_GRAPH_HISTORY_CAP:
+        delta["graph"] = {
+            "dropped": True,
+            "note": (
+                f"delta.graph omitted from history: {len(encoded)} bytes of JSON "
+                f"exceeds the {_API_GRAPH_HISTORY_CAP} byte (64KB) record cap"
+            ),
+        }
+    return result
 
 
 def validate_api_novelty(manifest, contract_result, summary, state):
     """API-NOVELTY GUARD: the two calibrated guardrails that filter parameter
     tweaks out of the KEEP path.
 
-    (1) Directional ISA-grounded redundancy — the candidate program (affected
-    case with the new control at its winning non-default value) must sit BELOW
-    the pinned parameter-tweak population percentile of duplicate risk
-    D(N)=max_E R(N,E), or exhibit the generalization signature (low R(N,E*)
-    with high R(E*,N)). (2) Genericity — G_delta over the frozen model
-    callsites must reach the pinned existing-control percentile. Both are
-    computed by the frozen ``api_metrics`` evaluator from the same eval-summary
+    (1) Delta redundancy — the candidate program's ISA-graph delta versus the
+    baseline population must be a real, coherent change: |Δ| compute/memory
+    mass above the calibrated noise floor, a coherent delta subgraph (few
+    components, deep enough), and no zero-embedding escape. (2) Genericity —
+    G_delta over the frozen model callsites must reach the pinned calibrated
+    cut. Both are computed by the frozen ``api_metrics`` evaluator (result
+    schema: ok/redundancy_ok/genericity_ok + delta{mass,coherence,zero_embed,
+    noise_floor,graph,per_case} + cover_map/genericity/genericity_min/
+    genericity_cut/baseline_fingerprint/errors) from the same eval-summary
     measurements the gate already trusts; fail-closed on any gap."""
     pin = state.get("api_baseline") or {}
     if not pin.get("fingerprint"):
@@ -1561,6 +1688,9 @@ def validate_api_novelty(manifest, contract_result, summary, state):
             "errors": [f"api-metrics gate failed (rc={rc}): {output[-400:]}"],
         }
     result = json.loads(out_path.read_text())
+    # History stores the gate result verbatim EXCEPT delta.graph, which is
+    # dropped with a note when it exceeds the 64KB record cap.
+    _truncate_api_graph(result)
     if result.get("baseline_fingerprint") != pin.get("fingerprint"):
         result["ok"] = False
         result.setdefault("errors", []).append(
@@ -1622,7 +1752,10 @@ def gate_capability(st, m, mpath, args):
     st["round"] += 1
     rnd = st["round"]
     incumbent = st["incumbent_geomean"]
+    testbench = bool(st.get("testbench"))
     write_status("running", round=rnd, capability=m["name"], phase="starting")
+    if testbench:
+        print(f"!!!! {TESTBENCH_BANNER} — this round is a sanity bench !!!!")
     print(
         f"== ROUND {rnd} SUBMIT capability='{m['name']}' "
         f"gap_id='{m.get('gap_id', '?')}'"
@@ -1702,6 +1835,7 @@ def gate_capability(st, m, mpath, args):
             args.runs,
             incumbent_plans=st.get("incumbent_plans"),
             capability=m["name"],
+            testbench=testbench,
         )
     else:
         skip_cause = (
@@ -1791,7 +1925,9 @@ def gate_capability(st, m, mpath, args):
         capability=m["name"],
         phase="API-novelty guardrails (redundancy + genericity)",
     )
-    if summary.get("target_hardware_ok"):
+    # In testbench mode the eval honestly reports target_hardware_ok=False but the
+    # guard itself stays ENFORCED over the models that actually ran.
+    if summary.get("target_hardware_ok") or (testbench and models):
         try:
             api_novelty = validate_api_novelty(m, capability_contract, summary, st)
         except Exception as error:  # noqa: BLE001 - fail closed
@@ -1853,17 +1989,20 @@ def gate_capability(st, m, mpath, args):
         if not certificate.get("certified_additive_optimum")
         or not certificate.get("bounded_dp_matches_bruteforce")
     )
+    relax = _testbench_gate_relaxations(summary, st)
+    required_models = relax["required_models"]
     empirical_dp = summary.get("empirical_dp_certificate") or {}
     empirical_dp_ok = (
         empirical_dp.get("scope") == "synthetic_trace_additivity"
         and empirical_dp.get("ok") is True
-        and len(empirical_dp.get("models") or []) == 3
+        and len(empirical_dp.get("models") or []) == required_models
     )
     live_model_evaluation = summary.get("live_model_evaluation") or {}
     live_model_gate = summary.get("live_model_gate") or {}
     live_model_ok = live_model_gate.get("ok") is True
     paired_ok = (
-        len(models) == 3
+        len(models) == required_models
+        and required_models >= 1
         and all(
             isinstance(model.get("candidate_s"), (int, float))
             and isinstance(model.get("incumbent_s"), (int, float))
@@ -1885,8 +2024,9 @@ def gate_capability(st, m, mpath, args):
         bool(graph_closure.get("ok"))
         and static_precheck["ok"]
         and bool(summary.get("all_correct"))
-        and bool(summary.get("target_hardware_ok"))
-        and summary.get("n_deferred") == 0
+        # under testbench these two conjuncts (and ONLY these) are relaxed:
+        and relax["target_hardware_ok"]
+        and relax["no_deferred"]
         and not failing_configs
         and all(model.get("selected_correct") for model in models)
         and not missing_models
@@ -1922,11 +2062,11 @@ def gate_capability(st, m, mpath, args):
                 "STATIC CONTRACT PRE-CHECK FAILED (target-HW eval skipped): "
                 + "; ".join(static_precheck["errors"])
             )
-        elif not summary.get("target_hardware_ok"):
+        elif not relax["target_hardware_ok"]:
             reason = "TARGET-HARDWARE GUARD FAILED: " + str(
                 summary.get("error") or target_hardware
             )
-        elif summary.get("n_deferred") != 0:
+        elif not relax["no_deferred"]:
             reason = f"NO-DEFERRED GUARD FAILED: {summary.get('n_deferred')} call(s) deferred"
         elif failing_configs:
             reason = "ALL-CONFIG CORRECTNESS GUARD FAILED: " + ", ".join(failing_configs)
@@ -1975,15 +2115,27 @@ def gate_capability(st, m, mpath, args):
                 + "; ".join(capability_contract.get("errors") or [])
             )
         elif not api_novelty_ok:
-            worst = api_novelty.get("worst_duplicate_risk") or {}
+            delta = api_novelty.get("delta") or {}
+            mass = delta.get("mass") or {}
+            coherence = delta.get("coherence") or {}
             reason = (
                 "API-NOVELTY GUARD FAILED (parameter tweak / insufficient coverage): "
                 + "; ".join(api_novelty.get("errors") or [])
                 + (
-                    f" D(N)={worst.get('D'):.3f} vs cut={worst.get('redundancy_cut'):.3f} "
-                    f"(closest={worst.get('closest')!r}, R(E*,N)={worst.get('R_en'):.3f});"
-                    if isinstance(worst.get("D"), (int, float))
-                    and isinstance(worst.get("redundancy_cut"), (int, float))
+                    f" |Δ|cmp={mass.get('compute'):.3f}"
+                    f" |Δ|mem={mass.get('memory'):.3f}"
+                    f" vs noise_floor={delta.get('noise_floor'):.3f};"
+                    if isinstance(mass.get("compute"), (int, float))
+                    and isinstance(mass.get("memory"), (int, float))
+                    and isinstance(delta.get("noise_floor"), (int, float))
+                    else ""
+                )
+                + (
+                    f" coherence components={coherence.get('components')}"
+                    f" largest={coherence.get('largest')}"
+                    f" max_depth={coherence.get('max_depth')}"
+                    f" zero_embed={delta.get('zero_embed')};"
+                    if coherence
                     else ""
                 )
                 + (
@@ -2183,10 +2335,17 @@ def cmd_submit(args):
     st = load()
     if st.get("objective_scope") != OBJECTIVE_SCOPE:
         raise RuntimeError("campaign objective is stale; run loop.py rebaseline first")
+    testbench = bool(st.get("testbench"))
+    if bool(getattr(args, "testbench", False)) != testbench:
+        raise RuntimeError(
+            f"--testbench flag mismatch: campaign state testbench={testbench}; "
+            "pass the matching flag (or re-run init/rebaseline with the mode you want)"
+        )
+    expected_n = len(st.get("expected_models") or [])
     if (
         not st.get("incumbent_plans")
         or not st.get("incumbent_case_spaces")
-        or len(st.get("expected_models") or []) != 3
+        or (expected_n < 1 if testbench else expected_n != 3)
     ):
         raise RuntimeError("campaign lacks a certified three-model incumbent; run rebaseline")
     validate_incumbent_head(st)
@@ -2626,10 +2785,20 @@ def cmd_run(args):
     if current.get("objective_scope") != OBJECTIVE_SCOPE:
         print("[evolve] campaign objective is stale; run `loop.py rebaseline` first.")
         return
+    testbench = bool(current.get("testbench"))
+    if bool(getattr(args, "testbench", False)) != testbench:
+        print(
+            f"[evolve] --testbench flag mismatch: campaign state testbench={testbench}; "
+            "pass the matching flag (or re-run init/rebaseline with the mode you want)."
+        )
+        return
+    if testbench:
+        print(f"[evolve] !!!! {TESTBENCH_BANNER} !!!! sanity bench only.")
+    expected_n = len(current.get("expected_models") or [])
     if (
         not current.get("incumbent_plans")
         or not current.get("incumbent_case_spaces")
-        or len(current.get("expected_models") or []) != 3
+        or (expected_n < 1 if testbench else expected_n != 3)
     ):
         print("[evolve] campaign has no certified three-model incumbent; run `loop.py rebaseline`.")
         return
@@ -2754,18 +2923,26 @@ def cmd_run(args):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
+    testbench_help = (
+        f"{TESTBENCH_BANNER}: run the loop end-to-end on this non-TPU host as a "
+        "sanity bench (model_eval --allow-non-target + Pallas interpret, live "
+        "Kimi gate skipped, models pinned to what actually runs)"
+    )
     p0 = sub.add_parser("init")
     p0.add_argument("--hours", type=float, default=6.0)
     p0.add_argument("--target", type=float, default=0.02, help="KEEP improvement bar (fraction)")
     p0.add_argument("--runs", type=int, default=3)
+    p0.add_argument("--testbench", action="store_true", help=testbench_help)
     pb = sub.add_parser("rebaseline", help="preserve history and adopt the current objective")
     pb.add_argument("--runs", type=int, default=3)
     pb.add_argument("--hours", type=float, default=6.0)
+    pb.add_argument("--testbench", action="store_true", help=testbench_help)
     sub.add_parser("status")
     p2 = sub.add_parser("submit")
     p2.add_argument("--capability", required=True)
     p2.add_argument("--runs", type=int, default=3)
     p2.add_argument("--audit", action="store_true", help="print enlarged-space enumeration evidence")
+    p2.add_argument("--testbench", action="store_true", help=testbench_help)
     p3 = sub.add_parser("restore"); p3.add_argument("--capability", required=True)
     # autonomous: the loop DRIVES an LLM oracle to implement each round, then gates it
     pr = sub.add_parser("run", help="autonomously drive an LLM oracle for N rounds")
@@ -2777,6 +2954,7 @@ def main():
                     help="seconds allowed for the oracle to implement one capability")
     pr.add_argument("--runs", type=int, default=3, help="HW-eval runs at the gate")
     pr.add_argument("--audit", action="store_true")
+    pr.add_argument("--testbench", action="store_true", help=testbench_help)
     args = ap.parse_args()
     {"init": cmd_init, "rebaseline": cmd_rebaseline, "status": cmd_status, "submit": cmd_submit,
      "restore": cmd_restore, "run": cmd_run}[args.cmd](args)

@@ -86,14 +86,16 @@ The enforced objective scope is `model-serving-empirical-dp-v2`.
   remaining rounds are frontier/novel-only, bounded by `--rounds` and the campaign
   deadline; `rebaseline` clears the flag when the graph is widened.
 - API-NOVELTY GUARD: two calibrated guardrails filter parameter tweaks out of
-  KEEP. (1) Directional ISA-grounded redundancy — candidate and incumbent
-  programs are lowered to operation dependency graphs (jaxpr DAGs incl. Pallas
-  kernel bodies) under identical shape/dtype/compiler settings; the duplicate
-  risk `D(N)=max_E R(N,E)` (ancestry-WL maximum-weight dependency-preserving
-  match, instruction-count weights first) must fall below the pinned
-  leave-one-out percentile of the family's own one-knob parameter-tweak
-  population, unless the directional generalization signature holds (low
-  `R(N,E*)`, high `R(E*,N)`). (2) Genericity — `G_delta` upper-layer coverage
+  KEEP. (1) Delta-residual substance — candidate and catalog programs are
+  lowered to dependency graphs (jaxpr DAGs incl. Pallas kernel bodies, typed ⊥
+  input tokens); a two-pass subtraction (whole-instance cover anchored at
+  entry-micro-op hits — recognizing compositions of existing APIs — then
+  fixpoint-WL per-op ancestry match vs the union multiset) leaves the residual
+  Δ, which must clear the measured tweak-noise floor in per-class substantive
+  mass (compute/memory, total roofline classifier + unclassified audit), reach
+  the coherence minimum (largest connected component), and satisfy the
+  zero-embed self-check; borderline masses re-decided by a reversed exact
+  retry; δ is reference-only (v1 R/D removed). (2) Genericity — `G_delta` upper-layer coverage
   over the frozen model callsites (each pattern once; lower-layer fan-out
   reported separately as implementation breadth) must reach the pinned
   percentile of the existing programmer controls' own coverage. Thresholds are
