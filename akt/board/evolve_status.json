@@ -1,10 +1,10 @@
 {
  "state": "running",
- "updated_ts": 1786006781.6501875,
+ "updated_ts": 1786008405.2877316,
  "init_ts": 1784175936.7558303,
  "round": 12,
  "capability": null,
- "phase": "[akt-model-eval] paired model timing tiny-linear-serving: candidate=3.335ms incumbent=3.342ms",
+ "phase": "[akt-model-eval] paired model timing tiny-linear-serving: candidate=3.338ms incumbent=3.343ms",
  "started_ts": 1786005284.4679158,
  "testbench": false,
  "last": {

@@ -39,6 +39,11 @@ import argparse, json, math, os, re, shlex, signal, subprocess, sys, tempfile, t
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+# The loop's own in-process `akt.*` imports (action catalog, contracts) need the
+# repo root on sys.path when invoked as a script; subprocesses get PYTHONPATH
+# via harness_env, the parent process gets it here.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 STATE = ROOT / "akt/optimization_history/evolve_state.json"
 HIST = ROOT / "akt/optimization_history/evolve_history.jsonl"
 CAPS = Path(__file__).resolve().parent / "capabilities"
