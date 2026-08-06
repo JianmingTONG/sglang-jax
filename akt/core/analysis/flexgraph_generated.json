@@ -3864,6 +3864,56 @@
    "action_node": null
   },
   {
+   "gap_id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+   "id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "axis": "enable_chunk_fwd_h_kernel_varlen_variant",
+   "source_axis": "enable_chunk_fwd_h_kernel_varlen_variant",
+   "source_function": "chunk_fwd_h_kernel_varlen",
+   "category": "schedule-toggle",
+   "status": "schedule-toggle",
+   "what": "schedule/fusion toggle never searched",
+   "detail": "default=False",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:566",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "source_sink": {
+    "assignments": [
+     "closed_form_states"
+    ],
+    "expression_asts": {
+     "closed_form_states": "IfExp(test=Name(id='enable_chunk_fwd_h_kernel_varlen_variant', ctx=Load()), body=Call(func=Name(id='_chunk_fwd_h_decay_matrix_states', ctx=Load()), args=[Name(id='k', ctx=Load()), Name(id='v', ctx=Load()), Name(id='g_gamma', ctx=Load()), Name(id='h0', ctx=Load()), Name(id='cu_seqlens_dev', ctx=Load()), Name(id='chunk_to_seq', ctx=Load()), Name(id='seq_real_lens', ctx=Load())], keywords=[keyword(arg='BT', value=Name(id='BT', ctx=Load())), keyword(arg='NTS', value=BinOp(left=Name(id='BS', ctx=Load()), op=FloorDiv(), right=Name(id='BT', ctx=Load()))), keyword(arg='NS', value=Name(id='NS', ctx=Load())), keyword(arg='N', value=Name(id='N', ctx=Load())), keyword(arg='output_final_state', value=Name(id='output_final_state', ctx=Load())), keyword(arg='states_in_fp32', value=Name(id='states_in_fp32', ctx=Load()))]), orelse=Constant(value=None))"
+    }
+   },
+   "reachable_prim": "dma_start",
+   "elevated_in_akt": true,
+   "programmer_exposed": true,
+   "runner_axes": [
+    "enable_chunk_fwd_h_kernel_varlen_variant"
+   ],
+   "programmer_controls": [
+    "gla.enable_chunk_fwd_h_kernel_varlen_variant"
+   ],
+   "exposure_level": "programmer",
+   "in_akt_suite": true,
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dma_start",
+   "action_node": null
+  },
+  {
    "gap_id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
    "id": "simple_gla:enable__chunk_fwd_o_pl_variant:schedule-toggle",
    "family": "simple_gla",
@@ -3877,7 +3927,7 @@
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default=False",
-   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:846",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1005",
    "incumbent_value": false,
    "incumbent_value_known": true,
    "candidate_values": [
@@ -4001,7 +4051,7 @@
    "label": "schedule/fusion toggle never searched",
    "reachable_prim": "dma_start",
    "salience": 4,
-   "count": 5
+   "count": 6
   },
   "backend-gated": {
    "label": "tuned table gated to one TPU generation",
@@ -4307,33 +4357,6 @@
    ],
    "action_edge": {
     "source": "action:ragged_paged_attention:enable_run_rpa_kernel_variant:schedule-toggle",
-    "target": "pallas:dma_start"
-   },
-   "access": "frontier"
-  },
-  {
-   "gap_id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
-   "family": "simple_gla",
-   "kernel_ids": [
-    "gla"
-   ],
-   "source_axis": "enable_chunk_fwd_h_kernel_varlen_variant",
-   "source_function": "chunk_fwd_h_kernel_varlen",
-   "category": "schedule-toggle",
-   "incumbent_value": false,
-   "incumbent_value_known": true,
-   "candidate_values": [
-    false,
-    true
-   ],
-   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:532",
-   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the chunk_fwd_h_kernel_varlen Pallas launch, selectable behind a new enable_chunk_fwd_h_kernel_varlen_variant toggle; the incumbent path stays the exact default",
-   "model_callsites": [
-    "tiny-linear-serving/gla-long",
-    "tiny-linear-serving/gla-short"
-   ],
-   "action_edge": {
-    "source": "action:simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
     "target": "pallas:dma_start"
    },
    "access": "frontier"
@@ -4647,12 +4670,12 @@
   "active_primitives": 54,
   "kernels_scanned": 8,
   "pallas_families": 13,
-  "auto_gaps": 23,
+  "auto_gaps": 24,
   "open_gaps": 20,
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
-  "frontier_slots": 15,
+  "frontier_slots": 14,
   "standalone_frontier_slots": 8,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true

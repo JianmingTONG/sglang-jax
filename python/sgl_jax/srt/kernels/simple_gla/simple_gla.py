@@ -410,6 +410,135 @@ def _chunk_fwd_h_kernel_varlen(
                 ht_ref[seq_idx, 0] = scratch_ref[...].astype(jnp.float32)
 
 
+def _chunk_fwd_h_decay_matrix_states(
+    k,  # (H, T_sum, K) — chunk-major, already transposed
+    v,  # (H, T_sum, V)
+    g_gamma,  # (H,)
+    h0,  # (N, H, K, V) or None
+    cu_seqlens_dev,  # (N+1,)
+    chunk_to_seq,  # (NT,)
+    seq_real_lens,  # (N,) or None
+    *,
+    BT,
+    NTS,
+    NS,
+    N,
+    output_final_state,
+    states_in_fp32,
+):
+    """Closed-form solve of the chunk-state recurrence, as one decay matrix.
+
+    The incumbent Pallas stage walks the chunk axis sequentially, carrying the
+    ``(BK, BV)`` state in scratch: ``S_{j+1} = d_j * S_j + C_j`` with per-chunk
+    decay ``d_j = exp(gamma * L_j)`` and chunk contribution
+    ``C_j = K_j^T (V_j * exp(gamma * (L_j - i - 1)))``. Every step of that walk is
+    one grid program, and the whole program is replicated per head, so the stage's
+    cost is dominated by the number of steps rather than by the arithmetic.
+
+    Unrolling the recurrence gives the entrance state at chunk ``r`` in closed
+    form::
+
+        S_r = exp(A_r - A_f) h0 + sum_{f <= j < r} exp(A_r - A_{j+1}) C_j
+
+    where ``A_r = sum_{j<r} gamma * L_j`` and ``f`` is the row's first chunk. The
+    chunk contributions ``C`` are one batched einsum over (head, chunk) and the
+    carry becomes one strictly-lower-triangular ``(NT+1, NT)`` decay matrix per
+    head, so the sequential axis disappears entirely.
+
+    Every exponent is a difference ``A_r - A_{j+1}`` taken over an interval of
+    ``gamma * L`` terms with ``gamma <= 0`` and ``L >= 0``, hence non-positive:
+    the factored form ``exp(A_r) * sum exp(-A_{j+1}) C_j`` would overflow after a
+    few tens of chunks, and keeping the difference inside the matrix avoids it.
+    The result is the same sum re-associated — nothing is dropped or approximated.
+    """
+    H, T_sum, K = k.shape
+    V = v.shape[2]
+    NT = T_sum // BT
+    f32 = jnp.float32
+
+    gamma = g_gamma.astype(f32)  # (H,)
+    chunk_idx = jnp.arange(NT, dtype=jnp.int32)
+    t0 = chunk_idx * BT  # (NT,)
+    seq = chunk_to_seq  # (NT,)
+    bos = cu_seqlens_dev[seq]
+    eos = cu_seqlens_dev[seq + 1]
+    # Real (non-padded) chunk occupancy, matching the sequential stage's
+    # `L_chunk = min(BT, effective_remaining)`. Chunks of an empty sequence are
+    # skipped there (`@pl.when(bos != eos)`), i.e. they neither decay nor
+    # accumulate — L = 0 reproduces exactly that.
+    real_eos = bos + seq_real_lens[seq] if seq_real_lens is not None else eos
+    L = jnp.clip(real_eos - t0, 0, BT).astype(f32)
+    L = jnp.where(bos != eos, L, 0.0)  # (NT,)
+
+    # A[h, r] = sum_{j < r} gamma_h * L_j, for the NT+1 chunk boundaries.
+    log_d = gamma[:, None] * L[None, :]  # (H, NT)
+    A = jnp.concatenate(
+        [jnp.zeros((H, 1), f32), jnp.cumsum(log_d, axis=1)], axis=1
+    )  # (H, NT+1)
+
+    # Per-chunk contribution C[h, j] = K_j^T (V_j * exp(gamma*(L_j - i - 1))).
+    k_c = k.reshape(H, NT, BT, K)
+    v_c = v.reshape(H, NT, BT, V)
+    row = jnp.arange(BT, dtype=f32)
+    v_decay_exp = gamma[:, None, None] * (L[None, :, None] - (row + 1)[None, None, :])
+    in_chunk = row[None, None, :] < L[None, :, None]
+    v_decay = jnp.where(in_chunk, exp(jnp.minimum(v_decay_exp, 0.0)), 0.0)
+    v_scaled = (v_c.astype(f32) * v_decay[..., None]).astype(v.dtype)
+    contrib = jnp.einsum(
+        "hjtk,hjtv->hjkv",
+        k_c.astype(f32),
+        v_scaled.astype(f32),
+        precision=lax.Precision.HIGHEST,
+        preferred_element_type=f32,
+    )  # (H, NT, K, V)
+
+    # One strictly-lower-triangular decay matrix per head over the NT+1 boundary
+    # rows: M[h, r, j] = exp(A_r - A_{j+1}) when chunk j precedes row r inside the
+    # same sequence, else 0.
+    boundary = jnp.arange(NT + 1, dtype=jnp.int32)
+    row_seq = jnp.concatenate([seq, seq[-1:]])  # (NT+1,)
+    same_seq = row_seq[:, None] == seq[None, :]
+    strictly_before = chunk_idx[None, :] < boundary[:, None]
+    keep = same_seq & strictly_before
+    decay_exp = jnp.minimum(A[:, :, None] - A[:, None, 1:], 0.0)
+    decay = jnp.where(keep[None], exp(decay_exp), 0.0)  # (H, NT+1, NT)
+
+    states = jnp.einsum(
+        "hrj,hjkv->hrkv",
+        decay,
+        contrib,
+        precision=lax.Precision.HIGHEST,
+        preferred_element_type=f32,
+    )  # (H, NT+1, K, V)
+    if h0 is not None:
+        # Initial state carried from the row's own sequence start f: exp(A_r - A_f).
+        first_chunk = cu_seqlens_dev[row_seq] // BT
+        a_first = jnp.take_along_axis(A, first_chunk[None, :], axis=1)
+        carry = exp(jnp.minimum(A - a_first, 0.0))  # (H, NT+1)
+        h0_h = jnp.transpose(h0, (1, 0, 2, 3)).astype(f32)  # (H, N, K, V)
+        states = states + carry[:, :, None, None] * h0_h[:, row_seq]
+
+    h_dtype = f32 if states_in_fp32 else k.dtype
+    h_rows = jnp.arange(NS, dtype=jnp.int32) * NTS
+    h = jnp.transpose(states[:, h_rows], (1, 0, 2, 3)).astype(h_dtype)
+    if not output_final_state:
+        return h, None
+    # The final state of a sequence is the boundary row just past its last chunk;
+    # padding chunks beyond `eos` have L = 0, so any later boundary of the same
+    # sequence carries the identical value — exactly what the sequential stage's
+    # repeated `t0 + BT >= eos` writes leave behind.
+    last_boundary = jnp.max(
+        jnp.where(
+            seq[None, :] == jnp.arange(N, dtype=jnp.int32)[:, None],
+            chunk_idx[None, :] + 1,
+            0,
+        ),
+        axis=1,
+    )
+    ht = jnp.transpose(states[:, last_boundary], (1, 0, 2, 3)).astype(f32)
+    return h, ht
+
+
 @functools.partial(
     jax.jit,
     static_argnames=[
@@ -417,6 +546,7 @@ def _chunk_fwd_h_kernel_varlen(
         "chunk_size",
         "split_size",
         "states_in_fp32",
+        "enable_chunk_fwd_h_kernel_varlen_variant",
     ],
 )
 def chunk_fwd_h_kernel_varlen(
@@ -433,6 +563,7 @@ def chunk_fwd_h_kernel_varlen(
     split_size: int | None = None,
     states_in_fp32: bool = False,
     seq_real_lens: jax.Array | None = None,  # [N]
+    enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
 ):
     interpret = get_interpret()
     assert g is None, "g should be None."
@@ -464,6 +595,34 @@ def chunk_fwd_h_kernel_varlen(
     if gk is not None:
         gk = jnp.reshape(gk, (T_sum, H, K))
         gk = jnp.transpose(gk, (1, 0, 2))  # (H,B*T,K)
+
+    # Selected schedule for the chunk-state recurrence. The incumbent (False) is
+    # the sequential Pallas walk below; the variant resolves the same recurrence
+    # in closed form as one per-head decay matrix. Both produce the same states.
+    if enable_chunk_fwd_h_kernel_varlen_variant:
+        assert gk is None, "the decay-matrix state solve requires gk=None."
+        assert g_gamma is not None, "the decay-matrix state solve requires g_gamma."
+    closed_form_states = (
+        _chunk_fwd_h_decay_matrix_states(
+            k,
+            v,
+            g_gamma,
+            h0,
+            cu_seqlens_dev,
+            chunk_to_seq,
+            seq_real_lens,
+            BT=BT,
+            NTS=BS // BT,
+            NS=NS,
+            N=N,
+            output_final_state=output_final_state,
+            states_in_fp32=states_in_fp32,
+        )
+        if enable_chunk_fwd_h_kernel_varlen_variant
+        else None
+    )
+    if closed_form_states is not None:
+        return closed_form_states
 
     grid = (H, pl.cdiv(K, BK), pl.cdiv(V, BV), T_sum // BT)
 
@@ -1165,6 +1324,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
         "zero_state_output_elision",
         "output_value_tiles",
         "enable__chunk_fwd_o_pl_variant",
+        "enable_chunk_fwd_h_kernel_varlen_variant",
     ],
 )
 def chunk_simple_gla_fwd_varlen(
@@ -1185,6 +1345,7 @@ def chunk_simple_gla_fwd_varlen(
     zero_state_output_elision: bool = False,
     output_value_tiles: int = 1,
     enable__chunk_fwd_o_pl_variant: bool = False,
+    enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
@@ -1213,6 +1374,13 @@ def chunk_simple_gla_fwd_varlen(
     state — so the intra-chunk score tile stops growing with the square of
     ``chunk_size`` — and lands its rows in token order inside the same stage, so
     every output row is moved exactly once. Both paths emit the same values.
+
+    ``enable_chunk_fwd_h_kernel_varlen_variant`` selects the chunk-state stage's
+    schedule. The incumbent (False) walks the chunk axis sequentially inside one
+    Pallas program per head, carrying the state in scratch. The variant unrolls
+    that recurrence into its closed form and resolves the whole carry as a single
+    per-head decay matrix, so the number of launched steps stops scaling with the
+    chunk count. Both paths emit the same states.
     """
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
     N = cu_seqlens_dev.shape[0] - 1 if cu_seqlens_dev is not None else B
@@ -1279,6 +1447,9 @@ def chunk_simple_gla_fwd_varlen(
             cu_seqlens_dev=aligned_cu,
             chunk_size=chunk_size,
             seq_real_lens=real_seq_lens,
+            enable_chunk_fwd_h_kernel_varlen_variant=(
+                enable_chunk_fwd_h_kernel_varlen_variant
+            ),
         )
     # Pallas output buffers are NOT zero-initialized on TPU. Zero-length
     # sequences are skipped by @pl.when(bos != eos), leaving their ht
@@ -1344,6 +1515,7 @@ def simple_gla_fwd(
     zero_state_output_elision: bool = False,
     output_value_tiles: int = 1,
     enable__chunk_fwd_o_pl_variant: bool = False,
+    enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is None:
@@ -1368,4 +1540,7 @@ def simple_gla_fwd(
         zero_state_output_elision=zero_state_output_elision,
         output_value_tiles=output_value_tiles,
         enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
+        enable_chunk_fwd_h_kernel_varlen_variant=(
+            enable_chunk_fwd_h_kernel_varlen_variant
+        ),
     )

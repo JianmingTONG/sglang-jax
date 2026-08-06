@@ -56,6 +56,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "compact_alignment",
         "output_value_tiles",
         "enable__chunk_fwd_o_pl_variant",
+        "enable_chunk_fwd_h_kernel_varlen_variant",
     ),
 }
 
@@ -162,6 +163,7 @@ class GLAKernelControls:
     zero_state_output_elision: bool = False
     output_value_tiles: int = 1
     enable__chunk_fwd_o_pl_variant: bool = False
+    enable_chunk_fwd_h_kernel_varlen_variant: bool = False
 
     def validate(self, context: KernelControlContext | None = None) -> None:
         _require_choice(
@@ -173,6 +175,10 @@ class GLAKernelControls:
         _require_bool("gla.compact_alignment", self.compact_alignment)
         _require_bool(
             "gla.enable__chunk_fwd_o_pl_variant", self.enable__chunk_fwd_o_pl_variant
+        )
+        _require_bool(
+            "gla.enable_chunk_fwd_h_kernel_varlen_variant",
+            self.enable_chunk_fwd_h_kernel_varlen_variant,
         )
         _require_bool("gla.single_chunk_state_elision", self.single_chunk_state_elision)
         _require_bool("gla.zero_state_output_elision", self.zero_state_output_elision)

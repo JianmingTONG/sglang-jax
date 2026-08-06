@@ -1,0 +1,68 @@
+{
+ "name": "gla_state_decay_matrix_closed_form",
+ "gap_id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+ "action_graph_fingerprint": "65a20089bc4503338f65c0f17c194acb12f3674384609797ea066e8e9aef92a5",
+ "hypothesis": "After the output stage stopped scattering in aligned space, GLA's remaining time is almost entirely the chunk-state stage, and that stage is not paying for arithmetic -- it is paying for its own schedule. It walks the chunk axis SEQUENTIALLY inside one Pallas program per head, carrying the (BK,BV) state in scratch, so its cost is set by the number of grid steps rather than by the tokens they process: at a fixed 2048-token workload the incumbent stage costs 0.5426ms with 1 chunk, 1.8502ms with 4 and 7.3686ms with 16 -- 13.6x more time for exactly the same work. The recurrence it is serializing is affine, S_{j+1} = d_j*S_j + C_j with a scalar per-head decay d_j = exp(gamma*L_j), so it has a closed form: S_r = exp(A_r - A_f)*h0 + sum_{f<=j<r} exp(A_r - A_{j+1})*C_j with A_r the prefix sum of gamma*L. Written that way the chunk contributions C are one batched einsum over (head, chunk) and the entire carry -- every head, every chunk, the initial state and the final state -- is one strictly-lower-triangular (NT+1, NT) decay matrix per head, so the sequential axis disappears and the per-head replication collapses into a batch dimension. The numerically dangerous factorization exp(A_r) * sum exp(-A_{j+1}) C_j is avoided deliberately: keeping the difference INSIDE the matrix makes every exponent a sum of gamma*L over an interval, hence non-positive, which is strictly safer than the incumbent -- that path needs a -1e9 exponent to annihilate padding rows. Nothing is dropped or approximated; it is the same linear-attention sum re-associated, and it reproduces the sequential stage's states to 2.8e-6.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/gla-long",
+  "baseline_share_pct": 7.06,
+  "expected_relief_pct": 7.5,
+  "reasoning": "SHARE: timing each of the five incumbent DP-selected plans of the only locally-runnable model under the same deterministic-XLA regime the frozen gate evaluates in puts the aggregate at 11.0578ms, of which this action's two affected callsites are 13.51% -- gla-long 0.7804ms = 7.06% and gla-short 0.7128ms = 6.45% (kda-long 55.23%, kda-short 28.03% and input-projection 3.24% are untouched). LOCALIZATION: a stage decomposition of those same two selected plans puts the STATE stage at 0.5674ms of gla-long's 0.7540ms best config (75.3%) and 0.5051ms of gla-short's 0.6875ms (73.5%). The stage is overhead, not arithmetic: holding the workload fixed at 2048 tokens and only varying how many chunks it is cut into, it costs 0.5426ms at 1 chunk, 1.8502ms at 4 and 7.3686ms at 16 -- cost tracks the sequential grid-step COUNT, while the closed form stays flat at 0.1097/0.0810/0.0748ms, i.e. 4.94x/22.84x/98.53x. At the DP-selected plans the stage alone goes 0.5674->0.1052ms (5.40x) on gla-long and 0.5051->0.0614ms (8.23x) on gla-short. MEASURED END TO END: a full 448-configuration paired sweep of the extended deployment space on this host -- every configuration checked against the frozen pure-JAX reference and all 448 correct, worst deviation 7.88e-6 against a 1e-3 tolerance -- takes gla-long's best deployable config from 0.7540ms to 0.3129ms (58.50%, incumbent and variant both at cs=2048/ca=True/ovt=8/ovar=True) and gla-short's from 0.6875ms to 0.2323ms (66.21%, cs=512/ca=True/ovt=8/ovar=True). AGGREGATE = 0.0706*58.50 + 0.0645*66.21 = 4.13 + 4.27 = 8.40%. DISCOUNT: cut to 7.5% to leave room for the gate's own timing methodology and for the DP re-selecting a different plan at either callsite. Even crediting ONLY the smaller callsite's measured relief, 0.0645*66.21 = 4.27%, clears the 2% bar by more than 2x."
+ },
+ "search_dimensions": [
+  {
+   "control": "gla.enable_chunk_fwd_h_kernel_varlen_variant",
+   "kernel_function": "chunk_simple_gla_fwd_varlen",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+  "family": "simple_gla",
+  "kernel_ids": [
+   "gla"
+  ],
+  "source_axis": "enable_chunk_fwd_h_kernel_varlen_variant",
+  "source_function": "chunk_fwd_h_kernel_varlen",
+  "source_sink": {
+   "assignments": [
+    "closed_form_states"
+   ],
+   "expression_asts": {
+    "closed_form_states": "IfExp(test=Name(id='enable_chunk_fwd_h_kernel_varlen_variant', ctx=Load()), body=Call(func=Name(id='_chunk_fwd_h_decay_matrix_states', ctx=Load()), args=[Name(id='k', ctx=Load()), Name(id='v', ctx=Load()), Name(id='g_gamma', ctx=Load()), Name(id='h0', ctx=Load()), Name(id='cu_seqlens_dev', ctx=Load()), Name(id='chunk_to_seq', ctx=Load()), Name(id='seq_real_lens', ctx=Load())], keywords=[keyword(arg='BT', value=Name(id='BT', ctx=Load())), keyword(arg='NTS', value=BinOp(left=Name(id='BS', ctx=Load()), op=FloorDiv(), right=Name(id='BT', ctx=Load()))), keyword(arg='NS', value=Name(id='NS', ctx=Load())), keyword(arg='N', value=Name(id='N', ctx=Load())), keyword(arg='output_final_state', value=Name(id='output_final_state', ctx=Load())), keyword(arg='states_in_fp32', value=Name(id='states_in_fp32', ctx=Load()))]), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": false,
+  "candidate_values": [
+   false,
+   true
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+   "line": 566,
+   "detail": "default=False"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/gla-long",
+   "tiny-linear-serving/gla-short"
+  ],
+  "action_edge": {
+   "source": "action:simple_gla:enable_chunk_fwd_h_kernel_varlen_variant:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_state_decay_matrix_closed_form.json"
+ ],
+ "status": "kept",
+ "delta_pct": 10.39,
+ "measured_geomean_s": 0.010040470398962498,
+ "objective_scope": "model-serving-empirical-dp-v2"
+}
