@@ -74,6 +74,15 @@
   .camp-note{color:var(--mut);font-size:11px;margin-top:5px}
   .camp-limit{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-size:13px}
   .camp-limit code{margin:2px 4px 2px 0;display:inline-block}
+  .cov-group{margin:3px 0}
+  .cov-chip{display:inline-block;border:1px solid var(--line);border-radius:14px;
+    padding:1px 8px;margin:2px 4px 2px 6px;font-size:11.5px;background:var(--panel2)}
+  .cov-chip.var{border-color:var(--accent);color:var(--accent)}
+  .cov-idx{color:var(--mut);font-size:10px;margin-right:4px;font-variant-numeric:tabular-nums}
+  .covtab th,.covtab td{padding:1px 5px;font-size:11px;text-align:center;border-bottom:none}
+  .covtab thead th{font-size:10px}
+  .covtab tbody th{font-size:10px;text-align:right;color:var(--mut)}
+  .covtab td{font-weight:600;font-variant-numeric:tabular-nums}
   @media (max-width:720px){
     .trail-change{min-width:260px}
     .trail-review{grid-template-columns:minmax(0,1fr)}
@@ -114,6 +123,14 @@
 
   <h2 id="camphead" style="display:none">Bottleneck campaign diagrams <span class="muted">— recursive latency × compute/bandwidth utilization walk (proxy)</span></h2>
   <div class="panel" id="camppanel" style="display:none"><div id="campaign"></div></div>
+
+  <h2 id="covhead" style="display:none">API coverage graph <span class="muted">— program-delta coverage between suite APIs: = equivalent · ⊃ generalizes · ∩ overlaps · &middot; disjoint</span></h2>
+  <div class="panel" id="covpanel" style="display:none">
+    <div id="covsummary" class="sub" style="margin-bottom:8px"></div>
+    <div id="covchips" style="margin-bottom:10px"></div>
+    <div class="scroll" id="covmatrix"></div>
+    <div class="sub" style="margin-top:8px" id="covnote"></div>
+  </div>
 
   <h2>Capability-elevation trail</h2>
   <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
@@ -335,6 +352,65 @@ function renderCampaign(b){
     'top border: <span style="color:'+vCol('memory-bound')+'">memory-bound</span> / '+
     '<span style="color:'+vCol('compute-bound')+'">compute-bound</span> / '+
     '<span style="color:'+vCol('dependency-bound')+'">dependency-bound</span> · ★ dominant (recursed into)</div>');
+}
+
+// API coverage graph: nodes are traced programs (each case's default + variant
+// one-knob programs, label case@knob=value), edges classify pairwise jaxpr-delta
+// coverage. Chips grouped by kernel family; relation matrix with f tooltips.
+function renderCoverage(b){
+  const head=document.getElementById('covhead'), panel=document.getElementById('covpanel');
+  const c=b.coverage;
+  if(!c || (!c.unavailable && !(c.nodes||[]).length)){
+    head.style.display='none'; panel.style.display='none'; return; }
+  head.style.display=''; panel.style.display='';
+  const sum=document.getElementById('covsummary'), chips=document.getElementById('covchips'),
+        mat=document.getElementById('covmatrix'), note=document.getElementById('covnote');
+  if(c.unavailable){
+    sum.innerHTML='<span class="empty">coverage graph unavailable: '+esc(c.unavailable)+'</span>';
+    chips.innerHTML=''; mat.innerHTML=''; note.textContent=''; return; }
+  const nodes=c.nodes||[], edges=c.edges||[], rel=c.relations||{};
+  const nVar=nodes.filter(n=>n.knob!=null).length;
+  sum.innerHTML='<b>'+nodes.length+'</b> API programs (<span style="color:var(--accent)">'+nVar+
+    ' variant</span>, '+(nodes.length-nVar)+' default) · <b>'+edges.length+'</b> compared pairs'+
+    (Object.keys(rel).length? ' · '+['equivalent','generalizes','overlaps','disjoint']
+      .filter(r=>rel[r]).map(r=>rel[r]+' '+r).join(' · ') : '');
+  // node chips grouped by kernel family (accent = new/variant program)
+  const fam={}; nodes.forEach((n,i)=>{ (fam[n.kernel]=fam[n.kernel]||[]).push([n,i]); });
+  chips.innerHTML=Object.entries(fam).map(([k,arr])=>
+    '<div class="cov-group"><span class="muted" style="font-size:11px;font-weight:600">'+esc(k)+'</span>'+
+    arr.map(([n,i])=>{
+      const shape=n.case&&n.case.indexOf(':')>=0? n.case.slice(n.case.indexOf(':')+1) : (n.case||n.id);
+      const lab=n.knob!=null? shape+' @'+n.knob+'='+n.value : shape;
+      const tip=n.id+' · '+(n.ops??'?')+' substantive ops · compute mass '+(n.mass_compute??'?')+
+        ' / memory mass '+(n.mass_memory??'?')+
+        (n.knob!=null? ' · variant program on axis '+n.knob : ' · default program');
+      return '<span class="cov-chip'+(n.knob!=null?' var':'')+'" title="'+esc(tip)+'">'+
+        '<span class="cov-idx">'+i+'</span>'+esc(lab)+'</span>';
+    }).join('')+'</div>').join('');
+  // relation matrix: row i vs column j; ⊃ means the ROW program reproduces the column's
+  const emap={}; edges.forEach(e=>{ emap[e.a+'|'+e.b]=e; });
+  const relCol=r=> r==='equivalent'?(cssVar('--good')||'#3fb950'):
+    r==='generalizes'?(cssVar('--accent')||'#6ea8fe'):
+    r==='overlaps'?(cssVar('--warn')||'#d29922'):(cssVar('--mut')||'#9aa4b2');
+  const pcf=v=>Number.isFinite(v)?(v*100).toFixed(1)+'%':'—';
+  let h='<table class="covtab"><thead><tr><th></th>'+
+    nodes.map((n,j)=>'<th title="'+esc(n.id)+'">'+j+'</th>').join('')+'</tr></thead><tbody>';
+  nodes.forEach((a,i)=>{
+    h+='<tr><th title="'+esc(a.id)+'">'+i+'</th>';
+    nodes.forEach((bn,j)=>{
+      if(i===j){ h+='<td style="opacity:.3;color:var(--mut)">■</td>'; return; }
+      const e=emap[a.id+'|'+bn.id]||emap[bn.id+'|'+a.id];
+      if(!e){ h+='<td></td>'; return; }
+      const sym=e.relation==='equivalent'?'=': e.relation==='overlaps'?'∩':
+        e.relation==='disjoint'?'·': (e.a===a.id?'⊃':'⊂');
+      const tip=e.relation+(e.relation==='generalizes'?' — '+e.a+' ⊇ '+e.b:' — '+e.a+' vs '+e.b)+
+        ' · '+e.a+' covered by '+e.b+': '+pcf(e.f_ab)+' · '+e.b+' covered by '+e.a+': '+pcf(e.f_ba);
+      h+='<td style="color:'+relCol(e.relation)+'" title="'+esc(tip)+'">'+sym+'</td>';
+    });
+    h+='</tr>';
+  });
+  mat.innerHTML=h+'</tbody></table>';
+  note.textContent=(c.note||'')+(c.generated?' · generated '+c.generated:'');
 }
 
 function renderFlexGraph(fg){
@@ -601,6 +677,7 @@ async function load(){
 
   renderChart(b);
   renderCampaign(b);
+  renderCoverage(b);
 
   const empirical=ev.empirical_dp||{}, kimi=ev.live_kimi||{};
   document.getElementById('gatebadges').innerHTML =

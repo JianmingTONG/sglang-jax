@@ -1,0 +1,67 @@
+{
+ "name": "kda_packed_resident_chunk_schedule",
+ "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+ "action_graph_fingerprint": "65a20089bc4503338f65c0f17c194acb12f3674384609797ea066e8e9aef92a5",
+ "hypothesis": "Every chunk-blocked KDA stage reaches its chunks through a RUNTIME start offset, even though the entry has already made that offset a compile-time constant. Stage 2 over-allocates the packed time axis by BT, materializes each chunk's q/k/gk/beta/v tile with a vmapped dynamic slice, and returns its five live results by scatter-accumulating them through an [NC, BT] int32 position vector into zero-initialized T+BT-row staging buffers; stage 4 then re-gathers that staging layout one chunk at a time to read stage 2's Aqk back, scatters its own rows into another staging buffer, and hands the result to a fori_loop-built un-align gather. But chunk_kda_fwd aligns every sequence to a multiple of the state block, which is a multiple of BT, so logical chunk c is EXACTLY rows [c*BT, (c+1)*BT) of the packed layout: the chunk axis is a static reshape of the time axis and the entire index space is redundant. The variant blocks and un-blocks by that reshape on both sides of the stage-2 -> stage-4 handoff, so the chunk-blocked results never leave the layout the launch produced them in -- the reshape and its inverse annihilate and the aligned staging buffers are never materialized at all. Neither side alone suffices, which is the whole point: whichever end keeps its index-space addressing pins the layout and forces the round trip, so removing only stage 2's scatter is worth 0.17% and removing only stage 4's is worth 0.57%, while removing both is worth 75%. Nothing is approximated or dropped: each result row is written exactly once instead of accumulated into a zeroed buffer, and the emitted tensors are BITWISE identical to the incumbent's on both compared outputs -- verified not only on the gate's single-sequence canonical inputs but on five ragged multi-sequence packed batches (2 and 3 sequences, lengths that force real alignment padding, chunk_size 16/32/64/128, state_block_chunks 1/2/4), every one of which matches the frozen pure-JAX recurrence and agrees with the incumbent to 0.0 on both the token output and the final recurrent state.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/kda-long",
+  "baseline_share_pct": 59.5,
+  "expected_relief_pct": 55.0,
+  "reasoning": "SHARE: the paired incumbent aggregate is 10.580ms and tiny-linear-serving is 100% of the three-model total, so the action's two affected callsites are 89.9% of it -- kda-long 6.296ms = 59.5% and kda-short 3.221ms = 30.4%. LOCALIZATION: a stage decomposition of the incumbent-selected plans, timed under the same deterministic-XLA regime the frozen gate evaluates in, puts kda-long's 6.042ms as gate-cumsum 0.026ms, stage 2 5.540ms, stage 3 0.458ms, stage 4 1.168ms (stages timed standalone; the pipeline fuses some of the tail). Under deterministic XLA the aligned-space scatter dominates both chunk-blocked stages: replacing stage 4's alone takes that stage standalone from 1.168ms to 0.210ms (82.0%) and kda-short's from 0.591ms to 0.082ms (86.1%). That scatter/gather machinery is the campaign's named LIMITER (kda-long -> #47 jit|int32r2, cmp=0%/bw=100%, DMA memory-bound -- cut bytes moved / keep data resident), and this action's source function is the stage that produces its input. MEASURED: at each callsite's DP-selected incumbent plan -- kda-long cs=128/ibs=16/cbc=1/sbc=2/sda=128 and kda-short cs=64/ibs=8/scalar=True/cbc=2/sbc=2/sda=64 -- the full chunk_kda_fwd pipeline goes from 6.0892ms to 1.5171ms (75.09%) on kda-long and from 3.0455ms to 0.3953ms (87.02%) on kda-short, with both compared outputs (token output and final recurrent state) bitwise equal to the incumbent's and both inside the frozen reference tolerance. Aggregate = 0.595*75.09 + 0.304*87.02 = 44.7 + 26.5 = 71.1%. DISCOUNT: the relief is the annihilation of a deterministic-GPU scatter/gather round trip, and a deterministic TPU permutation is far less pathological than the GPU equivalent, so the estimate is cut to 55% to leave room for the gate's own timing methodology and for the DP re-selecting other configurations. Even crediting ONLY the separately measured single-stage effects and none of the cancellation -- 0.57% on kda-long and 1.52% on kda-short -- the bar is cleared at 0.595*0.57 + 0.304*1.52 = 0.8%, which is why the round is proposed on the combined schedule rather than on either half; the combined form is what the 71.1% above measures. This is NOT the unchanged prior estimate for this gap: kda_contiguous_intra_blocks changed stage 2 only, and that variant measures 0.17% on kda-long here."
+ },
+ "search_dimensions": [
+  {
+   "control": "kda.enable_kda_fwd_intra_variant",
+   "kernel_function": "chunk_kda_fwd",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+  "family": "kda",
+  "kernel_ids": [
+   "kda"
+  ],
+  "source_axis": "enable_kda_fwd_intra_variant",
+  "source_function": "kda_fwd_intra",
+  "source_sink": {
+   "assignments": [
+    "packed_chunk_rows"
+   ],
+   "expression_asts": {
+    "packed_chunk_rows": "IfExp(test=Name(id='enable_kda_fwd_intra_variant', ctx=Load()), body=Call(func=Name(id='_packed_chunk_rows', ctx=Load()), args=[Name(id='NC_max', ctx=Load()), Name(id='BT', ctx=Load())], keywords=[]), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": false,
+  "candidate_values": [
+   false,
+   true
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/kda/kda.py",
+   "line": 457,
+   "detail": "default=False"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/kda-long",
+   "tiny-linear-serving/kda-short"
+  ],
+  "action_edge": {
+   "source": "action:kda:enable_kda_fwd_intra_variant:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_packed_resident_chunk_schedule.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "FROZEN-WORKLOAD GUARD FAILED: models missing=['tiny-linear-serving'] added=[]; calls missing=['tiny-linear-serving/gla-long', 'tiny-linear-serving/gla-short', 'tiny-linear-serving/input-projection', 'tiny-linear-serving/kda-long', 'tiny-linear-serving/kda-short'] added=[]",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

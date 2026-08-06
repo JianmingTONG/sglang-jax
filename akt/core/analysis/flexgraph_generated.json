@@ -4420,6 +4420,192 @@
    "access": "frontier"
   }
  ],
+ "standalone_frontier_actions": [
+  {
+   "gap_id": "fused_mlp:new_api:standalone",
+   "family": "fused_mlp",
+   "kernel_ids": [
+    "fused_mlp"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/fused_mlp.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the fused_mlp family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-dense-serving/dense-mlp",
+    "tiny-moe-serving/expert-mlp"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  },
+  {
+   "gap_id": "fused_moe/v1:new_api:standalone",
+   "family": "fused_moe/v1",
+   "kernel_ids": [
+    "moe_v1"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/fused_moe/v1/kernel.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the fused_moe/v1 family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-moe-serving/expert-v1"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  },
+  {
+   "gap_id": "fused_moe/v2:new_api:standalone",
+   "family": "fused_moe/v2",
+   "kernel_ids": [
+    "moe_v2"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/fused_moe/v2/kernel.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the fused_moe/v2 family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-moe-serving/expert-v2"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  },
+  {
+   "gap_id": "kda:new_api:standalone",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the kda family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  },
+  {
+   "gap_id": "megablox_gmm_kernel:new_api:standalone",
+   "family": "megablox_gmm_kernel",
+   "kernel_ids": [
+    "gmm",
+    "gmm_v2"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/gmm/megablox_gmm_kernel/gmm.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the megablox_gmm_kernel family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-dense-serving/dense-projection",
+    "tiny-linear-serving/input-projection",
+    "tiny-moe-serving/router-projection"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  },
+  {
+   "gap_id": "ragged_paged_attention:new_api:standalone",
+   "family": "ragged_paged_attention",
+   "kernel_ids": [
+    "rpa_v3"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/ragged_paged_attention/ragged_paged_attention.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the ragged_paged_attention family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-dense-serving/paged-attention",
+    "tiny-moe-serving/paged-attention"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  },
+  {
+   "gap_id": "simple_gla:new_api:standalone",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the simple_gla family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  },
+  {
+   "gap_id": "update_kv_cache:new_api:standalone",
+   "family": "update_kv_cache",
+   "kernel_ids": [
+    "kv_cache"
+   ],
+   "source_axis": "new_api",
+   "axis": "new_api",
+   "category": "standalone-api",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent"
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/update_kv_cache/update_kv_cache.py:0",
+   "detail": "perpetual standalone-API slot: authorizes introducing a genuinely new JAX-callable API handle for the update_kv_cache family (its own function, typically its own file under python/sgl_jax/srt/kernels/) plus a free-named string-enum dispatch control at the backend entry whose default 'incumbent' preserves the output-hash-pinned incumbent path; the dispatch assignment is the mined sink. This slot never closes.",
+   "model_callsites": [
+    "tiny-dense-serving/cache-update",
+    "tiny-moe-serving/cache-update"
+   ],
+   "access": "frontier",
+   "perpetual": true
+  }
+ ],
  "seed_coverage": [
   {
    "family": "update_kv_cache",
@@ -4467,8 +4653,9 @@
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
   "frontier_slots": 15,
+  "standalone_frontier_slots": 8,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true
  },
- "note": "AUTO-EXTRACTED: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas \u2192 Mosaic IR \u2192 Mosaic backend (LLO: reg-alloc / scheduling) \u2192 hardware. Nameability is BINARY: NAMEABLE (reschedulable at the top) vs HIDDEN (compiler-internal) \u2014 reachable in the lowering but with no direct handle. Neutral dashed links mark these compiler-internal boundaries; they are structural context, not loop actions. Each source-derived, programmer-unexposed finding covered by the frozen model gate is represented by exactly one red action link carrying the same stable gap_id consumed by the AKT loop. Open findings without a model callsite remain visible but are not actions. frontier_actions list not-yet-considered flexibility slots (one per Pallas-launch-owning function) in the same action interface; they carry no red edge and become real findings only when implemented."
+ "note": "AUTO-EXTRACTED: JAX/Pallas primitives + primitive\u2192Mosaic-op edges parsed from jax/_src/pallas/mosaic/lowering.py; ACTIVE marks the primitives the sglang-jax kernels use. FOUR lowering levels, TPU hardware at the FLOOR: Pallas \u2192 Mosaic IR \u2192 Mosaic backend (LLO: reg-alloc / scheduling) \u2192 hardware. Nameability is BINARY: NAMEABLE (reschedulable at the top) vs HIDDEN (compiler-internal) \u2014 reachable in the lowering but with no direct handle. Neutral dashed links mark these compiler-internal boundaries; they are structural context, not loop actions. Each source-derived, programmer-unexposed finding covered by the frozen model gate is represented by exactly one red action link carrying the same stable gap_id consumed by the AKT loop. Open findings without a model callsite remain visible but are not actions. frontier_actions list not-yet-considered flexibility slots (one per Pallas-launch-owning function) in the same action interface; they carry no red edge and become real findings only when implemented. standalone_frontier_actions list PERPETUAL family-level slots (<family>:new_api:standalone) authorizing a genuinely new standalone API handle behind a free-named dispatch control; these never close."
 }

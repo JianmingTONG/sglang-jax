@@ -26,6 +26,7 @@ STATE = ROOT / "optimization_history/evolve_state.json"
 EVAL = ROOT / "optimization_history/.evolve_eval.json"
 STATUS = BOARD / "evolve_status.json"
 CAMPAIGN = BOARD / "campaign.json"
+COVERAGE = BOARD / "coverage.json"
 CAPS = ROOT / "core/evolve/capabilities"
 CURRENT_OBJECTIVE_SCOPE = "model-serving-empirical-dp-v2"
 
@@ -135,6 +136,15 @@ def _campaign():
         return None
     diagnosis = _load_json(CAMPAIGN, None)
     return diagnosis if isinstance(diagnosis, dict) else None
+
+
+def _coverage():
+    """Verbatim API coverage graph (akt/core/analysis/coverage.py), if it has
+    been generated; None keeps the board key absent."""
+    if not COVERAGE.exists():
+        return None
+    document = _load_json(COVERAGE, None)
+    return document if isinstance(document, dict) else None
 
 
 def _control_inventory():
@@ -613,6 +623,9 @@ def build():
     campaign = _campaign()
     if campaign is not None:
         board["campaign"] = campaign
+    coverage = _coverage()
+    if coverage is not None:
+        board["coverage"] = coverage
     (BOARD / "board.json").write_text(json.dumps(_clean(board), indent=1, allow_nan=False))
     (BOARD / "flexgraph.json").write_text(json.dumps(_clean(fg), indent=1, allow_nan=False))
     n_run = sum(1 for k in kernels if k.get("best_s"))

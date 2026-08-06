@@ -335,6 +335,36 @@ def test_campaign_diagnosis_is_included_verbatim_when_present(tmp_path, monkeypa
     assert "b.campaign" in html
 
 
+def test_coverage_graph_is_included_verbatim_when_present(tmp_path, monkeypatch):
+    coverage = {
+        "generated": "2026-08-06 00:00:00",
+        "nodes": [
+            {"id": "gla:seq512_h8", "case": "gla:seq512_h8", "kernel": "gla",
+             "ops": 40, "mass_compute": 30.0, "mass_memory": 10.0},
+            {"id": "gla:seq512_h8@output_value_tiles=2", "case": "gla:seq512_h8",
+             "kernel": "gla", "knob": "output_value_tiles", "value": 2,
+             "ops": 44, "mass_compute": 33.0, "mass_memory": 11.0},
+        ],
+        "edges": [
+            {"a": "gla:seq512_h8@output_value_tiles=2", "b": "gla:seq512_h8",
+             "relation": "generalizes", "f_ab": 0.62, "f_ba": 0.97},
+        ],
+        "relations": {"generalizes": 1},
+        "note": "f_ab = fraction of a reproducible from b",
+    }
+    path = tmp_path / "coverage.json"
+    path.write_text(json.dumps(coverage))
+    monkeypatch.setattr(board_build, "COVERAGE", path)
+    assert board_build._coverage() == coverage        # verbatim passthrough
+
+    monkeypatch.setattr(board_build, "COVERAGE", tmp_path / "missing.json")
+    assert board_build._coverage() is None            # key stays absent
+
+    html = (ROOT / "akt/board/index.html").read_text()
+    assert "renderCoverage" in html
+    assert "b.coverage" in html
+
+
 def test_design_funnel_attributes_selection_to_cases_and_knobs():
     summary = {
         "case_search": {

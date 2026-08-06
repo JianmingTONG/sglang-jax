@@ -1014,6 +1014,200 @@ def test_api_novelty_history_drops_oversized_delta_graph():
     assert loop._truncate_api_graph({"ok": True}) == {"ok": True}
 
 
+# ------------------------------------------------- standalone-API novel form (B)
+
+
+def _standalone_slot(family="simple_gla", kernel_ids=("gla",)):
+    """A synthetic perpetual `<family>:new_api:standalone` slot (extractor shape)."""
+    from akt.benchmark.model_workloads import callsites_for_kernel_ids
+
+    return {
+        "gap_id": f"{family}:new_api:standalone",
+        "family": family,
+        "kernel_ids": sorted(kernel_ids),
+        "source_axis": "new_api",
+        "axis": "new_api",
+        "category": "standalone-api",
+        "incumbent_value": "incumbent",
+        "incumbent_value_known": True,
+        "candidate_values": ["incumbent"],
+        "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:0",
+        "detail": "perpetual standalone-API slot",
+        "model_callsites": callsites_for_kernel_ids(set(kernel_ids)),
+        "access": "frontier",
+        "perpetual": True,
+    }
+
+
+def _standalone_proposed_action(slot, axis="gla_impl"):
+    """A form-(B) proposal: free-named string-enum dispatch axis, oracle-owned
+    function/sink/domain/evidence, family+callsites copied from the slot."""
+    gap_id = f"{slot['family']}:{axis}:schedule-toggle"
+    return {
+        "gap_id": gap_id,
+        "family": slot["family"],
+        "kernel_ids": sorted(slot["kernel_ids"]),
+        "source_axis": axis,
+        "source_function": "simple_gla_fwd",
+        "source_sink": {
+            "assignments": ["kernel_fn"],
+            "expression_asts": {
+                "kernel_fn": _expression_ast(
+                    f"_subchunk_v3 if {axis} == 'subchunk_v3' else _incumbent"
+                )
+            },
+        },
+        "incumbent_value": "incumbent",
+        "candidate_values": ["incumbent", "subchunk_v3"],
+        "category": "schedule-toggle",
+        "source_evidence": {
+            "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+            "line": 0,
+            "detail": "free-named dispatch control selecting the standalone API",
+        },
+        "model_callsites": sorted(slot["model_callsites"]),
+        "action_edge": {"source": f"action:{gap_id}", "target": "pallas:dot_general"},
+    }
+
+
+def test_standalone_api_proposal_with_free_axis_is_accepted(monkeypatch):
+    """Form (B): a proposal whose gap_id is NOT a per-launch frontier slot is
+    accepted when the family carries a `<family>:new_api:standalone` slot, the
+    category is schedule-toggle, the axis name is free, and the string domain
+    contains the typed incumbent."""
+    from akt.core.evolve import capability_contract
+
+    slot = _standalone_slot()
+    graph = {"gaps": [], "standalone_frontier_actions": [slot]}
+    monkeypatch.setattr(
+        capability_contract, "load_action_graph", lambda _repo: (graph, {})
+    )
+    monkeypatch.setattr(capability_contract, "load_frontier_catalog", lambda _repo: {})
+
+    proposed = _standalone_proposed_action(slot)
+    manifest = {"gap_id": proposed["gap_id"], "proposed_action": proposed}
+    accepted, errors = capability_contract.validate_proposed_action(
+        manifest, loop.ROOT
+    )
+
+    assert errors == []
+    assert accepted["source_axis"] == "gla_impl"
+    assert accepted["candidate_values"] == ["incumbent", "subchunk_v3"]
+
+
+def test_standalone_free_axis_collision_with_existing_finding_is_rejected(monkeypatch):
+    from akt.core.evolve import capability_contract
+
+    slot = _standalone_slot()
+    colliding = {
+        "gap_id": "simple_gla:gla_impl:shape-pinned-tile",
+        "family": "simple_gla",
+        "source_axis": "gla_impl",
+        "category": "shape-pinned-tile",
+    }
+    graph = {"gaps": [colliding], "standalone_frontier_actions": [slot]}
+    monkeypatch.setattr(
+        capability_contract, "load_action_graph", lambda _repo: (graph, {})
+    )
+    monkeypatch.setattr(capability_contract, "load_frontier_catalog", lambda _repo: {})
+
+    proposed = _standalone_proposed_action(slot)
+    manifest = {"gap_id": proposed["gap_id"], "proposed_action": proposed}
+    _accepted, errors = capability_contract.validate_proposed_action(
+        manifest, loop.ROOT
+    )
+
+    assert any(
+        "collides with an existing finding/slot axis" in error for error in errors
+    )
+
+
+def test_standalone_closure_requires_mined_dispatch_and_tolerates_perpetual_slot(
+    tmp_path, monkeypatch
+):
+    from akt.core.evolve import action_catalog
+
+    slot = _standalone_slot()
+    proposed = _standalone_proposed_action(slot)
+    gap_id = proposed["gap_id"]
+    manifest = {"gap_id": gap_id, "proposed_action": proposed}
+    evidence_path = proposed["source_evidence"]["path"]
+    mined = {
+        "gap_id": gap_id,
+        "family": proposed["family"],
+        "kernel_ids": list(proposed["kernel_ids"]),
+        "axis": proposed["source_axis"],
+        "source_axis": proposed["source_axis"],
+        "source_function": proposed["source_function"],
+        "category": proposed["category"],
+        "source_sink": proposed["source_sink"],
+        "incumbent_value": proposed["incumbent_value"],
+        "candidate_values": list(proposed["candidate_values"]),
+        "model_callsites": list(proposed["model_callsites"]),
+        "evidence": f"{evidence_path}:321",
+        "open": False,
+        "programmer_exposed": True,
+    }
+
+    incumbent_graph = tmp_path / "akt/core/analysis/flexgraph_generated.json"
+    incumbent_graph.parent.mkdir(parents=True)
+    incumbent_graph.write_text(
+        json.dumps({"standalone_frontier_actions": [slot]})
+    )
+    candidate_path = tmp_path / "akt/optimization_history/.candidate_flexgraph.json"
+    candidate_path.parent.mkdir(parents=True)
+    graphs = {"gaps": [mined], "standalone_frontier_actions": [dict(slot)]}
+
+    def write_candidate(*_args, **_kwargs):
+        candidate_path.write_text(json.dumps(graphs))
+        return 0, ""
+
+    monkeypatch.setattr(loop, "ROOT", tmp_path)
+    monkeypatch.setattr(loop, "run_argv", write_candidate)
+    monkeypatch.setattr(action_catalog, "load_action_catalog", lambda _repo: {})
+    monkeypatch.setattr(action_catalog, "load_action_graph", lambda _repo: ({}, {}))
+    monkeypatch.setattr(action_catalog, "load_frontier_catalog", lambda _repo: {})
+    monkeypatch.setattr(
+        action_catalog,
+        "action_catalog_context",
+        lambda _repo: {"fingerprint": "candidate"},
+    )
+
+    # 1. The perpetual slot persisting in the regenerated graph is NOT an error,
+    #    and the mined dispatch finding (programmer-exposed) satisfies closure.
+    result = loop.candidate_action_graph_closure(manifest)
+    assert result["ok"] is True, result["errors"]
+    assert result["standalone_mode"] is True
+    assert result["selected_finding"]["gap_id"] == gap_id
+
+    # 2. Dropping the perpetual slot fails closure: the slot never closes.
+    graphs = {"gaps": [mined], "standalone_frontier_actions": []}
+    result = loop.candidate_action_graph_closure(manifest)
+    assert result["ok"] is False
+    assert any("never closes" in error for error in result["errors"])
+
+    # 3. The declared dispatch finding must be mined; the slot alone is not
+    #    closure evidence.
+    graphs = {"gaps": [], "standalone_frontier_actions": [dict(slot)]}
+    result = loop.candidate_action_graph_closure(manifest)
+    assert result["ok"] is False
+    assert any(
+        "was not mined into the regenerated graph" in error
+        for error in result["errors"]
+    )
+
+
+def test_oracle_prompt_presents_both_novel_forms():
+    prompt = loop.ORACLE_PROMPT
+    assert "STANDALONE API" in prompt
+    assert "a new JAX-callable handle in its own file" in prompt
+    assert "free-named dispatch control whose default is the incumbent path" in prompt
+    assert "or a variant toggle on an existing entry" in prompt
+    assert "the axis name is yours" in prompt
+    assert "new_api:standalone" in prompt
+    assert "never closes" in prompt
+
+
 def test_opus_oracle_forces_opus_model_at_max_effort():
     command = loop.ORACLES["opus"]
     assert "--model opus" in command

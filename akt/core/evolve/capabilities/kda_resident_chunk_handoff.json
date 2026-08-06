@@ -1,0 +1,67 @@
+{
+ "name": "kda_resident_chunk_handoff",
+ "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+ "action_graph_fingerprint": "65a20089bc4503338f65c0f17c194acb12f3674384609797ea066e8e9aef92a5",
+ "hypothesis": "Both chunk-blocked KDA launches reach their chunks through a RUNTIME start-offset vector even though the entry has already fixed that tiling at trace time. Stage 2 over-allocates the packed time axis by BT, materializes every chunk's q/k/gk/beta/v tile with a vmapped dynamic slice, and returns its five live results by scatter-accumulating them through an [NC, BT] int32 position vector into zero-initialized T+BT-row staging buffers; stage 4 then re-gathers that staging layout one chunk at a time to read stage 2's Aqk back, and scatters its own rows into another staging buffer. But chunk_kda_fwd aligns every sequence to a multiple of the state block, which is itself a multiple of BT, so logical chunk c is EXACTLY rows [c*BT, (c+1)*BT) of the packed layout: the chunk axis is a static reshape of the time axis and the whole index space is redundant. The variant blocks and un-blocks by that reshape on BOTH sides of the stage-2 -> stage-4 handoff, so the block/un-block pair annihilates and the aligned staging buffers between the two launches are never materialized at all. Neither end alone is enough -- whichever end keeps its data-dependent addressing pins the intermediate layout and forces the round trip -- which is why this is one schedule across both launches behind one axis rather than two independent halves. Nothing is approximated or dropped: each result row is written exactly once instead of accumulated into a zeroed buffer, and the grouping-pad chunks that carry no result read zeroed tail rows and are dropped by the same [:T] slice the incumbent's sentinel slot is dropped by. VERIFIED: (a) the default path is BIT-IDENTICAL to the incumbent commit's kda.py -- HEAD's module loaded side by side and compared on the raw bit patterns of both observed outputs at both DP-selected plans; (b) the variant is bit-identical to the incumbent on the gate's canonical inputs AND on five ragged multi-sequence packed batches (2 and 3 sequences, lengths 96/160, 200/56, 64/32/160, 100/27/45 that force real alignment padding, chunk_size 16/32/64/128, state_block_chunks 1/2/4), every one of which also matches the frozen pure-JAX naive_recurrent_kda recurrence inside the frozen tolerance.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/kda-long",
+  "baseline_share_pct": 55.1,
+  "expected_relief_pct": 60.0,
+  "reasoning": "SHARE: computed from the last accepted eval's own per-callsite measurements (evals/c1786023097_round_001, each callsite timed at its incumbent plan). tiny-linear-serving is the only model with non-deferred cases on this backend and its five callsites sum to 11.4217ms: kda-long 6.2965ms = 55.1%, kda-short 3.2212ms = 28.2%, gla-long 0.8165ms = 7.1%, gla-short 0.7463ms = 6.5%, input-projection 0.3412ms = 3.0%. The action's two callsites are 83.3% of the aggregate, so KDA is the only remaining place a >2% aggregate move can come from. LOCALIZATION: under the gate's deterministic-XLA regime the aligned-space scatter/gather is the dominant term in both chunk-blocked stages -- deterministic scatter is pathologically expensive on XLA:GPU -- and it is precisely the stage-2 -> stage-4 handoff this action's source function produces. MEASURED: at each callsite's DP-selected incumbent plan (kda-long cs=128/ibs=16/cbc=1/sbc=2/sda=128, kda-short cs=64/ibs=8/scalar=True/cbc=2/sbc=2/sda=64), timed under the gate's XLA flags, the full chunk_kda_fwd pipeline goes from 6.0285ms to 1.5207ms (74.78%) on kda-long and from 3.0852ms to 0.3971ms (87.13%) on kda-short, with both compared outputs bitwise equal to the incumbent's. FULL-SPACE (the comparison the DP actually makes -- best config in the incumbent space vs best config in the extended space): an exhaustive sweep of the kda-short case's whole extended deployment space, 248 configurations, found 0 incorrect against the frozen reference and moved the best from 3.1061ms to 0.4471ms = 85.60%. A 26-config slice of the kda-long case -- 13 incumbent/variant pairs covering every valid chunk_size 16 and chunk_size 256 configuration, all 26 correct -- confirms the direction is not plan-specific there either: the variant is faster in 12 of the 13 pairs, by 1.6x to 7.7x, and the one exception (cs=16/cbc=2/sbc=4/scalar solve, 8.36ms -> 26.23ms) is a configuration the DP will simply not select. AGGREGATE: 0.551*74.78 + 0.282*85.60 = 41.2 + 24.1 = 65.3%. DISCOUNT: the relief is the annihilation of a deterministic-GPU scatter/gather round trip, and a deterministic TPU permutation is far less pathological than the GPU equivalent, so the declared estimate is cut to 60.0% to leave room for the gate's own paired timing methodology and for the DP re-selecting different per-callsite configurations in the extended space. This is NOT an unchanged repeat of the failed estimate for this gap: the share is recomputed from the eval's per-callsite modeled times (55.1/28.2, not 59.5/30.4), the relief is measured on this round's implementation, and the floor argument differs -- even crediting only a single-ended change, which a prior round measured at 2.35% on kda-long, the bar is cleared, but the combined schedule above is what is proposed and what the 65.8% measures."
+ },
+ "search_dimensions": [
+  {
+   "control": "kda.enable_kda_fwd_intra_variant",
+   "kernel_function": "chunk_kda_fwd",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+  "family": "kda",
+  "kernel_ids": [
+   "kda"
+  ],
+  "source_axis": "enable_kda_fwd_intra_variant",
+  "source_function": "kda_fwd_intra",
+  "source_sink": {
+   "assignments": [
+    "packed_chunk_rows"
+   ],
+   "expression_asts": {
+    "packed_chunk_rows": "IfExp(test=Name(id='enable_kda_fwd_intra_variant', ctx=Load()), body=BinOp(left=Name(id='NC_max', ctx=Load()), op=Mult(), right=Name(id='BT', ctx=Load())), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": false,
+  "candidate_values": [
+   false,
+   true
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/kda/kda.py",
+   "line": 444,
+   "detail": "default=False"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/kda-long",
+   "tiny-linear-serving/kda-short"
+  ],
+  "action_edge": {
+   "source": "action:kda:enable_kda_fwd_intra_variant:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_resident_chunk_handoff.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "FROZEN-WORKLOAD GUARD FAILED: models missing=['tiny-linear-serving'] added=[]; calls missing=['tiny-linear-serving/gla-long', 'tiny-linear-serving/gla-short', 'tiny-linear-serving/input-projection', 'tiny-linear-serving/kda-long', 'tiny-linear-serving/kda-short'] added=[]",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

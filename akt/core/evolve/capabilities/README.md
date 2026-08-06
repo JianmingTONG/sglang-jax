@@ -6,13 +6,22 @@ One pending manifest proposes exactly one of:
   generated v2 action graph as a red-link action (`access: "existing"`). The
   graph, not free text, owns the source path, axis, incumbent value, kernel
   family, affected model callsites, and action edge.
-- **NOVEL** — inventing one new low-level algorithm or kernel variant, admissible
-  only against a mined FRONTIER SLOT (`access: "frontier"`, the graph's top-level
-  `frontier_actions` list, fingerprinted together with the red-link actions): the
-  manifest's `gap_id` foreign-keys the slot, its `proposed_action` completes the
-  slot record, the incumbent algorithm stays the exact default, and after
-  implementation the frozen extractor must stop emitting the slot and rediscover
-  the new axis as a mined finding with exactly the declared semantics.
+- **NOVEL** — inventing one new low-level algorithm, kernel variant, or standalone
+  API. The axis NAME is free (no prescribed template). Two forms exist:
+  - **Form (A) — VARIANT TOGGLE**: a new boolean/enum axis on an existing kernel
+    entry, admissible against a mined per-launch FRONTIER SLOT
+    (`access: "frontier"`, the graph's top-level `frontier_actions` list,
+    fingerprinted together with the red-link actions): the manifest's `gap_id`
+    foreign-keys the slot, its `proposed_action` completes the slot record, the
+    incumbent algorithm stays the exact default, and after implementation the
+    frozen extractor must stop emitting the slot and rediscover the new axis as a
+    mined finding with exactly the declared semantics.
+  - **Form (B) — STANDALONE API**: a genuinely new JAX-callable handle — its own
+    function, typically its own FILE under `python/sgl_jax/srt/kernels/<family>/`
+    — admissible against the family's PERPETUAL `<family>:new_api:standalone`
+    slot (the graph's `standalone_frontier_actions` list). That slot never
+    closes: introducing one API does not exhaust the family, so the extractor
+    keeps emitting it, and graph closure requires its persistence.
 
 ## Schema
 
@@ -72,7 +81,7 @@ completing the selected frontier slot (the same record shape
 }
 ```
 
-Constraints: `gap_id` must be the id of one current frontier slot
+Form-(A) constraints: `gap_id` must be the id of one current frontier slot
 (`<family>:enable_<fn>_variant:schedule-toggle`) and equal the manifest `gap_id`.
 Graph-owned fields — `family`, `kernel_ids`, `source_axis`, `source_function`,
 `category`, `incumbent_value`, `candidate_values`, `model_callsites`,
@@ -80,6 +89,36 @@ Graph-owned fields — `family`, `kernel_ids`, `source_axis`, `source_function`,
 the oracle authors only `source_sink`, `source_evidence.line`, and
 `source_evidence.detail`. For a NOVEL round the slot — not the incumbent red-link
 list — supplies the graph-owned fields below.
+
+Form-(B) constraints (STANDALONE API): `gap_id` is `<family>:<axis>:schedule-toggle`
+with a FREE `<axis>` name (e.g. `impl`, `gla_impl`, `dispatch_to`) that collides
+with no existing finding or slot axis of the family; it is deliberately NOT a
+per-launch frontier slot id. Requirements:
+
+- the family must carry a perpetual `<family>:new_api:standalone` slot in the
+  graph's `standalone_frontier_actions` (only in-suite families with model
+  callsites get one);
+- `category` must be `"schedule-toggle"` — the shape the frozen extractor mines
+  for the dispatch control after implementation;
+- `kernel_ids` and `model_callsites` must equal the standalone slot's (the
+  callsites are derived from the kernel_ids); the family is the slot's family;
+- everything else is ORACLE-OWNED: the axis name, the finite `candidate_values`
+  domain (strings allowed, e.g. `["incumbent", "subchunk_v3"]`, and it must
+  contain the typed `incumbent_value`), `source_function`, `source_sink` (the
+  dispatch assignment, e.g. `fn = <new_handle> if impl == "<api_name>" else
+  _incumbent`, in the extractor's mined-sink shape), and `source_evidence` —
+  whose `path` may name a NEW file under `python/sgl_jax/srt/kernels/` (it must
+  exist in the working tree NOW; it need not exist at the incumbent commit);
+- the dispatch control is still deployed like any control: registered under
+  `KernelControlPolicy`, forwarded from a production consumer to the backend
+  entry, and exposed as a runner Knob — the default `"incumbent"` value must
+  reproduce the output-hash-pinned incumbent path bit-exactly;
+- prior-inaccessibility still applies: neither the entry argument nor the axis
+  name may exist at the incumbent commit (access mode `novel-algorithm`);
+- graph closure requires the regenerated graph to MINE the declared dispatch
+  finding programmer-exposed, field-for-field equal to `proposed_action`, while
+  the perpetual `<family>:new_api:standalone` slot MUST still be present — it
+  never closes and its persistence is not an error.
 
 Each search dimension contains exactly three fields:
 
@@ -108,12 +147,14 @@ argument → selected source function/sink → runner knob with the same
 If the backend argument already existed, the round only exposes it. If the action was
 a hardcoded literal, the round may lift that exact literal into an argument whose
 default preserves the mined incumbent value. A NOVEL round may add a new kernel
-algorithm or variant, but only strictly behind the slot's prescribed axis's
-non-default values: the default path must reproduce the incumbent bit-exactly (it
-is output-hash pinned), and graph closure must find the slot no longer emitted and
-the new axis mined programmer-exposed with exactly the declared semantics. An
-invented behavior that is not anchored to a frontier slot — or that drifts from
-the slot's declaration — fails closure.
+algorithm, variant, or standalone API, but only strictly behind the declared
+axis's non-default values: the default path must reproduce the incumbent
+bit-exactly (it is output-hash pinned), and graph closure must find the new axis
+mined programmer-exposed with exactly the declared semantics — additionally, for
+form (A) the per-launch slot must no longer be emitted, while for form (B) the
+perpetual standalone slot must still be emitted. An invented behavior that is
+anchored to neither a frontier slot nor its family's standalone slot — or that
+drifts from its declaration — fails closure.
 
 The frozen evaluator instruments the derived backend entry and accepts only an
 observed non-default argument at the exact affected model callsite. Self-reported
@@ -124,8 +165,10 @@ runtime events are not evidence.
 A round can be kept only when:
 
 1. The fingerprint matches the current canonical two-source context, and the
-   `gap_id` identifies one current executable red-link action (ELEVATE) or one
-   current frontier slot whose record the `proposed_action` completes (NOVEL).
+   `gap_id` identifies one current executable red-link action (ELEVATE), one
+   current frontier slot whose record the `proposed_action` completes (NOVEL
+   form A), or a free-named axis authorized by the family's
+   `<family>:new_api:standalone` slot (NOVEL form B).
 2. The incumbent lacked the stable programmer control. For ELEVATE the selected
    low-level behavior already existed; for NOVEL neither the entry argument nor
    the axis existed at the incumbent commit (access mode `novel-algorithm`).
@@ -134,11 +177,13 @@ A round can be kept only when:
 4. The deployment space is a pure extension: every incumbent configuration remains
    at the new dimension's default, and every advertised value is exercised.
 5. Regeneration closes only the selected action; unrelated action semantics remain
-   unchanged. For NOVEL, the regenerated graph must no longer emit the selected
-   frontier slot (the axis now exists), must mine the declared finding under the
-   same `gap_id` programmer-exposed, field-for-field equal to `proposed_action`,
-   and must preserve unrelated red-link actions and unrelated frontier slots
-   outside the selected family.
+   unchanged. For NOVEL, the regenerated graph must mine the declared finding
+   under the same `gap_id` programmer-exposed, field-for-field equal to
+   `proposed_action`, and must preserve unrelated red-link actions and unrelated
+   frontier/standalone slots outside the selected family. Form A additionally
+   requires the selected per-launch frontier slot to no longer be emitted (the
+   axis now exists); form B requires the perpetual standalone slot to STILL be
+   emitted (it never closes).
 6. Every deployable local configuration is correct and measured on the target TPU.
 7. Exact additive DP agrees with the bounded Cartesian solver check, and the bounded
    empirical whole-trace panel supports its selection.

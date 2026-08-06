@@ -419,7 +419,14 @@ _TILE_RE = re.compile(
     r"^bkv(_sz|_csz)?$|^bq(_sz|_csz)?$|block_size|_block_size$|^chunk_size$|"
     r"^page_size$|num_slices_per_block|^B[KVQTMND]$|^num_\w+_per_block$)")
 _PIPE_RE = re.compile(r"(buffer_count|num_stages|n_buffers|num_pipeline|double_buffer|pipeline_depth)")
-_SCHED_RE = re.compile(r"(prefetch|overlap|interleave|^enable_|_mode$|reorder|_bank$|fuse)")
+_SCHED_RE = re.compile(
+    r"(prefetch|overlap|interleave|^enable_|_mode$|reorder|_bank$|fuse|"
+    # dispatch-control axes for standalone APIs: `impl` / `gla_impl` / `impl_x`
+    # and `dispatch` / `dispatch_to` / `kv_dispatch` style names mine as
+    # schedule-toggles; string-enum domains come from _schedule_values comparison
+    # mining, so `fn = new_api if impl == "name" else incumbent` is the sink.
+    r"(?:^|_)impl(?:_|$)|(?:^|_)dispatch)"
+)
 _TABLE_RE = re.compile(r"(TUNED|tuned|best_\w*config|_TABLE|BLOCK_SIZES|block_config)")
 _SELECTOR_RE = re.compile(r"(get_\w*(block|tile|slice|config|size)|_select|choose_)")
 _BACKEND_RE = re.compile(r"(tpu_version|device_name|device_kind|platform|generation|chip|v6e?|v7)")
@@ -1119,6 +1126,7 @@ def mine_serving_stack(sources):
     gaps = []
     frontier = []                       # not-yet-considered flexibility slots
     frontier_seen = set()
+    standalone_frontier = []            # perpetual family-level standalone-API slots
     stack = []
     for label, rec in sorted(families.items()):
         if not rec["pallas"]:
@@ -1318,6 +1326,48 @@ def mine_serving_stack(sources):
                     "access": "frontier",
                 })
 
+        # PERPETUAL standalone-API slot: ONE family-level slot per in-suite family
+        # exercised by the frozen gate. Unlike the per-launch toggle slots above,
+        # this slot authorizes introducing a genuinely NEW JAX-callable API handle
+        # — its own function, typically its own FILE under
+        # python/sgl_jax/srt/kernels/<family>/ — deployed behind a free-named
+        # string-enum DISPATCH control at the backend entry (e.g. `impl` with
+        # values ["incumbent", "<api_name>"], default "incumbent" preserving the
+        # output-hash-pinned incumbent path), resolved through KernelControlPolicy
+        # like any control; the dispatch assignment is the mined sink. The slot
+        # NEVER closes — introducing one API does not exhaust the family — so the
+        # extractor keeps emitting it unconditionally.
+        fam_callsites = callsites_for_kernel_ids(ids) if ids else []
+        if ids and fam_callsites and per_file:
+            primary = next(
+                (rel for rel, m in per_file if m["launch_fns"]), per_file[0][0]
+            )
+            standalone_frontier.append({
+                "gap_id": f"{label}:new_api:standalone",
+                "family": label,
+                "kernel_ids": sorted(ids),
+                "source_axis": "new_api",
+                "axis": "new_api",
+                "category": "standalone-api",
+                "incumbent_value": "incumbent",
+                "incumbent_value_known": True,
+                "candidate_values": ["incumbent"],
+                "evidence": f"{primary}:0",
+                "detail": (
+                    f"perpetual standalone-API slot: authorizes introducing a "
+                    f"genuinely new JAX-callable API handle for the {label} family "
+                    f"(its own function, typically its own file under "
+                    f"python/sgl_jax/srt/kernels/) plus a free-named string-enum "
+                    f"dispatch control at the backend entry whose default "
+                    f"'incumbent' preserves the output-hash-pinned incumbent path; "
+                    f"the dispatch assignment is the mined sink. This slot never "
+                    f"closes."
+                ),
+                "model_callsites": fam_callsites,
+                "access": "frontier",
+                "perpetual": True,
+            })
+
     # rank: gaps in the tuned suite first, then by category salience, then un-elevated
     def _rank(g):
         sal = _GAP_CATEGORIES.get(g["category"], (None, None, 0))[2]
@@ -1333,7 +1383,7 @@ def mine_serving_stack(sources):
         if n:
             cats[c] = {"label": lab, "reachable_prim": prim, "salience": sal, "count": n}
     return {"serving_stack": stack, "gaps": gaps, "gap_categories": cats,
-            "frontier": frontier}
+            "frontier": frontier, "standalone_frontier": standalone_frontier}
 
 
 # Regression seeds: the auto-miner should continue rediscovering these known patterns.
@@ -1557,6 +1607,12 @@ def build_graph(focus_active: bool = True):
         "serving_stack": mined["serving_stack"], "gaps": mined["gaps"],
         "gap_categories": mined["gap_categories"],
         "frontier_actions": mined["frontier"],
+        # Perpetual family-level standalone-API slots. Kept in their OWN array
+        # (not frontier_actions): they follow a different lifecycle — they never
+        # close — and a different record shape (category "standalone-api",
+        # single-value domain), so they must not enter the fingerprinted
+        # per-launch frontier catalog contract.
+        "standalone_frontier_actions": mined["standalone_frontier"],
         "seed_coverage": [{"family": f, "category": c, "hit": h} for (f, c, h) in coverage],
         "stats": {"jax_primitives_total": len(rules), "primitives_shown": shown_prims,
                   "mosaic_ops": sum(1 for n in nodes.values() if n["layer"] == "mosaic"),
@@ -1570,6 +1626,7 @@ def build_graph(focus_active: bool = True):
                   "hidden_lowering_boundaries": len(hidden_lowering_edges),
                   "executable_action_gaps": n_eligible,
                   "frontier_slots": len(mined["frontier"]),
+                  "standalone_frontier_slots": len(mined["standalone_frontier"]),
                   "seed_patterns_rediscovered": f"{sum(h for _,_,h in coverage)}/{len(coverage)}",
                   "focus_active": focus_active},
         "note": ("AUTO-EXTRACTED: JAX/Pallas primitives + primitive→Mosaic-op edges parsed from "
@@ -1584,7 +1641,10 @@ def build_graph(focus_active: bool = True):
                  "loop. Open findings without a model callsite remain visible but are not actions. "
                  "frontier_actions list not-yet-considered flexibility slots (one per "
                  "Pallas-launch-owning function) in the same action interface; they carry no red "
-                 "edge and become real findings only when implemented."),
+                 "edge and become real findings only when implemented. "
+                 "standalone_frontier_actions list PERPETUAL family-level slots "
+                 "(<family>:new_api:standalone) authorizing a genuinely new standalone API "
+                 "handle behind a free-named dispatch control; these never close."),
     }
 
 
@@ -1609,7 +1669,8 @@ def main():
           f"investigated -> {s['auto_gaps']} flexibility gaps auto-derived "
           f"({s['executable_action_gaps']} executable by the AKT model gate) across "
           f"{len(g['gap_categories'])} "
-          f"categories, plus {s['frontier_slots']} unconsidered-flexibility frontier slots; "
+          f"categories, plus {s['frontier_slots']} unconsidered-flexibility frontier slots "
+          f"and {s['standalone_frontier_slots']} perpetual standalone-API slots; "
           f"regression seeds rediscovered {s['seed_patterns_rediscovered']}.")
     miss = [c for c in g["seed_coverage"] if not c["hit"]]
     if miss:

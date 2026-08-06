@@ -144,21 +144,42 @@ already-existing low-level selection point that is not exposed to programmers. I
 stable gap_id, graph fingerprint, family, source axis/function/sink, finite candidate
 domain, evidence, and exact model callsites are foreign keys in your manifest. You may
 add the plumbing needed to expose that existing selection point.
- (b) INVENT a new algorithm or kernel variant — through the SAME contract below, which
-lists BOTH executable red-link actions (access "existing") AND unconsidered-flexibility
-FRONTIER SLOTS (access "frontier", in `frontier_actions`): mechanically-mined axes no
-round has yet considered. To invent, pick ONE frontier gap_id and implement the new
-variant behind that slot's prescribed `enable_<fn>_variant` toggle on the slot's
-`source_function`; the incumbent path is the exact default (False) and must stay
+ (b) INVENT a new algorithm, kernel variant, or standalone API — through the SAME
+contract below, which lists executable red-link actions (access "existing"),
+unconsidered-flexibility FRONTIER SLOTS (access "frontier", in `frontier_actions`:
+mechanically-mined per-launch axes no round has yet considered), and PERPETUAL
+standalone-API slots (`<family>:new_api:standalone`, in `standalone_frontier_actions`).
+You may introduce a STANDALONE API — a new JAX-callable handle in its own file —
+selected by a free-named dispatch control whose default is the incumbent path;
+or a variant toggle on an existing entry; the axis name is yours (no prescribed
+template). The two novel forms:
+   FORM A (VARIANT TOGGLE): a new boolean/enum axis on an existing kernel entry. Pick
+ONE frontier gap_id and implement the new variant behind that slot's toggle on the
+slot's `source_function`; the incumbent path is the exact default and must stay
 bit-identical — it is output-hash pinned. Declare the manifest's `proposed_action` by
 COMPLETING the slot's record: copy the graph-owned fields (gap_id, family, kernel_ids,
 source_axis, source_function, category, incumbent_value, candidate_values,
 model_callsites, action_edge) exactly from the slot; you author only source_sink, the
-evidence line, and the detail. The gap_id therefore cannot collide with any existing
-finding — that follows from slot membership, not from inventing an identifier. A slot
-CLOSES when its axis becomes a real parameter: after your edits the regenerated graph
-must drop the frontier slot and instead contain your finding, mined
-programmer-exposed with EXACTLY the declared semantics, or the round rejects.
+evidence line, and the detail. A slot CLOSES when its axis becomes a real parameter:
+after your edits the regenerated graph must drop the frontier slot and instead contain
+your finding, mined programmer-exposed with EXACTLY the declared semantics, or the
+round rejects.
+   FORM B (STANDALONE API): a genuinely new JAX-callable handle — its own function,
+typically its own FILE under python/sgl_jax/srt/kernels/<family>/ — authorized by the
+family's perpetual `<family>:new_api:standalone` slot (it never closes; introducing
+one API does not exhaust the family). The serving side still needs a named selector
+for deployment: add a DISPATCH control — a free-named string-enum axis (e.g. `impl`
+with values ["incumbent", "<api_name>"], default "incumbent" preserving the
+output-hash-pinned incumbent path) — at the backend entry, resolved through
+KernelControlPolicy like any control; the dispatch assignment (e.g.
+`fn = <new_handle> if impl == "<api_name>" else _incumbent`) is the mined sink.
+Declare `proposed_action` with gap_id `<family>:<axis>:schedule-toggle` — a free axis
+name colliding with no existing finding/slot of the family — the family's kernel_ids
+and model_callsites copied from the standalone slot, and ORACLE-OWNED axis, finite
+domain (containing the typed incumbent; strings allowed), source function, sink, and
+evidence (which may name your NEW kernel file). After your edits the regenerated graph
+must MINE the dispatch finding programmer-exposed with EXACTLY the declared semantics;
+the perpetual slot stays open — that is expected, not a failure.
 In both modes every kernel is a KernelCase whose deployable configurations become
 stages in an exact three-model DP. A CAPABILITY must make one previously
 programmer-inaccessible low-level behavior controllable through the whole stack:
@@ -1059,6 +1080,28 @@ def _novel_finding_mismatches(finding, proposed):
     ]
 
 
+def _graph_standalone_slots(graph):
+    """Perpetual `<family>:new_api:standalone` slots of one graph document."""
+    if not isinstance(graph, dict):
+        return {}
+    return {
+        record["gap_id"]: record
+        for record in graph.get("standalone_frontier_actions") or []
+        if isinstance(record, dict) and isinstance(record.get("gap_id"), str)
+    }
+
+
+def _incumbent_standalone_slots():
+    """Standalone slots of the incumbent generated graph ({} when absent)."""
+    try:
+        graph = json.loads(
+            (ROOT / "akt/core/analysis/flexgraph_generated.json").read_text()
+        )
+    except Exception:  # noqa: BLE001 - older graphs carry no standalone slots
+        return {}
+    return _graph_standalone_slots(graph)
+
+
 def candidate_action_graph_closure(manifest):
     """Regenerate and validate the graph without replacing the incumbent snapshot.
 
@@ -1082,6 +1125,15 @@ def candidate_action_graph_closure(manifest):
     edit legitimately alters that family's launch inventory. In NOVEL mode the
     selected slot must CLOSE: its gap_id leaves the frontier list because the axis
     became a real parameter the extractor now mines as a finding.
+
+    STANDALONE mode (the proposed gap_id is absent from the before-frontier — the
+    round is anchored to its family's perpetual `<family>:new_api:standalone`
+    slot): the regenerated graph must MINE the declared dispatch finding —
+    identical field-for-field check via _novel_finding_mismatches, marked
+    programmer-exposed — and the perpetual standalone slot must STILL be present
+    afterwards (it NEVER closes; persistence is required, not an error).
+    Standalone slots outside the selected family must survive unchanged, mirroring
+    the per-launch frontier preservation rules.
     """
     from akt.core.evolve.action_catalog import (
         action_semantic_record,
@@ -1104,6 +1156,10 @@ def candidate_action_graph_closure(manifest):
     proposed = manifest.get("proposed_action") if isinstance(manifest, dict) else None
     before = load_action_catalog(ROOT)
     before_frontier = load_frontier_catalog(ROOT)
+    before_standalone = _incumbent_standalone_slots()
+    # STANDALONE mode: a novel round whose gap_id is not a per-launch slot — it is
+    # anchored to the family's perpetual `<family>:new_api:standalone` slot.
+    standalone_mode = proposed is not None and gap_id not in before_frontier
     candidate_path = ROOT / "akt/optimization_history/.candidate_flexgraph.json"
     candidate_path.unlink(missing_ok=True)
     rc, output = run_argv(
@@ -1202,6 +1258,41 @@ def candidate_action_graph_closure(manifest):
             "candidate changed frontier-slot semantics outside the selected family: "
             + ", ".join(frontier_changed)
         )
+    # Perpetual standalone-API slots: never close. Outside the selected family they
+    # must survive unchanged (volatile evidence line excluded, like frontier slots);
+    # in STANDALONE mode the selected family's slot must STILL be emitted — its
+    # persistence is required, never an error.
+    after_standalone = _graph_standalone_slots(graph)
+    standalone_removed = sorted(
+        slot_id
+        for slot_id in set(before_standalone) - set(after_standalone)
+        if before_standalone[slot_id].get("family") != selected_family
+    )
+    if standalone_removed:
+        errors.append(
+            "candidate removed perpetual standalone-API slots outside the selected "
+            "family (they never close): " + ", ".join(standalone_removed)
+        )
+    standalone_changed = sorted(
+        slot_id
+        for slot_id in set(before_standalone) & set(after_standalone)
+        if before_standalone[slot_id].get("family") != selected_family
+        and _frontier_semantic(before_standalone[slot_id])
+        != _frontier_semantic(after_standalone[slot_id])
+    )
+    if standalone_changed:
+        errors.append(
+            "candidate changed standalone-API slot semantics outside the selected "
+            "family: " + ", ".join(standalone_changed)
+        )
+    if standalone_mode:
+        family_slot_id = f"{selected_family}:new_api:standalone"
+        if family_slot_id not in after_standalone:
+            errors.append(
+                f"perpetual standalone-API slot {family_slot_id!r} is missing from "
+                "the regenerated graph — the slot never closes; introducing one "
+                "standalone API must not exhaust the family"
+            )
     finding = next(
         (item for item in graph.get("gaps") or [] if item.get("gap_id") == gap_id),
         None,
@@ -1233,6 +1324,9 @@ def candidate_action_graph_closure(manifest):
         "frontier_removed": frontier_removed,
         "frontier_added": frontier_added,
         "frontier_changed": frontier_changed,
+        "standalone_mode": standalone_mode,
+        "standalone_removed": standalone_removed,
+        "standalone_changed": standalone_changed,
         "selected_finding": finding,
         "candidate_action_graph_fingerprint": after_context.get("fingerprint"),
         # Retain the validated document in memory for atomic installation only after
@@ -2242,6 +2336,23 @@ def gate_capability(st, m, mpath, args):
                 ),
                 incumbent_commit=commit_result["head"],
             )
+            # Post-KEEP coverage refresh (best-effort): the script is maintained
+            # out-of-loop and may not exist yet; a missing script or nonzero exit
+            # must never undo an already-committed KEEP.
+            try:
+                coverage_rc, coverage_output = run_argv(
+                    (*PY, "akt/core/analysis/coverage.py"),
+                    env=harness_env(interpret=True),
+                    timeout=1800,
+                )
+            except Exception as error:  # noqa: BLE001
+                print(f"[evolve] WARNING post-KEEP coverage refresh crashed: {error}")
+            else:
+                if coverage_rc:
+                    print(
+                        "[evolve] WARNING post-KEEP coverage refresh exited "
+                        f"rc={coverage_rc}: {(coverage_output or '').strip()[-300:]}"
+                    )
 
     if decision == "reject":
         m.pop("delta_pct", None)

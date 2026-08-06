@@ -861,10 +861,12 @@ def test_novel_proposal_shape_is_fail_closed():
         for error in errors
     )
 
-    # Non-frontier: a well-formed proposal (valid derivation, no collision with a
-    # mined finding) whose gap_id is not a frontier slot fails membership.
+    # Non-frontier: a well-formed free-axis proposal fails membership only when
+    # its FAMILY carries no standalone new_api slot (families with one accept
+    # free axes as form-(B) standalone-API proposals by design).
     invented_axis = "enable_totally_invented_variant"
-    invented_gap_id = f"{slot['family']}:{invented_axis}:schedule-toggle"
+    invented_family = "no_such_family"
+    invented_gap_id = f"{invented_family}:{invented_axis}:schedule-toggle"
     invented = dict(
         manifest["proposed_action"],
         gap_id=invented_gap_id,
@@ -878,6 +880,7 @@ def test_novel_proposal_shape_is_fail_closed():
             "expression_asts": {"use_variant_path": _expression_ast(invented_axis)},
         },
     )
+    invented["family"] = invented_family
     non_frontier = dict(manifest, gap_id=invented_gap_id, proposed_action=invented)
     _proposed, errors = capability_contract.validate_proposed_action(non_frontier, ROOT)
     assert any("is not a frontier slot" in error for error in errors)

@@ -1,19 +1,19 @@
 {
- "state": "running",
- "updated_ts": 1786021517.7761161,
- "init_ts": 1786010631.2273204,
+ "state": "idle",
+ "updated_ts": 1786037378.8306832,
+ "init_ts": 1786023097.9306195,
  "round": 3,
- "capability": null,
- "phase": "oracle: tool:Bash cat > /tmp/fp_probe.py <<'EOF'\nimport hashlib,",
- "started_ts": 1786021344.539828,
+ "capability": "kda_resident_chunk_handoff",
+ "phase": null,
+ "started_ts": null,
  "testbench": true,
  "last": {
-  "round": 2,
-  "capability": "gla_state_head_grouping",
+  "round": 3,
+  "capability": "kda_resident_chunk_handoff",
   "decision": "reject",
-  "reason": "FROZEN-WORKLOAD FINGERPRINT CHANGED",
-  "geomean_s": 0.0030452143400907508,
-  "delta_pct": -9.95,
-  "finished_ts": 1786021341.4136279
+  "reason": "FROZEN-WORKLOAD GUARD FAILED: models missing=['tiny-linear-serving'] added=[]; calls missing=['tiny-linear-serving/gla-long', 'tiny-linear-serving/gla-short', 'tiny-linear-serving/input-projection', 'tiny-linear-serving/kda-long', 'tiny-linear-serving/kda-short'] added=[]",
+  "geomean_s": null,
+  "delta_pct": null,
+  "finished_ts": 1786037378.8306816
  }
 }

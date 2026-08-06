@@ -40,6 +40,10 @@ _PROPOSED_ACTION_FIELDS = {
     "action_edge",
 }
 _KERNEL_SOURCE_PREFIX = "python/sgl_jax/srt/kernels/"
+# Perpetual family-level authorization for form-(B) STANDALONE-API proposals:
+# the graph emits one `<family>:new_api:standalone` slot per in-suite family.
+_STANDALONE_AXIS = "new_api"
+_STANDALONE_CATEGORY = "standalone"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -407,14 +411,31 @@ def validate_proposed_action(manifest: dict, repo: Path) -> tuple[dict, list[str
     - frontier slots — mechanically derived, not-yet-considered flexibilities
       the generated graph templates ahead of any implementation (NOVEL mode).
 
-    A proposal may invent a new low-level algorithm only by foreign-keying a
-    frontier slot: ``proposed_action.gap_id`` must be a key of
-    ``load_frontier_catalog(repo)``, and every GRAPH-OWNED field of the record
-    (family, kernel_ids, source_axis, source_function, category, typed
-    incumbent_value, typed candidate_values, model_callsites, evidence path,
-    action_edge) must equal the slot template exactly. The ORACLE-OWNED fields —
-    ``source_sink``, the evidence line, and the detail text — are supplied by the
-    implementation. The anchored record is the round's graph authority; graph
+    A NOVEL proposal is admissible in TWO forms:
+
+    - Form (A) VARIANT TOGGLE — ``proposed_action.gap_id`` is a key of
+      ``load_frontier_catalog(repo)`` (a per-launch frontier slot), and every
+      GRAPH-OWNED field of the record (family, kernel_ids, source_axis,
+      source_function, category, typed incumbent_value, typed candidate_values,
+      model_callsites, evidence path, action_edge) must equal the slot template
+      exactly. The ORACLE-OWNED fields — ``source_sink``, the evidence line, and
+      the detail text — are supplied by the implementation.
+    - Form (B) STANDALONE API — ``gap_id`` is NOT a per-launch slot. It is
+      admissible iff the family carries a perpetual
+      ``<family>:new_api:standalone`` slot in the graph's
+      ``standalone_frontier_actions``, the declared category is
+      ``schedule-toggle`` (the shape the extractor mines after implementation),
+      ``gap_id == <family>:<axis>:schedule-toggle`` with a FREE axis name that
+      collides with no existing finding/slot axis of the family, and
+      candidate_values is a finite domain containing the typed incumbent
+      (strings allowed, e.g. ``["incumbent", "subchunk_v3"]``). Template
+      equality against the slot applies only to family + callsites (derived
+      from kernel_ids); axis, domain, source function, sink, and evidence are
+      ORACLE-OWNED — the evidence path may name a NEW file under
+      ``python/sgl_jax/srt/kernels/`` (it must exist NOW, not at the incumbent
+      commit).
+
+    In both forms the anchored record is the round's graph authority; graph
     closure later proves the regenerated graph mined the same finding
     programmer-exposed with exactly these semantics.
     """
@@ -545,6 +566,7 @@ def validate_proposed_action(manifest: dict, repo: Path) -> tuple[dict, list[str
         for message in source_sink_errors(category, proposed.get("source_sink"), source_axis)
     )
 
+    graph = None
     try:
         graph, _catalog = load_action_graph(repo)
     except Exception as error:  # noqa: BLE001
@@ -567,15 +589,100 @@ def validate_proposed_action(manifest: dict, repo: Path) -> tuple[dict, list[str
         errors.append(f"cannot load frontier catalog for novel anchoring: {error}")
     else:
         slot = frontier.get(gap_id)
-        if not isinstance(slot, dict):
-            errors.append(
-                f"proposed_action.gap_id {gap_id!r} is not a frontier slot: a novel "
-                "algorithm must select an unconsidered-flexibility slot from the "
-                "frontier catalog (the same gap_id interface as red-link actions)"
-            )
-        else:
+        if isinstance(slot, dict):
             errors.extend(_frontier_template_errors(proposed, slot, gap_id))
+        else:
+            errors.extend(
+                _standalone_authorization_errors(proposed, gap_id, graph, frontier)
+            )
     return proposed, errors
+
+
+def _standalone_slots(graph) -> dict[str, dict]:
+    """Perpetual ``<family>:new_api:standalone`` slots of one graph document."""
+
+    if not isinstance(graph, dict):
+        return {}
+    return {
+        record["gap_id"]: record
+        for record in graph.get("standalone_frontier_actions") or []
+        if isinstance(record, dict) and isinstance(record.get("gap_id"), str)
+    }
+
+
+def _standalone_authorization_errors(
+    proposed: dict, gap_id, graph, frontier: dict
+) -> list[str]:
+    """Validate a form-(B) STANDALONE-API proposal (free-named dispatch axis).
+
+    A proposal whose gap_id is not a per-launch frontier slot is admissible only
+    against its family's perpetual ``<family>:new_api:standalone`` slot: the
+    oracle introduces a genuinely new JAX-callable handle (typically its own file
+    under ``python/sgl_jax/srt/kernels/``) plus a dispatch control at the backend
+    entry, so the axis name, finite domain, source function, sink, and evidence
+    are ORACLE-OWNED; the graph owns only the family and its callsites (derived
+    from kernel_ids). The slot never closes — it authorizes any number of rounds.
+    """
+
+    errors: list[str] = []
+    family = proposed.get("family")
+    standalone_id = f"{family}:{_STANDALONE_AXIS}:{_STANDALONE_CATEGORY}"
+    slot = _standalone_slots(graph).get(standalone_id)
+    if not isinstance(slot, dict):
+        errors.append(
+            f"proposed_action.gap_id {gap_id!r} is not a frontier slot, and its "
+            f"family carries no perpetual {standalone_id!r} standalone-API "
+            "authorization: a novel algorithm must select a per-launch "
+            "unconsidered-flexibility slot from the frontier catalog or declare a "
+            "standalone API under its family's standalone slot"
+        )
+        return errors
+
+    if proposed.get("category") != "schedule-toggle":
+        errors.append(
+            "standalone-API proposals must declare proposed_action.category == "
+            "'schedule-toggle' — the post-implementation shape the frozen "
+            "extractor mines for the dispatch control"
+        )
+
+    axis = proposed.get("source_axis")
+    used_axes = set()
+    records = list((graph or {}).get("gaps") or []) + list(frontier.values())
+    for record in records:
+        if isinstance(record, dict) and record.get("family") == family:
+            used = record.get("source_axis") or record.get("axis")
+            if isinstance(used, str):
+                used_axes.add(used)
+    used_axes.add(_STANDALONE_AXIS)
+    if axis in used_axes:
+        errors.append(
+            f"proposed_action.source_axis {axis!r} collides with an existing "
+            f"finding/slot axis of family {family!r}; a standalone-API dispatch "
+            "axis must be a free name"
+        )
+
+    def _mismatch(field: str, slot_value, declared_value) -> None:
+        errors.append(
+            f"proposed_action.{field} does not match the graph-owned standalone "
+            f"slot template for {standalone_id!r}: slot={slot_value!r}, "
+            f"declared={declared_value!r}"
+        )
+
+    kernel_ids = proposed.get("kernel_ids")
+    slot_kernel_ids = sorted(str(item) for item in slot.get("kernel_ids") or [])
+    if isinstance(kernel_ids, list) and all(
+        isinstance(item, str) for item in kernel_ids
+    ):
+        if sorted(kernel_ids) != slot_kernel_ids:
+            _mismatch("kernel_ids", slot_kernel_ids, sorted(kernel_ids))
+
+    model_callsites = proposed.get("model_callsites")
+    slot_callsites = sorted(str(item) for item in slot.get("model_callsites") or [])
+    if isinstance(model_callsites, list):
+        declared_callsites = sorted(str(item) for item in model_callsites)
+        if declared_callsites != slot_callsites:
+            _mismatch("model_callsites", slot_callsites, declared_callsites)
+    return errors
 
 
 def _frontier_template_errors(proposed: dict, slot: dict, gap_id) -> list[str]:
@@ -649,10 +756,12 @@ def validate_action_reference(manifest: dict, repo: Path) -> dict:
     Two admissible modes over one canonical gap_id catalog:
     - ELEVATE: ``gap_id`` foreign-keys one executable red-link action in the
       incumbent generated graph (an existing-but-not-exposed flexibility).
-    - NOVEL: the manifest carries a ``proposed_action`` record foreign-keying a
-      frontier slot (a not-yet-considered flexibility) through the exact same
-      flexgraph action interface; the anchored record (not the incumbent
-      red-link catalog) supplies the graph-owned fields.
+    - NOVEL: the manifest carries a ``proposed_action`` record anchored either to
+      a per-launch frontier slot (form A, VARIANT TOGGLE) or to its family's
+      perpetual ``<family>:new_api:standalone`` slot (form B, STANDALONE API —
+      free-named dispatch axis) through the exact same flexgraph action
+      interface; the anchored record (not the incumbent red-link catalog)
+      supplies the graph-owned fields.
     """
 
     errors = []

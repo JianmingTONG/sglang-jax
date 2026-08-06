@@ -1,0 +1,13 @@
+{
+ "all_correct": false,
+ "target_hardware_ok": false,
+ "objective_scope": "model-serving-empirical-dp-v2",
+ "error": "model evaluator produced no output (rc=-9)",
+ "models": [],
+ "gate_decision": "reject",
+ "gate_reason": "FROZEN-WORKLOAD GUARD FAILED: models missing=['tiny-linear-serving'] added=[]; calls missing=['tiny-linear-serving/gla-long', 'tiny-linear-serving/gla-short', 'tiny-linear-serving/input-projection', 'tiny-linear-serving/kda-long', 'tiny-linear-serving/kda-short'] added=[]",
+ "capability": "kda_resident_chunk_handoff",
+ "improvement_pct": null,
+ "absolute_improvement_pct": null,
+ "retained_plan_role": "incumbent_plan"
+}
