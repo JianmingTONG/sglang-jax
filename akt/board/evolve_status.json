@@ -1,19 +1,11 @@
 {
- "state": "running",
- "updated_ts": 1786008405.2877316,
- "init_ts": 1784175936.7558303,
- "round": 12,
+ "state": "idle",
+ "updated_ts": 1786010631.2273204,
+ "init_ts": 1786010631.2273204,
+ "round": 0,
  "capability": null,
- "phase": "[akt-model-eval] paired model timing tiny-linear-serving: candidate=3.338ms incumbent=3.343ms",
- "started_ts": 1786005284.4679158,
- "testbench": false,
- "last": {
-  "round": 12,
-  "capability": "gla_value_tile_grouping",
-  "decision": "keep",
-  "reason": "new optimum 0.0003 beats incumbent 0.0003 by 6.75% (> 2%)",
-  "geomean_s": 0.00028541345306016896,
-  "delta_pct": -6.75,
-  "finished_ts": 1784220806.4607303
- }
+ "phase": null,
+ "started_ts": null,
+ "testbench": true,
+ "last": null
 }

@@ -1,41 +1,3265 @@
 {
- "start_ts": 1784173754.8023207,
- "deadline_ts": 1784269378.4474356,
- "round": 12,
+ "start_ts": 1786010631.2023787,
+ "deadline_ts": 1786053831.202379,
+ "api_baseline": {
+  "fingerprint": "ad65961edcd2d34689da941308c559c785ebbe61ffcdd818dc7bca566b384097",
+  "backend": "gpu",
+  "delta": {
+   "noise_floor": {
+    "p5": 0,
+    "p10": 0,
+    "p25": 0,
+    "p50": 0,
+    "p75": 7.0,
+    "p90": 267.0,
+    "p95": 1276.0,
+    "n": 66,
+    "min": 0,
+    "max": 3722.0
+   },
+   "noise_by_case": {
+    "gla:seq512_h8": {
+     "p5": 0,
+     "p10": 0,
+     "p25": 0,
+     "p50": 0,
+     "p75": 0,
+     "p90": 0,
+     "p95": 0,
+     "n": 10,
+     "min": 0,
+     "max": 0
+    },
+    "gla:seq2048_h8": {
+     "p5": 0,
+     "p10": 0,
+     "p25": 0,
+     "p50": 0,
+     "p75": 0,
+     "p90": 0,
+     "p95": 0,
+     "n": 12,
+     "min": 0,
+     "max": 0
+    },
+    "kda:seq128_h2_d64": {
+     "p5": 0,
+     "p10": 7.0,
+     "p25": 17.0,
+     "p50": 240.0,
+     "p75": 593.0,
+     "p90": 1276.0,
+     "p95": 1784.0,
+     "n": 9,
+     "min": 0,
+     "max": 1784.0
+    },
+    "kda:seq256_h4_d128": {
+     "p5": 0,
+     "p10": 0,
+     "p25": 0,
+     "p50": 240.0,
+     "p75": 1276.0,
+     "p90": 1779.0,
+     "p95": 3722.0,
+     "n": 10,
+     "min": 0,
+     "max": 3722.0
+    },
+    "gmm:m256_k512_n512_g4": {
+     "p5": 0,
+     "p10": 0,
+     "p25": 0,
+     "p50": 0,
+     "p75": 0,
+     "p90": 0,
+     "p95": 0,
+     "n": 6,
+     "min": 0,
+     "max": 0
+    },
+    "gmm:m512_k512_n512_g8": {
+     "p5": 0,
+     "p10": 0,
+     "p25": 0,
+     "p50": 0,
+     "p75": 0,
+     "p90": 0,
+     "p95": 0,
+     "n": 7,
+     "min": 0,
+     "max": 0
+    },
+    "moe_v1:t32_e8_k2_h2048_i1024": {
+     "p5": 0,
+     "p10": 0,
+     "p25": 0,
+     "p50": 0,
+     "p75": 0,
+     "p90": 0,
+     "p95": 28.0,
+     "n": 6,
+     "min": 0,
+     "max": 28.0
+    },
+    "moe_v2:t32_e8_k2_h512_i512": {
+     "p5": 0,
+     "p10": 0,
+     "p25": 0,
+     "p50": 0,
+     "p75": 0,
+     "p90": 0,
+     "p95": 54.0,
+     "n": 6,
+     "min": 0,
+     "max": 54.0
+    }
+   },
+   "inter_api": {
+    "p5": 205.0,
+    "p10": 205.0,
+    "p25": 261.0,
+    "p50": 317.0,
+    "p75": 346.0,
+    "p90": 1890.0,
+    "p95": 1897.0,
+    "n": 25,
+    "min": 205.0,
+    "max": 1904.0,
+    "pairs": [
+     [
+      "gla:seq2048_h8",
+      "gmm:m256_k512_n512_g4",
+      317.0
+     ],
+     [
+      "gla:seq2048_h8",
+      "gmm:m512_k512_n512_g8",
+      317.0
+     ],
+     [
+      "gla:seq2048_h8",
+      "kda:seq128_h2_d64",
+      261.0
+     ],
+     [
+      "gla:seq2048_h8",
+      "kda:seq256_h4_d128",
+      261.0
+     ],
+     [
+      "gla:seq2048_h8",
+      "moe_v1:t32_e8_k2_h2048_i1024",
+      346.0
+     ],
+     [
+      "gla:seq2048_h8",
+      "moe_v2:t32_e8_k2_h512_i512",
+      346.0
+     ],
+     [
+      "gla:seq512_h8",
+      "gmm:m256_k512_n512_g4",
+      317.0
+     ],
+     [
+      "gla:seq512_h8",
+      "gmm:m512_k512_n512_g8",
+      317.0
+     ],
+     [
+      "gla:seq512_h8",
+      "kda:seq128_h2_d64",
+      261.0
+     ],
+     [
+      "gla:seq512_h8",
+      "kda:seq256_h4_d128",
+      261.0
+     ],
+     [
+      "gla:seq512_h8",
+      "moe_v1:t32_e8_k2_h2048_i1024",
+      346.0
+     ],
+     [
+      "gla:seq512_h8",
+      "moe_v2:t32_e8_k2_h512_i512",
+      346.0
+     ],
+     [
+      "gmm:m256_k512_n512_g4",
+      "kda:seq128_h2_d64",
+      205.0
+     ],
+     [
+      "gmm:m256_k512_n512_g4",
+      "kda:seq256_h4_d128",
+      205.0
+     ],
+     [
+      "gmm:m256_k512_n512_g4",
+      "moe_v1:t32_e8_k2_h2048_i1024",
+      283.0
+     ],
+     [
+      "gmm:m256_k512_n512_g4",
+      "moe_v2:t32_e8_k2_h512_i512",
+      283.0
+     ],
+     [
+      "gmm:m512_k512_n512_g8",
+      "kda:seq128_h2_d64",
+      205.0
+     ],
+     [
+      "gmm:m512_k512_n512_g8",
+      "kda:seq256_h4_d128",
+      205.0
+     ],
+     [
+      "gmm:m512_k512_n512_g8",
+      "moe_v1:t32_e8_k2_h2048_i1024",
+      283.0
+     ],
+     [
+      "gmm:m512_k512_n512_g8",
+      "moe_v2:t32_e8_k2_h512_i512",
+      283.0
+     ],
+     [
+      "kda:seq128_h2_d64",
+      "moe_v1:t32_e8_k2_h2048_i1024",
+      1897.0
+     ],
+     [
+      "kda:seq128_h2_d64",
+      "moe_v2:t32_e8_k2_h512_i512",
+      1904.0
+     ],
+     [
+      "kda:seq256_h4_d128",
+      "moe_v1:t32_e8_k2_h2048_i1024",
+      1883.0
+     ],
+     [
+      "kda:seq256_h4_d128",
+      "moe_v2:t32_e8_k2_h512_i512",
+      1890.0
+     ],
+     [
+      "moe_v1:t32_e8_k2_h2048_i1024",
+      "moe_v2:t32_e8_k2_h512_i512",
+      1485.0
+     ]
+    ]
+   },
+   "epsilon_ops": 4,
+   "coherence_min": 3,
+   "noise_percentile": 95
+  },
+  "genericity_global": {
+   "p5": 0.0,
+   "p10": 0.0,
+   "p25": 0.0,
+   "p50": 0.0,
+   "p75": 0.0,
+   "p90": 0.5,
+   "p95": 1.0,
+   "n": 9,
+   "min": 0.0,
+   "max": 1.0
+  }
+ },
+ "testbench": true,
+ "round": 0,
  "target_improvement": 0.02,
- "incumbent_geomean": 0.0005252862513323501,
- "incumbent_choices": 4700,
- "shipped_default_geomean": 0.0021445558665979967,
- "base_search_geomean": 0.0008010976398431896,
- "incumbent_commit": "fde5a9f90a41fef550bb536cac5b481243b3d6c3",
- "expected_cases": [
-  "fused_mlp:s128_h256_i512",
-  "fused_mlp:s256_h512_i512",
-  "gla:seq2048_h8",
-  "gla:seq512_h8",
-  "gmm:m256_k512_n512_g4",
-  "gmm:m512_k512_n512_g8",
-  "gmm_v2:m512_k1024_n1024_g8",
-  "kda:seq128_h2_d64",
-  "kda:seq256_h4_d128",
-  "kv_cache:h16_cache8192_new512",
-  "kv_cache:h8_cache4096_new256",
-  "moe_v1:t32_e8_k2_h2048_i1024",
-  "moe_v2:t32_e8_k2_h512_i512",
-  "rpa_v3:d_s2_q4kv2_hd128_p256_ctx512",
-  "rpa_v3:d_s3_q8kv8_hd128_p256_ctx1024"
+ "incumbent_geomean": 0.003348533064126968,
+ "incumbent_choices": 323,
+ "base_search_geomean": 0.003348533064126968,
+ "incumbent_case_spaces": {
+  "gla:seq512_h8": [
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   }
+  ],
+  "gla:seq2048_h8": [
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8
+   }
+  ],
+  "kda:seq128_h2_d64": [
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 64,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   }
+  ],
+  "kda:seq256_h4_d128": [
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 4,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 256,
+    "intra_block_size": 8,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 256,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 256,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 256,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   }
+  ],
+  "gmm:m256_k512_n512_g4": [
+   {
+    "tile_m": 128,
+    "tile_k": 512,
+    "tile_n": 512
+   }
+  ]
+ },
+ "incumbent_plans": {
+  "tiny-linear-serving": {
+   "tiny-linear-serving/input-projection": {
+    "tile_k": 512,
+    "tile_m": 128,
+    "tile_n": 512
+   },
+   "tiny-linear-serving/gla-short": {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "output_value_tiles": 8,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   "tiny-linear-serving/kda-short": {
+    "chunk_size": 64,
+    "compute_block_chunks": 2,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "single_chunk_state_elision": false,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 64,
+    "zero_state_output_elision": false
+   },
+   "tiny-linear-serving/gla-long": {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "output_value_tiles": 2,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   "tiny-linear-serving/kda-long": {
+    "chunk_size": 128,
+    "compute_block_chunks": 2,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
+    "single_chunk_state_elision": false,
+    "state_block_chunks": 2,
+    "state_dim_alignment": 128,
+    "zero_state_output_elision": false
+   }
+  }
+ },
+ "incumbent_output_hashes": {
+  "tiny-linear-serving": {
+   "tiny-linear-serving/input-projection": "8e123369bf298434b80238ba61eae7c178526298e67fcfab5a6e2597e84bcb2e",
+   "tiny-linear-serving/gla-short": "259c2d44c66e7a1ca96c705a8ab0fdf8f4471a80525c7e870b4fc3093c6a4dca",
+   "tiny-linear-serving/kda-short": "0e4d568472b865ac51d162224c9f15f93f0bb626c4ac9c560c3f14b4bcd3b57f",
+   "tiny-linear-serving/gla-long": "605c21da887f171414dd2930fd690c3b59d2b21a9191701c2a6a28b3073ed811",
+   "tiny-linear-serving/kda-long": "f58f2a0b787abcf9f7a6bfa2377689851f58178340ea1455fa440dea4d0d8a8f"
+  }
+ },
+ "incumbent_commit": "328457810739c6f6ec5b01988846875daffe1536",
+ "expected_models": [
+  "tiny-linear-serving"
  ],
- "expected_runnable_cases": [
-  "gla:seq2048_h8",
-  "gla:seq512_h8",
-  "gmm:m256_k512_n512_g4",
-  "gmm:m512_k512_n512_g8",
-  "kda:seq128_h2_d64",
-  "kda:seq256_h4_d128"
+ "expected_callsites": [
+  "tiny-linear-serving/gla-long",
+  "tiny-linear-serving/gla-short",
+  "tiny-linear-serving/input-projection",
+  "tiny-linear-serving/kda-long",
+  "tiny-linear-serving/kda-short"
  ],
- "objective_name": "geomean_s",
+ "workload_fingerprint": "cc4f08999d29362268a7b4b5643691fa7d7980d78d49601924d1708aa49e70f8",
+ "model_contract_fingerprint": "2f1c43e50a4dc3ac709ce4a99f6b3da8c17420c00fffb471d49a315cbdf677d6",
+ "action_graph_fingerprint": "d0be3ecb0a6cd775e54f24141761173f63c8aa32b35855009ddb426de41d2d53",
+ "target_hardware_fingerprint": "fbe8c68970c068917f58d4c06cfa49245c4b32331f1c0dc9f3a82cf391110de1",
+ "gate_contract": {
+  "objective_name": "paired_model_geomean_s",
+  "objective_unit": "s",
+  "objective_scope": "model-serving-empirical-dp-v2",
+  "lower_is_better": true,
+  "summary_keys": {
+   "candidate": "candidate_geomean_s",
+   "incumbent": "incumbent_geomean_s",
+   "paired_ratio": "paired_ratio_geomean"
+  },
+  "eval_script": "akt/benchmark/gates/model_eval.py"
+ },
+ "objective_name": "paired_model_geomean_s",
  "objective_unit": "s",
- "objective_scope": "stateful-serving-deployable-v1",
- "objective_baseline_geomean": 0.0005252862513323501,
- "objective_baseline_round": 12
+ "objective_scope": "model-serving-empirical-dp-v2",
+ "objective_baseline_geomean": 0.003348533064126968,
+ "objective_baseline_round": 0
 }
