@@ -62,6 +62,30 @@
   .trail-review .wide{grid-column:1/-1}
   .trail-files code{display:inline-block;margin:2px 4px 2px 0;overflow-wrap:anywhere}
   .config-line{margin:3px 0;overflow-wrap:anywhere}
+  .cap-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px 12px;margin-bottom:12px}
+  .cap-card.keep{border-left:3px solid var(--good)}
+  .cap-card.reject{border-left:3px solid var(--bad)}
+  .cap-card.doc{border-left:3px solid var(--warn)}
+  .cap-head{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:2px}
+  .cap-round{color:var(--mut);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+  .cap-title{font-size:14.5px;font-weight:600;line-height:1.45;margin:6px 0 8px;max-width:960px}
+  .cap-strip{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums;
+    margin:2px 0 6px;overflow-wrap:anywhere}
+  .cap-strip b{color:var(--ink)}
+  .chip{display:inline-block;border:1px solid var(--line);border-radius:14px;
+    padding:1px 9px;margin:2px 6px 2px 0;font-size:11.5px;background:var(--panel2);
+    font-variant-numeric:tabular-nums}
+  .chip.warn{border-color:var(--warn);color:var(--warn)}
+  .chip.cov{border-color:var(--accent)}
+  .chip code{background:none;padding:0;font-size:11px}
+  .cap-reject{color:var(--bad);font-size:12.5px;margin:4px 0 2px;overflow-wrap:anywhere}
+  .cap-foot{margin-top:9px;padding-top:7px;border-top:1px solid var(--line);
+    font-size:11px;color:var(--mut);overflow-wrap:anywhere}
+  .cap-foot code{font-size:10.5px}
+  .b-form-standalone{color:var(--good);border-color:var(--good)}
+  .b-form-variant{color:var(--accent);border-color:var(--accent)}
+  .b-form-elevation{color:var(--defer);border-color:var(--defer)}
   .camp-title{font-size:12px;font-weight:600;color:var(--mut);margin:14px 0 6px}
   .camp-title:first-child{margin-top:2px}
   .camp-strip{display:flex;gap:2px;width:100%}
@@ -132,11 +156,8 @@
     <div class="sub" style="margin-top:8px" id="covnote"></div>
   </div>
 
-  <h2>Capability-elevation trail</h2>
-  <div class="panel scroll" id="trailwrap"><table id="ttab"><thead><tr>
-    <th class="num">R</th><th>capability</th><th>decision</th><th class="num">Δ%</th>
-    <th>key change</th><th>verification</th>
-  </tr></thead><tbody></tbody></table></div>
+  <h2>Capability-elevation trail <span class="muted">— each card is the API change itself; the control name is only its switch</span></h2>
+  <div id="trailcards"></div>
 
   <h2>Flexibility graph <span class="muted">— red = executable action · dashed = hidden lowering context</span></h2>
   <div class="panel">
@@ -152,6 +173,9 @@
     <div id="autogaps"></div>
     <div id="stackcov" style="margin-top:12px"></div>
   </div>
+
+  <h2 id="jaxgaphead" style="display:none">JAX/Pallas boundary — limitations &amp; patches <span class="muted">— API-boundary gaps the campaign evidenced; each patched API ships a context→limitation→patch→solution doc</span></h2>
+  <div class="panel" id="jaxgappanel" style="display:none"><div id="jaxgapcards"></div></div>
 
   <h2>Flexibility-gap frontier <span class="muted">— frozen hand-curated subset (adapter.FRONTIER)</span></h2>
   <div class="panel"><ul class="frontier" id="frontier"></ul></div>
@@ -256,6 +280,13 @@ function regimeBadge(r){
 function decBadge(d){
   if(d==="keep"||d==="baseline") return '<span class="badge b-keep">'+esc(d)+'</span>';
   return '<span class="badge b-reject">'+esc(d||"reject")+'</span>';
+}
+function formBadge(f){
+  if(f==='standalone-api')
+    return '<span class="badge b-form-standalone" title="Delivers a new standalone kernel API (declared kernel_path)">STANDALONE API</span>';
+  if(f==='variant-toggle')
+    return '<span class="badge b-form-variant" title="New kernel algorithm shipped as a variant behind a control on an existing kernel API">VARIANT</span>';
+  return '<span class="badge b-form-elevation" title="Retired round shape: elevated an existing internal knob into the search">ELEVATION</span>';
 }
 
 function exposureBadge(exposure){
@@ -621,6 +652,40 @@ function renderGaps(fg){
     }).join('');
 }
 
+// JAX/Pallas boundary panel: one card per jax-api-gap finding from the flexgraph
+// (via build.py::_jax_api_gaps). Status chip PATCHED (a reusable API exists) vs
+// DOCUMENTED (limitation recorded, no patch attempted); patched cards name the
+// API and its per-API doc (context → limitation → patch → solution). The whole
+// panel stays hidden when the board carries no findings.
+function renderJaxApiGaps(b){
+  const head=document.getElementById('jaxgaphead'), panel=document.getElementById('jaxgappanel'),
+        host=document.getElementById('jaxgapcards');
+  const gaps=b.jax_api_gaps||[];
+  if(!gaps.length){ head.style.display='none'; panel.style.display='none'; return; }
+  head.style.display=''; panel.style.display='';
+  host.innerHTML=gaps.map(g=>{
+    const patched=g.status==='patched-api-available';
+    const chip=patched
+      ? '<span class="badge b-keep" title="A reusable API patches this boundary gap">PATCHED</span>'
+      : '<span class="badge b-run" title="Recorded as a boundary limitation; no patch attempted">DOCUMENTED</span>';
+    const api=(patched&&g.api)
+      ? '<span class="chip" title="The patch API'+(g.patch_module?' — '+esc(g.patch_module):'')+'">API <code>'+esc(g.api)+'</code></span>' : '';
+    const mod=(patched&&g.patch_module)
+      ? '<span class="chip"><code>'+esc(g.patch_module)+'</code></span>' : '';
+    const doc=g.doc
+      ? '<span class="chip cov" title="Per-API doc — context → limitation → patch → solution">doc <code>'+esc(g.doc)+'</code></span>' : '';
+    const detail=(g.detail&&g.detail!==g.limitation)
+      ? '<details style="margin-top:7px"><summary style="color:var(--accent);cursor:pointer;font-size:12px;font-weight:600">Full finding</summary>'+
+        '<div class="muted" style="font-size:12.5px;margin-top:5px;max-width:960px">'+esc(g.detail)+'</div></details>' : '';
+    return '<div class="cap-card '+(patched?'keep':'doc')+'">'+
+      '<div class="cap-head">'+chip+' <code>'+esc(g.gap_id||g.axis||'')+'</code></div>'+
+      '<div class="cap-title">'+esc(g.limitation||'')+'</div>'+
+      '<div>'+api+mod+doc+'</div>'+detail+
+      '<div class="cap-foot">evidence <code>'+esc(g.evidence||'—')+'</code></div>'+
+      '</div>';
+  }).join('');
+}
+
 async function load(){
   let b={}, stt={}, fg={};
   try{ b = await (await fetch('board.json?_='+Date.now())).json(); }catch(e){}
@@ -717,12 +782,47 @@ async function load(){
       '<td>'+cor+'</td><td>'+ntc+'</td></tr>';
   }).join('') || '<tr><td colspan="7" class="empty">no eval yet — run the loop `init`.</td></tr>';
 
-  // trail
-  const tt = document.querySelector('#ttab tbody');
+  // trail — one card per attempt; the headline is WHAT changed in the API,
+  // the control name is only a mono footnote.
+  const num1 = v => Number.isFinite(v) ? (Number.isInteger(v)? String(v) : v.toFixed(1)) : '?';
+  const covPct = v => Number.isFinite(v) ? (v*100).toFixed(0)+'%' : '—';
+  const tt = document.getElementById('trailcards');
   tt.innerHTML = (b.trail||[]).slice().reverse().map(t=>{
-    const dimensions=(t.search_dimensions||[]).map(d=>
-      (d.control||'?')+'='+JSON.stringify(d.candidate_values||[])).join('; ');
-    const change = t.search_dimension||dimensions||t.hypothesis||'key change not recorded';
+    const ac = t.api_change||{};
+    const kept = (t.decision==='keep'||t.decision==='baseline');
+    const headline = ac.hypothesis_first_sentence || t.hypothesis ||
+      t.search_dimension || 'change description not recorded';
+    // Δ-evidence strip: the candidate program's ISA-graph delta vs the baseline
+    // population — proof this is an algorithm change, not a re-tuned knob.
+    const d = ac.delta;
+    const strip = d
+      ? '<div class="cap-strip">Δ <b>'+num1(d.mass_compute)+'</b>cmp+<b>'+num1(d.mass_memory)+
+        '</b>mem ops vs floor '+num1(d.noise_floor)+' · coherent <b>'+
+        (d.coherence_largest??'?')+'</b> of '+(d.total_ops??'?')+' Δ-ops</div>'
+      : '<div class="cap-strip muted">no ISA-graph delta recorded (pre-guardrail round)</div>';
+    const kfiles = (ac.kernel_files||[]).map(k=>{
+      const lines = Number.isFinite(k.lines_added)
+        ? ' <b>+'+k.lines_added+'</b>/−'+(k.lines_deleted??0) : '';
+      return '<span class="chip"><code>'+esc(k.path.replace('python/sgl_jax/srt/kernels/',''))+
+        '</code>'+lines+'</span>';
+    }).join('');
+    const cov = ac.coverage_relation;
+    const covChip = cov
+      ? '<span class="chip cov" title="'+esc(cov.variant+' vs '+cov.case+
+          ' — fraction of each program\'s substantive op mass reproducible from the other')+'">'+
+        esc(cov.relation||'?')+' vs default: '+covPct(cov.f_default_covered_by_variant)+'/'+
+        covPct(cov.f_variant_covered_by_default)+' mutual cover</span>'
+      : '';
+    const gf = ac.genericity_family;
+    const gfChip = '<span class="chip" title="Genericity WITHIN the affected kernel family only">family G '+
+      (Number.isFinite(gf)? gf.toFixed(2) : '—')+'</span>';
+    const gs = ac.genericity_stack;
+    const gsWarn = gs && Number.isFinite(gs.ratio) && gs.ratio < 0.5;
+    const gsChip = gs
+      ? '<span class="chip'+(gsWarn?' warn':'')+'" title="Coverage of the WHOLE frozen serving stack ('+
+        esc(gs.basis||'')+') — low stack G means the change is family-local, not stack-generic">stack G '+
+        (Number.isFinite(gs.ratio)? gs.ratio.toFixed(2) : '—')+' ('+gs.covered+'/'+gs.total+' callsites)</span>'
+      : '<span class="chip">stack G — (not recorded)</span>';
     const verified = t.correct===true
       ? '<span class="badge b-keep">correct</span>'
       : t.correct===false
@@ -730,9 +830,11 @@ async function load(){
         : '<span class="badge b-defer">not run</span>';
     const exposure = exposureBadge(t.programmer_exposure);
     const objective = objectiveBadge(t, b);
-    const coverage = (t.n_verified!=null || t.n_deferred!=null)
-      ? '<div class="muted" style="margin-top:4px">'+esc(t.n_verified??0)+' checked · '+
-        esc(t.n_deferred??0)+' deferred</div>' : '';
+    const checks = (t.n_verified!=null || t.n_deferred!=null)
+      ? '<span class="muted" style="font-size:12px">'+esc(t.n_verified??0)+' checked · '+
+        esc(t.n_deferred??0)+' deferred</span>' : '';
+    const rejectNote = !kept && t.reason
+      ? '<div class="cap-reject"><b>rejected:</b> '+esc(t.reason)+'</div>' : '';
     const files = (t.files_touched||[]).map(f=>'<code>'+esc(f)+'</code>').join('');
     const configs = (t.best_configs||[]).map(c=>
       '<div class="config-line"><b>'+esc(c.case)+'</b> <code>'+esc(JSON.stringify(c.config))+'</code></div>'
@@ -751,19 +853,27 @@ async function load(){
     const gate = issues.length
       ? '<span class="badge b-reject">'+esc(issues.join(' · '))+'</span>'
       : '<span class="badge b-keep">no missing or truncated cases</span>';
-    return '<tr><td class="num">'+esc(t.round)+'</td><td><b>'+esc(t.capability)+'</b></td>'+
-      '<td>'+decBadge(t.decision)+'</td><td class="num">'+pct(t.delta_pct)+'</td>'+
-      '<td class="trail-change">'+esc(change)+'</td><td>'+verified+' '+exposure+' '+objective+' '+
-      gateBadges(t.empirical_dp,t.live_kimi)+coverage+'</td></tr>'+
-      '<tr class="trail-detail"><td></td><td colspan="5"><details><summary>Review implementation evidence</summary>'+
+    return '<div class="cap-card '+(kept?'keep':'reject')+'">'+
+      '<div class="cap-head"><span class="cap-round">R'+esc(t.round)+'</span> '+
+      decBadge(t.decision)+' '+formBadge(ac.form)+
+      '<span class="cap-round">Δ '+pct(t.delta_pct)+'</span>'+
+      verified+' '+exposure+' '+objective+' '+gateBadges(t.empirical_dp,t.live_kimi)+' '+checks+'</div>'+
+      '<div class="cap-title">'+esc(headline)+'</div>'+
+      strip+
+      '<div>'+kfiles+covChip+gfChip+gsChip+'</div>'+
+      rejectNote+
+      '<details style="margin-top:7px"><summary style="color:var(--accent);cursor:pointer;font-size:12px;font-weight:600">Review implementation evidence</summary>'+
       '<div class="trail-review"><div><b>Why</b><br>'+esc(t.hypothesis||'—')+
       '<div class="muted" style="margin-top:5px">estimated relief '+estimate+'</div></div>'+
       '<div><b>Gate result</b><br>'+esc(t.reason||'—')+'<div style="margin-top:5px">'+gate+'</div></div>'+
       '<div class="wide"><b>Programmer exposure</b><br>'+exposureEvidence(t.programmer_exposure)+'</div>'+
       '<div class="wide"><b>Source gap</b><br>'+gap+'</div>'+
       '<div class="wide trail-files"><b>Files changed</b><br>'+(files||'—')+'</div>'+
-      '<div class="wide"><b>Selected configurations</b>'+configs+'</div></div></details></td></tr>';
-  }).join('') || '<tr><td colspan="6" class="empty">no capability rounds yet.</td></tr>';
+      '<div class="wide"><b>Selected configurations</b>'+configs+'</div></div></details>'+
+      '<div class="cap-foot">control <code>'+esc(ac.control||'—')+'</code> · capability <code>'+
+      esc(t.capability||'—')+'</code></div>'+
+      '</div>';
+  }).join('') || '<div class="empty panel">no capability rounds yet.</div>';
 
   // frontier
   document.getElementById('frontier').innerHTML = (b.frontier||[]).map(f=>
@@ -773,6 +883,7 @@ async function load(){
 
   renderFlexGraph(fg);
   renderGaps(fg);
+  renderJaxApiGaps(b);
 
   document.getElementById('gen').textContent =
     'objective: '+(b.objective||'')+'  ·  generated '+(b.generated||'')+

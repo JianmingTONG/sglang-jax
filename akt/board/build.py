@@ -10,6 +10,8 @@ from __future__ import annotations
 import ast
 import json
 import math
+import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -29,6 +31,12 @@ CAMPAIGN = BOARD / "campaign.json"
 COVERAGE = BOARD / "coverage.json"
 CAPS = ROOT / "core/evolve/capabilities"
 CURRENT_OBJECTIVE_SCOPE = "model-serving-empirical-dp-v2"
+KERNEL_SRC = "python/sgl_jax/srt/kernels/"
+# The frozen benchmark's model-callsite inventory (akt/benchmark/model_workloads
+# .callsite_inventory) — the denominator for STACK-level genericity. Family-level
+# G only says how well the delta covers its own kernel family; stack G says how
+# much of the whole frozen serving suite the API change reaches.
+STACK_CALLSITES_TOTAL = 15
 
 
 def _load_jsonl(p):
@@ -230,6 +238,43 @@ def _flexgraph(eval_summary, state=None):
                 "note": f"Generated action graph unavailable: {e}"}
 
 
+# ---- JAX/Pallas boundary panel: limitations & patches ------------------------
+JAX_API_DOC_DIR = "docs/kernels/api"
+
+
+def _jax_api_gaps(fg):
+    """Cards for the "JAX/Pallas boundary — limitations & patches" panel.
+
+    The extractor emits each entry of akt/core/analysis/jax_api_limitations.md as
+    an analysis-only ``jax-api-gap`` finding. A card carries the status
+    (patched-api-available vs documented-not-patched), the limitation one-liner,
+    the evidence pointer, and — for patched gaps — the API name, its module, and
+    its per-API doc (docs/kernels/api/<axis>.md, context→limitation→patch→
+    solution). Empty list (key absent from the board) when no findings exist."""
+    cards = []
+    for gap in fg.get("gaps") or []:
+        if gap.get("category") != "jax-api-gap":
+            continue
+        axis = gap.get("axis") or gap.get("source_axis")
+        status = gap.get("patch_status") or "documented-not-patched"
+        patched = status == "patched-api-available"
+        doc = f"{JAX_API_DOC_DIR}/{axis}.md" if axis else None
+        if doc and not (REPO / doc).exists():
+            doc = None
+        cards.append({
+            "gap_id": gap.get("gap_id"),
+            "axis": axis,
+            "status": status,
+            "limitation": _first_sentence(gap.get("detail")) or gap.get("what"),
+            "detail": gap.get("detail"),
+            "evidence": gap.get("evidence"),
+            "api": axis if patched else None,
+            "patch_module": gap.get("patch_module") if patched else None,
+            "doc": doc,
+        })
+    return cards
+
+
 def _compact_empirical_status(record):
     certificate = (record or {}).get("empirical_dp_certificate") or {}
     if not certificate:
@@ -401,6 +446,231 @@ def _design_funnel(eval_summary):
     return {"cases": cases, "totals": totals}
 
 
+def _first_sentence(text):
+    """The first sentence of a hypothesis — the API modification in words."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    flattened = " ".join(text.split())
+    match = re.match(r"(.+?[.!?])(?:\s|$)", flattened)
+    return match.group(1) if match else flattened
+
+
+def _keep_commit_map():
+    """capability name -> KEEP commit sha, parsed from the git subject lines the
+    loop writes ("akt evolve R<k> KEEP capability=<name>: ..."). Read-only and
+    fail-soft: no git (or no repo) just means no per-file line counts."""
+    try:
+        proc = subprocess.run(
+            ["git", "log", "--format=%H %s"],
+            cwd=REPO, capture_output=True, text=True, timeout=30, check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return {}
+    if proc.returncode != 0:
+        return {}
+    commits = {}
+    marker = "KEEP capability="
+    for line in proc.stdout.splitlines():
+        sha, _, subject = line.partition(" ")
+        idx = subject.find(marker)
+        if idx < 0:
+            continue
+        name = subject[idx + len(marker):].split(":", 1)[0].strip()
+        if name:
+            commits.setdefault(name, sha)  # newest first
+    return commits
+
+
+def _kernel_numstat(commit):
+    """{kernel path -> {'added': n, 'deleted': n}} for one KEEP commit,
+    restricted to production kernel sources. Empty on any git failure."""
+    try:
+        proc = subprocess.run(
+            ["git", "show", "--numstat", "--format=", commit, "--", KERNEL_SRC],
+            cwd=REPO, capture_output=True, text=True, timeout=30, check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return {}
+    if proc.returncode != 0:
+        return {}
+    stats = {}
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        added, deleted, path = parts
+        try:
+            stats[path] = {"added": int(added), "deleted": int(deleted)}
+        except ValueError:  # binary file numstat ("-")
+            stats[path] = {}
+    return stats
+
+
+def _genericity_stack(record, api):
+    """Stack-level genericity: covered frozen callsites / all 15 frozen callsites.
+
+    Prefers the loop's native ``api_novelty.genericity_stack`` (new rounds);
+    falls back to counting distinct covered_patterns across the genericity
+    entries, then to the contract's affected-callsite count. None when a round
+    predates every source (legacy elevation rounds) — the board tolerates that."""
+    native = api.get("genericity_stack")
+    if isinstance(native, dict) and isinstance(native.get("covered"), int):
+        total = native.get("total") or STACK_CALLSITES_TOTAL
+        return {
+            "covered": native["covered"],
+            "total": total,
+            "ratio": (native["covered"] / total) if total else None,
+            "basis": "native",
+        }
+    covered = set()
+    for entry in (api.get("genericity") or {}).values():
+        if isinstance(entry, dict):
+            covered.update(
+                p for p in entry.get("covered_patterns") or [] if isinstance(p, str)
+            )
+    if covered:
+        return {
+            "covered": len(covered),
+            "total": STACK_CALLSITES_TOTAL,
+            "ratio": len(covered) / STACK_CALLSITES_TOTAL,
+            "basis": "covered_patterns",
+        }
+    affected = (record.get("capability_contract") or {}).get(
+        "affected_model_callsites"
+    ) or []
+    if affected:
+        return {
+            "covered": len(affected),
+            "total": STACK_CALLSITES_TOTAL,
+            "ratio": len(affected) / STACK_CALLSITES_TOTAL,
+            "basis": "affected_callsites",
+        }
+    return None
+
+
+def _coverage_relation(per_case, coverage):
+    """The coverage-graph edge between the round's variant program node
+    (``case@knob=value``) and its case-default node, when both were traced."""
+    edges = (coverage or {}).get("edges") or []
+    if not edges or not per_case:
+        return None
+    found = []
+    for case in per_case:
+        case_id = case.get("case_id")
+        knob = case.get("knob")
+        if not case_id or not knob:
+            continue
+        variant = f"{case_id}@{knob}={case.get('selected_value')}"
+        for edge in edges:
+            if {edge.get("a"), edge.get("b")} != {case_id, variant}:
+                continue
+            default_first = edge.get("a") == case_id
+            found.append({
+                "case": case_id,
+                "variant": variant,
+                "relation": edge.get("relation"),
+                "f_default_covered_by_variant": (
+                    edge.get("f_ab") if default_first else edge.get("f_ba")
+                ),
+                "f_variant_covered_by_default": (
+                    edge.get("f_ba") if default_first else edge.get("f_ab")
+                ),
+            })
+            break
+    if not found:
+        return None
+    first = dict(found[0])
+    first["n_edges"] = len(found)
+    return first
+
+
+def _api_change(record, manifest, coverage, keep_commits):
+    """One attempt's API change, described as a change (not a control name):
+    its form, the touched kernel sources (+line counts for kept rounds), the
+    hypothesis headline, the ISA-graph delta evidence, family vs stack
+    genericity, and the coverage-graph relation of variant vs default."""
+    api = record.get("api_novelty") or {}
+    delta_src = api.get("delta") or {}
+    manifest_dims = [
+        d for d in (manifest.get("search_dimensions") or []) if isinstance(d, dict)
+    ]
+    record_dims = [
+        d for d in (record.get("search_dimensions") or []) if isinstance(d, dict)
+    ]
+    per_case = [c for c in (delta_src.get("per_case") or []) if isinstance(c, dict)]
+
+    # Form: a manifest with a proposed_action is a NOVEL kernel change — a
+    # standalone API when it declares a kernel_path dimension (universal
+    # delivery), otherwise a variant behind a toggle on an existing kernel.
+    # No proposed_action = the retired parameter-elevation round shape.
+    if manifest.get("proposed_action"):
+        form = (
+            "standalone-api"
+            if any(d.get("kernel_path") for d in manifest_dims)
+            else "variant-toggle"
+        )
+    else:
+        form = "elevation"
+
+    control = next(
+        (
+            d.get("control") or d.get("knob")
+            for d in (record_dims or manifest_dims)
+            if d.get("control") or d.get("knob")
+        ),
+        None,
+    )
+    if control is None and per_case:
+        control = per_case[0].get("knob")
+    if control is None:
+        text = record.get("search_dimension") or manifest.get("search_dimension") or ""
+        match = re.search(r"Knob\s+(\w+)", text)
+        control = match.group(1) if match else None
+
+    files = record.get("files_touched") or manifest.get("files_touched") or []
+    kernel_paths = [
+        f for f in files if isinstance(f, str) and f.startswith(KERNEL_SRC)
+    ]
+    stats = {}
+    if kernel_paths and record.get("decision") in ("keep", "baseline"):
+        commit = keep_commits.get(record.get("capability"))
+        if commit:
+            stats = _kernel_numstat(commit)
+    kernel_files = []
+    for path in kernel_paths:
+        entry = {"path": path}
+        stat = stats.get(path)
+        if stat and "added" in stat:
+            entry["lines_added"] = stat["added"]
+            entry["lines_deleted"] = stat["deleted"]
+        kernel_files.append(entry)
+
+    delta = None
+    if delta_src:
+        mass = delta_src.get("mass") or {}
+        coherence = delta_src.get("coherence") or {}
+        delta = {
+            "mass_compute": mass.get("compute"),
+            "mass_memory": mass.get("memory"),
+            "total_ops": delta_src.get("total_ops"),
+            "coherence_largest": coherence.get("largest"),
+            "noise_floor": delta_src.get("noise_floor"),
+        }
+
+    return {
+        "form": form,
+        "control": control,
+        "kernel_files": kernel_files,
+        "hypothesis_first_sentence": _first_sentence(
+            manifest.get("hypothesis") or record.get("hypothesis")
+        ),
+        "delta": delta,
+        "genericity_family": api.get("genericity_min"),
+        "genericity_stack": _genericity_stack(record, api),
+        "coverage_relation": _coverage_relation(per_case, coverage),
+    }
+
+
 def _trail_record(record, manifest):
     """Normalize current and historical round schemas into one compact board row."""
 
@@ -532,10 +802,14 @@ def build():
     hist = _load_jsonl(HIST)
     kernels, eval_summary = _kernels_from_eval()
 
+    coverage = _coverage()
+    keep_commits = _keep_commit_map()
     trail = []
     for r in hist:
         mm = manifests.get(r.get("capability"), {})
-        trail.append(_trail_record(r, mm))
+        row = _trail_record(r, mm)
+        row["api_change"] = _api_change(r, mm, coverage, keep_commits)
+        trail.append(row)
     original_geomean, replayed_geomean = _apply_incumbent_envelope(trail, st)
     kept = [t for t in trail if t["decision"] in ("keep", "baseline")]
     rejected = [t for t in trail if t["decision"] not in ("keep", "baseline")]
@@ -618,14 +892,26 @@ def build():
         "convergence": convergence,
         "frontier": FRONTIER,
         "trail": trail, "kept": kept, "rejected": rejected,
+        "api_changes": [
+            {
+                "round": t.get("round"),
+                "capability": t.get("capability"),
+                "decision": t.get("decision"),
+                "delta_pct": t.get("delta_pct"),
+                **(t.get("api_change") or {}),
+            }
+            for t in kept
+        ],
         "n_rounds": len(trail),
     }
     campaign = _campaign()
     if campaign is not None:
         board["campaign"] = campaign
-    coverage = _coverage()
     if coverage is not None:
         board["coverage"] = coverage
+    jax_api_gaps = _jax_api_gaps(fg)
+    if jax_api_gaps:
+        board["jax_api_gaps"] = jax_api_gaps
     (BOARD / "board.json").write_text(json.dumps(_clean(board), indent=1, allow_nan=False))
     (BOARD / "flexgraph.json").write_text(json.dumps(_clean(fg), indent=1, allow_nan=False))
     n_run = sum(1 for k in kernels if k.get("best_s"))

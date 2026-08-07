@@ -1,19 +1,19 @@
 {
- "state": "running",
- "updated_ts": 1786046567.7846482,
+ "state": "idle",
+ "updated_ts": 1786056307.438096,
  "init_ts": 1786023097.9306195,
- "round": 5,
- "capability": null,
- "phase": "oracle: tool:Bash timeout 1800 .venv/bin/python -c \"\nimport sys;",
- "started_ts": 1786046143.2013187,
+ "round": 7,
+ "capability": "kda_packed_resident_api",
+ "phase": null,
+ "started_ts": null,
  "testbench": true,
  "last": {
-  "round": 4,
-  "capability": "kda_resident_chunk_layout",
+  "round": 7,
+  "capability": "kda_packed_resident_api",
   "decision": "reject",
-  "reason": "FROZEN-WORKLOAD GUARD FAILED: models missing=['tiny-linear-serving'] added=[]; calls missing=['tiny-linear-serving/gla-long', 'tiny-linear-serving/gla-short', 'tiny-linear-serving/input-projection', 'tiny-linear-serving/kda-long', 'tiny-linear-serving/kda-short'] added=[]",
-  "geomean_s": null,
-  "delta_pct": null,
-  "finished_ts": 1786046107.5099187
+  "reason": "API-NOVELTY GUARD FAILED (parameter tweak / insufficient coverage):  |\u0394|cmp=0.000 |\u0394|mem=32.000 vs noise_floor=1784.000; coherence components=11 largest=4 max_depth=4 zero_embed=0; G_delta=1.000 vs cut=0.500",
+  "geomean_s": 0.0030963206663727756,
+  "delta_pct": -68.06,
+  "finished_ts": 1786056307.4380941
  }
 }

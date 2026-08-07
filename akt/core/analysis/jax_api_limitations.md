@@ -68,6 +68,10 @@ equality with the scatter formulation on GLA-unalign packed/varlen patterns is p
 `python/sgl_jax/test/test_permute_common.py`. Existing kernels are deliberately NOT
 rewired: the API is introduced as an existing handle for future loop rounds to elevate.
 
+> Per-API doc (context → limitation → patch → solution):
+> `docs/kernels/api/single_move_permute.md` — index of all boundary APIs:
+> `docs/kernels/api/README.md`.
+
 ## 2. Secondary limitations surfaced by the testbench (documented, not patched)
 
 Recorded per round in `akt/optimization_history/evals/*.json` (regime `tpu-deferred`,

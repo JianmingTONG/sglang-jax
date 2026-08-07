@@ -365,6 +365,174 @@ def test_coverage_graph_is_included_verbatim_when_present(tmp_path, monkeypatch)
     assert "b.coverage" in html
 
 
+def test_api_change_assembly_from_a_synthetic_record(monkeypatch):
+    monkeypatch.setattr(
+        board_build,
+        "_kernel_numstat",
+        lambda commit: {
+            "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py": {
+                "added": 256, "deleted": 8,
+            }
+        },
+    )
+    record = {
+        "capability": "cap_x",
+        "decision": "keep",
+        "files_touched": [
+            "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+            "akt/core/runners/gla.py",
+        ],
+        "search_dimensions": [{"control": "gla.enable_variant"}],
+        "capability_contract": {
+            "affected_model_callsites": [
+                "tiny-linear-serving/gla-long", "tiny-linear-serving/gla-short",
+            ]
+        },
+        "api_novelty": {
+            "genericity_min": 1.0,
+            "genericity": {
+                "enable_variant": {
+                    "G": 1.0,
+                    "covered_patterns": [
+                        "tiny-linear-serving/gla-long",
+                        "tiny-linear-serving/gla-short",
+                    ],
+                }
+            },
+            "delta": {
+                "mass": {"compute": 12.0, "memory": 6.0},
+                "total_ops": 18,
+                "noise_floor": 4.0,
+                "coherence": {"components": 1, "largest": 18},
+                "per_case": [{
+                    "case_id": "gla:seq512_h8",
+                    "knob": "enable_variant",
+                    "selected_value": True,
+                }],
+            },
+        },
+    }
+    manifest = {
+        "proposed_action": "{'gap_id': 'simple_gla:enable_variant'}",
+        "hypothesis": "The output stage owns its own layout. So it moves rows once.",
+        "search_dimensions": [{"control": "gla.enable_variant"}],
+    }
+    coverage = {
+        "edges": [{
+            "a": "gla:seq512_h8",
+            "b": "gla:seq512_h8@enable_variant=True",
+            "relation": "generalizes", "f_ab": 0.87, "f_ba": 0.94,
+        }]
+    }
+
+    change = board_build._api_change(
+        record, manifest, coverage, {"cap_x": "abc123"}
+    )
+
+    assert change["form"] == "variant-toggle"      # proposed_action, no kernel_path
+    assert change["control"] == "gla.enable_variant"
+    assert change["hypothesis_first_sentence"] == (
+        "The output stage owns its own layout."
+    )
+    assert change["kernel_files"] == [{
+        "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+        "lines_added": 256, "lines_deleted": 8,
+    }]
+    assert change["delta"] == {
+        "mass_compute": 12.0, "mass_memory": 6.0, "total_ops": 18,
+        "coherence_largest": 18, "noise_floor": 4.0,
+    }
+    assert change["genericity_family"] == 1.0
+    assert change["genericity_stack"] == {
+        "covered": 2, "total": 15, "ratio": 2 / 15, "basis": "covered_patterns",
+    }
+    relation = change["coverage_relation"]
+    assert relation["relation"] == "generalizes"
+    assert relation["f_default_covered_by_variant"] == 0.87
+    assert relation["f_variant_covered_by_default"] == 0.94
+
+    # A declared kernel_path dimension makes the change a standalone API.
+    standalone = board_build._api_change(
+        record,
+        {"proposed_action": "x", "search_dimensions": [
+            {"control": "c", "kernel_path": "python/sgl_jax/srt/kernels/k.py"}
+        ]},
+        None, {},
+    )
+    assert standalone["form"] == "standalone-api"
+
+    # Legacy rounds without a proposed_action are parameter ELEVATION rounds,
+    # and absence of every genericity source is tolerated.
+    legacy = board_build._api_change({"decision": "keep"}, {}, None, {})
+    assert legacy["form"] == "elevation"
+    assert legacy["genericity_stack"] is None
+    assert legacy["coverage_relation"] is None
+
+    # A native loop-recorded genericity_stack wins over recomputation.
+    native = board_build._api_change(
+        {"decision": "reject",
+         "api_novelty": {"genericity_stack": {"covered": 5, "total": 15}}},
+        {}, None, {},
+    )
+    assert native["genericity_stack"] == {
+        "covered": 5, "total": 15, "ratio": 5 / 15, "basis": "native",
+    }
+
+
+def test_jax_api_gaps_extracted_from_the_generated_flexgraph():
+    graph = _flexgraph({})
+    assert graph["kind"] != "unavailable"
+
+    cards = board_build._jax_api_gaps(graph)
+
+    assert cards, "the flexgraph carries jax-api-gap findings"
+    statuses = {card["status"] for card in cards}
+    assert "patched-api-available" in statuses
+    patched = next(c for c in cards if c["status"] == "patched-api-available")
+    assert patched["api"] == "single_move_permute"
+    assert patched["patch_module"] == (
+        "python/sgl_jax/srt/kernels/common/permute.py"
+    )
+    assert patched["doc"] == "docs/kernels/api/single_move_permute.md"
+    assert (ROOT / patched["doc"]).exists()
+    documented = next(
+        c for c in cards if c["status"] == "documented-not-patched"
+    )
+    assert documented["api"] is None
+    assert documented["patch_module"] is None
+    assert documented["doc"] is None
+    assert all(card["limitation"] and card["evidence"] for card in cards)
+
+
+def test_jax_api_gaps_card_shape_and_board_panel_wiring():
+    cards = board_build._jax_api_gaps({"gaps": [
+        {
+            "category": "jax-api-gap",
+            "gap_id": "x:a:jax-api-gap",
+            "axis": "a",
+            "detail": "One-line limitation. Longer elaboration follows.",
+            "evidence": "akt/core/analysis/jax_api_limitations.md:1",
+            "patch_status": "documented-not-patched",
+        },
+        {"category": "pipeline-depth", "gap_id": "other:gap"},
+    ]})
+
+    assert len(cards) == 1                      # non-boundary gaps are excluded
+    card = cards[0]
+    assert card["status"] == "documented-not-patched"
+    assert card["limitation"] == "One-line limitation."
+    assert card["evidence"] == "akt/core/analysis/jax_api_limitations.md:1"
+    assert card["doc"] is None                  # no docs/kernels/api/a.md exists
+    assert board_build._jax_api_gaps({"gaps": []}) == []
+    assert board_build._jax_api_gaps({}) == []  # unavailable-graph fallback
+
+    html = (ROOT / "akt/board/index.html").read_text()
+    assert "renderJaxApiGaps" in html
+    assert "b.jax_api_gaps" in html
+    assert 'id="jaxgaphead"' in html
+    assert 'id="jaxgapcards"' in html
+
+
 def test_design_funnel_attributes_selection_to_cases_and_knobs():
     summary = {
         "case_search": {

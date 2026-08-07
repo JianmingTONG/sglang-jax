@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-06 18:37:37",
+ "generated": "2026-08-06 21:15:29",
  "suite": "full",
  "nodes": [
   {
@@ -117,6 +117,16 @@
    "mass_memory": 124.0
   },
   {
+   "id": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "case": "gla:seq512_h8",
+   "kernel": "gla",
+   "knob": "enable_chunk_fwd_h_kernel_varlen_variant",
+   "value": true,
+   "ops": 446,
+   "mass_compute": 277.0,
+   "mass_memory": 169.0
+  },
+  {
    "id": "gla:seq2048_h8@compact_alignment=True",
    "case": "gla:seq2048_h8",
    "kernel": "gla",
@@ -165,6 +175,16 @@
    "ops": 356,
    "mass_compute": 232.0,
    "mass_memory": 124.0
+  },
+  {
+   "id": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "case": "gla:seq2048_h8",
+   "kernel": "gla",
+   "knob": "enable_chunk_fwd_h_kernel_varlen_variant",
+   "value": true,
+   "ops": 446,
+   "mass_compute": 277.0,
+   "mass_memory": 169.0
   },
   {
    "id": "kda:seq128_h2_d64@intra_block_size=8",
@@ -745,6 +765,62 @@
    "f_ba": 0.0611
   },
   {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gla:seq512_h8",
+   "relation": "overlaps",
+   "f_ab": 0.6951,
+   "f_ba": 0.8052
+  },
+  {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gla:seq2048_h8",
+   "relation": "overlaps",
+   "f_ab": 0.6951,
+   "f_ba": 0.8052
+  },
+  {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "kda:seq128_h2_d64",
+   "relation": "disjoint",
+   "f_ab": 0.2848,
+   "f_ba": 0.065
+  },
+  {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "kda:seq256_h4_d128",
+   "relation": "disjoint",
+   "f_ab": 0.2848,
+   "f_ba": 0.0654
+  },
+  {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gmm:m256_k512_n512_g4",
+   "relation": "disjoint",
+   "f_ab": 0.1525,
+   "f_ba": 0.2086
+  },
+  {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gmm:m512_k512_n512_g8",
+   "relation": "disjoint",
+   "f_ab": 0.1525,
+   "f_ba": 0.2086
+  },
+  {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "moe_v1:t32_e8_k2_h2048_i1024",
+   "relation": "disjoint",
+   "f_ab": 0.0381,
+   "f_ba": 0.0087
+  },
+  {
+   "a": "gla:seq512_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "moe_v2:t32_e8_k2_h512_i512",
+   "relation": "disjoint",
+   "f_ab": 0.0381,
+   "f_ba": 0.0266
+  },
+  {
    "a": "gla:seq2048_h8@compact_alignment=True",
    "b": "gla:seq512_h8",
    "relation": "equivalent",
@@ -1023,6 +1099,62 @@
    "relation": "disjoint",
    "f_ab": 0.1096,
    "f_ba": 0.0611
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gla:seq512_h8",
+   "relation": "overlaps",
+   "f_ab": 0.6951,
+   "f_ba": 0.8052
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gla:seq2048_h8",
+   "relation": "overlaps",
+   "f_ab": 0.6951,
+   "f_ba": 0.8052
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "kda:seq128_h2_d64",
+   "relation": "disjoint",
+   "f_ab": 0.2848,
+   "f_ba": 0.065
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "kda:seq256_h4_d128",
+   "relation": "disjoint",
+   "f_ab": 0.2848,
+   "f_ba": 0.0654
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gmm:m256_k512_n512_g4",
+   "relation": "disjoint",
+   "f_ab": 0.1525,
+   "f_ba": 0.2086
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "gmm:m512_k512_n512_g8",
+   "relation": "disjoint",
+   "f_ab": 0.1525,
+   "f_ba": 0.2086
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "moe_v1:t32_e8_k2_h2048_i1024",
+   "relation": "disjoint",
+   "f_ab": 0.0381,
+   "f_ba": 0.0087
+  },
+  {
+   "a": "gla:seq2048_h8@enable_chunk_fwd_h_kernel_varlen_variant=True",
+   "b": "moe_v2:t32_e8_k2_h512_i512",
+   "relation": "disjoint",
+   "f_ab": 0.0381,
+   "f_ba": 0.0266
   },
   {
    "a": "kda:seq128_h2_d64@intra_block_size=8",
@@ -1587,8 +1719,8 @@
  ],
  "relations": {
   "equivalent": 7,
-  "overlaps": 77,
-  "disjoint": 84,
+  "overlaps": 81,
+  "disjoint": 96,
   "generalizes": 20
  },
  "dropped_nodes": [],
@@ -1643,7 +1775,7 @@
   },
   {
    "id": "gmm_v2:m512_k1024_n1024_g8",
-   "reason": "ValueError: Unsupported TPU device kind: cpu"
+   "reason": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090"
   },
   {
    "id": "rpa_v3:d_s2_q4kv2_hd128_p256_ctx512",
@@ -1655,11 +1787,11 @@
   },
   {
    "id": "fused_mlp:s128_h256_i512",
-   "reason": "ValueError: Unsupported TPU device kind: cpu"
+   "reason": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090"
   },
   {
    "id": "fused_mlp:s256_h512_i512",
-   "reason": "ValueError: Unsupported TPU device kind: cpu"
+   "reason": "ValueError: Unsupported TPU device kind: NVIDIA GeForce RTX 5090"
   },
   {
    "id": "kv_cache:h8_cache4096_new256",
@@ -1671,6 +1803,6 @@
   }
  ],
  "edge_errors": [],
- "runtime_s": 75.85,
+ "runtime_s": 76.25,
  "note": "f_ab = fraction of a's substantive op mass reproducible from b alone (api_metrics.subtract_catalog two-pass delta); 'generalizes' means a reproduces b (a \u2287 b). Cross-case pairs restricted to case-default nodes; variant nodes compare against case defaults only. suite=full."
 }
