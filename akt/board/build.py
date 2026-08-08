@@ -195,6 +195,20 @@ def _control_inventory():
     }
 
 
+def _relief_evidence():
+    """Adapter-owned relief evidence per catalog entry (gap_id -> string).
+
+    Measured default-vs-best-alternative latency for red-link actions; campaign
+    family-share/limiter diagnosis for frontier/standalone slots. Fail-soft:
+    an empty map keeps the board rendering without relief chips."""
+    try:
+        from akt.benchmark.adapter import relief_evidence
+
+        return relief_evidence()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 # ---- Flexibility graph: compiler context + canonical AKT actions -------------
 def _flexgraph(eval_summary, state=None):
     try:
@@ -229,6 +243,8 @@ def _flexgraph(eval_summary, state=None):
             "campaign_action_graph_fingerprint": expected,
             "action_context_status": status,
             "actions_executable_for_campaign": status == "current",
+            # per-catalog-entry relief evidence (adapter-owned; keyed by gap_id)
+            "relief": _relief_evidence(),
         }
     except Exception as e:  # noqa: BLE001
         return {"kind": "unavailable", "error": repr(e)[:200], "nodes": [],
@@ -649,12 +665,23 @@ def _api_change(record, manifest, coverage, keep_commits):
     if delta_src:
         mass = delta_src.get("mass") or {}
         coherence = delta_src.get("coherence") or {}
+        delta_pct = delta_src.get("delta_pct")
+        similarity = (
+            1.0 - delta_pct
+            if isinstance(delta_pct, (int, float))
+            and not isinstance(delta_pct, bool)
+            and math.isfinite(delta_pct)
+            else None
+        )
         delta = {
             "mass_compute": mass.get("compute"),
             "mass_memory": mass.get("memory"),
             "total_ops": delta_src.get("total_ops"),
             "coherence_largest": coherence.get("largest"),
             "noise_floor": delta_src.get("noise_floor"),
+            # program-delta novelty score δ and its similarity complement R=1−δ
+            "delta_pct": delta_pct,
+            "similarity": similarity,
         }
 
     return {

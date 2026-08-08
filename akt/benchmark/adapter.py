@@ -7,9 +7,12 @@ to THIS file and reads one JSON line per subcommand, so the whole benchmark doma
 CONTRACT
   adapter.py bottleneck  -> "AKT_BOTTLENECK {json}": {title, lines[], note}
       what dominates the suite latency (ranked kernels), pre-rendered for the QUERY.
-  adapter.py gaps        -> "AKT_GAPS {json}":       {title, lines[], note}
+  adapter.py gaps        -> "AKT_GAPS {json}":       {title, lines[], relief{}, note}
       the validated red-link action catalog: source-derived low-level flexibilities
-      the programmer API does NOT currently expose.
+      the programmer API does NOT currently expose. Every catalog entry (red-link
+      action, frontier slot, perpetual standalone slot) carries a `relief` evidence
+      string: measured default-vs-best-alternative latency from the latest eval for
+      red-link actions, campaign family-share/limiter diagnosis for slots.
   adapter.py space [--kernel K] -> plain text: per-case design-space size + knobs
       (evidence the enlarged space is enumerated, used by loop.search_audit).
 
@@ -34,6 +37,7 @@ for p in (str(REPO), str(REPO / "python"), str(AKT)):
         sys.path.insert(0, p)
 
 EVAL_OUT = AKT / "optimization_history/.evolve_eval.json"
+CAMPAIGN_OUT = AKT / "board/campaign.json"
 
 
 # ------------------------------------------------------------------ bottleneck
@@ -147,6 +151,137 @@ def cmd_bottleneck(_args):
     }))
 
 
+def _catalog_standalone_slots():
+    """Perpetual `<family>:new_api:standalone` slots, straight from the generated graph."""
+    from akt.core.evolve.action_catalog import GRAPH
+
+    try:
+        graph = json.loads((REPO / GRAPH).read_text())
+    except Exception:  # noqa: BLE001
+        return []
+    return [
+        record
+        for record in graph.get("standalone_frontier_actions") or []
+        if isinstance(record, dict) and isinstance(record.get("gap_id"), str)
+    ]
+
+
+def _measured_axis_relief(action, summary):
+    """Concrete measured speedup evidence for one red-link action.
+
+    Reads the latest gate eval's exhaustive per-case measurement tables: if the
+    action's axis is a knob in a measured case of the action's kernel(s), report
+    the best latency at the incumbent value vs the best alternative value —
+    "measured[case]: default=Xms best_alt(axis=v)=Yms (±Z%)". A testbench-
+    deferred case or an unmeasured axis is reported honestly, never invented.
+    """
+    axis = action.get("source_axis")
+    incumbent = action.get("incumbent_value")
+    kernels = set(action.get("kernel_ids") or [])
+    case_search = (summary or {}).get("case_search") or {}
+    parts = []
+    for case_id in sorted(case_search):
+        if case_id.split(":", 1)[0] not in kernels:
+            continue
+        best_by_value = {}
+        for row in (case_search[case_id] or {}).get("measurements") or []:
+            config = row.get("config") or {}
+            latency = row.get("latency_s")
+            if axis not in config or not isinstance(latency, (int, float)):
+                continue
+            key = json.dumps(config[axis], sort_keys=True)
+            if key not in best_by_value or latency < best_by_value[key][0]:
+                best_by_value[key] = (latency, config[axis])
+        default_key = json.dumps(incumbent, sort_keys=True)
+        default = best_by_value.get(default_key)
+        alternatives = [v for k, v in best_by_value.items() if k != default_key]
+        if default is None or not alternatives:
+            continue
+        alt_latency, alt_value = min(alternatives, key=lambda pair: pair[0])
+        change = 100.0 * (alt_latency - default[0]) / default[0]
+        parts.append(
+            f"measured[{case_id}]: default={default[0] * 1e3:.2f}ms "
+            f"best_alt({axis}={alt_value})={alt_latency * 1e3:.2f}ms "
+            f"({change:+.1f}%)"
+        )
+    return "; ".join(parts) if parts else "unmeasured on testbench (tpu-deferred)"
+
+
+def _campaign_diagnosis_relief(slot, campaign):
+    """Campaign-diagram evidence for a frontier/standalone slot.
+
+    Attaches the slot family's measured L0 latency share and verdict from the
+    campaign diagnosis, plus an explicit LIMITER match and frontier-hint match
+    when the diagnosis points at this family/slot."""
+    if not isinstance(campaign, dict) or not campaign.get("levels"):
+        return "diagnosis: campaign diagnosis unavailable"
+    kernels = set(slot.get("kernel_ids") or [])
+    share, verdicts, matched = 0.0, [], 0
+    for level in campaign.get("levels") or []:
+        if level.get("level") != 0:
+            continue
+        for segment in level.get("segments") or []:
+            case = segment.get("case") or ""
+            if case.split(":", 1)[0] not in kernels:
+                continue
+            matched += 1
+            share += segment.get("share") or 0.0
+            verdict = segment.get("verdict")
+            if verdict and verdict not in verdicts:
+                verdicts.append(verdict)
+    extras = []
+    limiter = campaign.get("limiter") or {}
+    if limiter.get("kernel_id") in kernels:
+        extras.append(
+            "LIMITER match: "
+            f"{limiter.get('stage')} {limiter.get('engine')} {limiter.get('verdict')}"
+        )
+    if slot.get("gap_id") in (campaign.get("hints") or []):
+        extras.append("campaign frontier hint")
+    if not matched:
+        return "diagnosis: family unmeasured on testbench (tpu-deferred); no L0 share"
+    text = (
+        f"diagnosis: family share={100.0 * share:.1f}% "
+        f"verdict={'/'.join(verdicts) or 'undetermined'} "
+        f"(L0 {matched} callsite(s))"
+    )
+    return "; ".join([text, *extras])
+
+
+def relief_evidence(context=None, summary=None, campaign=None):
+    """gap_id -> concrete, honest relief evidence for EVERY catalog entry.
+
+    Red-link actions carry measured default-vs-best-alternative latency from
+    the latest eval summary (or an explicit unmeasured-on-testbench note);
+    frontier and perpetual standalone slots carry campaign-diagnosis evidence
+    (family L0 share, verdict, limiter/hint match). This makes the elevate-vs-
+    invent choice evidence-based per entry — numbers are never invented."""
+    if context is None:
+        from akt.core.evolve.action_catalog import action_catalog_context
+
+        context = action_catalog_context(REPO)
+    if summary is None:
+        try:
+            summary = json.loads(EVAL_OUT.read_text()) if EVAL_OUT.exists() else {}
+        except Exception:  # noqa: BLE001
+            summary = {}
+    if campaign is None:
+        try:
+            campaign = (
+                json.loads(CAMPAIGN_OUT.read_text()) if CAMPAIGN_OUT.exists() else {}
+            )
+        except Exception:  # noqa: BLE001
+            campaign = {}
+    relief = {}
+    for action in context.get("actions") or []:
+        relief[action["gap_id"]] = _measured_axis_relief(action, summary)
+    for slot in context.get("frontier_actions") or []:
+        relief[slot["gap_id"]] = _campaign_diagnosis_relief(slot, campaign)
+    for slot in _catalog_standalone_slots():
+        relief[slot["gap_id"]] = _campaign_diagnosis_relief(slot, campaign)
+    return relief
+
+
 def _auto_gap_lines():
     """All graph-linked red actions executable by the frozen three-model gate."""
     from akt.core.evolve.action_catalog import action_catalog_context
@@ -154,6 +289,8 @@ def _auto_gap_lines():
     context = action_catalog_context(REPO)
     actions = context["actions"]
     frontier = context.get("frontier_actions") or []
+    standalone = _catalog_standalone_slots()
+    relief = relief_evidence(context=context)
     lines = []
     for gap in actions:
         sites = gap["model_callsites"]
@@ -163,7 +300,8 @@ def _auto_gap_lines():
             f"gap_id={gap['gap_id']} ({gap['category']}) "
             f"{gap['source_evidence']['detail'][:150]} "
             f"<{gap['source_evidence']['path']}:{gap['source_evidence']['line']}> "
-            f"[red-link {edge['source']} -> {edge['target']}; {eligibility}]"
+            f"[red-link {edge['source']} -> {edge['target']}; {eligibility}] "
+            f"relief: {relief.get(gap['gap_id'], 'unavailable')}"
         )
     if not actions:
         # A VALID catalog with zero open actions is RED-LINK EXHAUSTION, not an
@@ -192,7 +330,8 @@ def _auto_gap_lines():
             f"family={gap['family']} fn={gap['source_function']} "
             f"{gap['source_evidence']['detail'][:150]} "
             f"<{gap['source_evidence']['path']}:{gap['source_evidence']['line']}> "
-            f"[no red link yet; models={','.join(sites)}]"
+            f"[no red link yet; models={','.join(sites)}] "
+            f"relief: {relief.get(gap['gap_id'], 'unavailable')}"
         )
     if frontier:
         note += (
@@ -201,12 +340,32 @@ def _auto_gap_lines():
             "elevating one means implementing the declared variant so the regenerated "
             "graph mines it as an executable action."
         )
-    return lines, note, context
+    for slot in standalone:
+        lines.append(
+            f"STANDALONE(perpetual-api-slot) gap_id={slot['gap_id']} "
+            f"({slot.get('category')}) family={slot.get('family')} "
+            f"{(slot.get('detail') or slot.get('what') or '')[:150]} "
+            f"<{slot.get('evidence')}> "
+            f"[never closes; models={','.join(slot.get('model_callsites') or [])}] "
+            f"relief: {relief.get(slot['gap_id'], 'unavailable')}"
+        )
+    if standalone:
+        note += (
+            f" {len(standalone)} PERPETUAL standalone-API slot(s) listed above never "
+            "close; introducing one API does not exhaust the family."
+        )
+    note += (
+        " Every line ends with its concrete `relief:` evidence — measured "
+        "default-vs-best-alternative latency for red-link actions, campaign "
+        "family-share/limiter diagnosis for frontier/standalone slots — so the "
+        "elevate-vs-invent choice is evidence-based, never a subjective preference."
+    )
+    return lines, note, context, relief, len(standalone)
 
 
 def cmd_gaps(_args):
     try:
-        lines, note, context = _auto_gap_lines()
+        lines, note, context, relief, n_standalone = _auto_gap_lines()
     except Exception as error:  # noqa: BLE001
         print("AKT_GAPS " + json.dumps({
             "missing": f"generated red-link action catalog is invalid: {error}"
@@ -218,7 +377,9 @@ def cmd_gaps(_args):
         "lines": lines,
         "n_actions": len(context["actions"]),
         "n_frontier": len(context.get("frontier_actions") or []),
+        "n_standalone": n_standalone,
         "converged": not context["actions"],
+        "relief": relief,
         "action_graph_fingerprint": context["fingerprint"],
         "action_context_version": context["version"],
         "note": note,

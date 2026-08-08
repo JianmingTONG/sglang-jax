@@ -98,6 +98,9 @@
   .camp-note{color:var(--mut);font-size:11px;margin-top:5px}
   .camp-limit{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-size:13px}
   .camp-limit code{margin:2px 4px 2px 0;display:inline-block}
+  .relief{font-size:11px;color:var(--mut);min-width:190px;max-width:320px;overflow-wrap:anywhere}
+  .relief.meas{color:var(--good)}
+  .relief.diag{color:var(--accent)}
   .cov-group{margin:3px 0}
   .cov-chip{display:inline-block;border:1px solid var(--line);border-radius:14px;
     padding:1px 8px;margin:2px 4px 2px 6px;font-size:11.5px;background:var(--panel2)}
@@ -610,6 +613,8 @@ function renderGaps(fg){
   const sm=document.getElementById('gapsummary'); if(!sm) return;
   const gaps=fg.gaps||[], cats=fg.gap_categories||{}, stack=fg.serving_stack||[],
         st=fg.stats||{}, actionIds=new Set((fg.action_edges||[]).map(edge=>edge.gap_id));
+  const frontier=fg.frontier_actions||[], standalone=fg.standalone_frontier_actions||[],
+        relief=fg.relief||{};
   if(!gaps.length){ sm.innerHTML='<span class="empty">no auto-gaps — run the extractor (flexgraph_extract.py).</span>';
     document.getElementById('gapcats').innerHTML=''; document.getElementById('autogaps').innerHTML='';
     document.getElementById('stackcov').innerHTML=''; return; }
@@ -619,7 +624,9 @@ function renderGaps(fg){
   sm.innerHTML='<b>'+(st.pallas_families||stack.length)+'</b> Pallas kernel families auto-scanned · '+
     '<b>'+gaps.length+'</b> flexibility gaps derived from source across <b>'+Object.keys(cats).length+'</b> categories · '+
     '<b style="color:var(--bad)">'+open.length+'</b> executable actions · '+
-    '<b style="color:var(--good)">'+exposed.length+'</b> programmer-exposed';
+    '<b style="color:var(--good)">'+exposed.length+'</b> programmer-exposed · '+
+    '<b>'+frontier.length+'</b> frontier + <b>'+standalone.length+'</b> standalone slots '+
+    '<span class="muted">(each catalog entry carries concrete relief evidence — measured latency or campaign diagnosis, never invented)</span>';
   // category chips
   document.getElementById('gapcats').innerHTML=Object.entries(cats)
     .sort((a,b)=>b[1].salience-a[1].salience)
@@ -631,16 +638,32 @@ function renderGaps(fg){
         : '<span class="badge b-defer">STALE</span>')
       : g.programmer_exposed ? '<span class="badge b-keep">programmer API</span>'
       : '<span class="badge b-defer">context</span>';
+  // Relief-evidence cell: measured default-vs-best-alternative latency (green) for
+  // red-link actions, campaign family-share/limiter diagnosis (accent) for slots;
+  // an honest unmeasured/tpu-deferred note stays muted. '—' = not a catalog entry.
+  const reliefCell=id=>{ const r=relief[id];
+    if(!r) return '<td class="relief">—</td>';
+    const cls=r.indexOf('measured[')===0?' meas':r.indexOf('diagnosis:')===0?' diag':'';
+    return '<td class="relief'+cls+'" title="relief evidence for '+esc(id)+'">'+esc(r)+'</td>'; };
   const row=g=>'<tr><td>'+badge(g)+'</td><td><span class="muted">'+esc(g.category)+'</span></td>'+
     '<td><b>'+esc(g.family)+'</b>'+(g.kernel_ids&&g.kernel_ids.length?' <span class="muted">('+esc(g.kernel_ids.join(','))+')</span>':'')+'</td>'+
     '<td><code>'+esc(g.axis)+'</code></td>'+
     '<td>'+esc(g.detail||g.what||'')+'<div class="muted" style="font-size:11px">'+esc(g.evidence||'')+
-      (g.graph_node?' · steers <code>'+esc(g.graph_node.replace("pallas:",""))+'</code>':'')+'</div></td></tr>';
-  const grp=(title,arr)=> arr.length? '<tr><td colspan="5" style="padding-top:8px"><b class="muted">'+title+' ('+arr.length+')</b></td></tr>'+arr.map(row).join('') : '';
+      (g.graph_node?' · steers <code>'+esc(g.graph_node.replace("pallas:",""))+'</code>':'')+'</div></td>'+
+    reliefCell(g.gap_id)+'</tr>';
+  const slotRow=(label,s)=>'<tr><td><span class="badge b-run">'+label+'</span></td>'+
+    '<td><span class="muted">'+esc(s.category)+'</span></td>'+
+    '<td><b>'+esc(s.family)+'</b>'+(s.kernel_ids&&s.kernel_ids.length?' <span class="muted">('+esc(s.kernel_ids.join(','))+')</span>':'')+'</td>'+
+    '<td><code>'+esc(s.source_axis||s.axis||'')+'</code></td>'+
+    '<td>'+esc(s.detail||s.what||'')+'<div class="muted" style="font-size:11px">'+esc(s.evidence||'')+'</div></td>'+
+    reliefCell(s.gap_id)+'</tr>';
+  const grp=(title,arr,render)=> arr.length? '<tr><td colspan="6" style="padding-top:8px"><b class="muted">'+title+' ('+arr.length+')</b></td></tr>'+arr.map(render||row).join('') : '';
   document.getElementById('autogaps').innerHTML=
     '<div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12.5px">'+
-    '<thead><tr><th>status</th><th>category</th><th>kernel family</th><th>axis</th><th>evidence (file:line) · reachable lowering node</th></tr></thead><tbody>'+
+    '<thead><tr><th>status</th><th>category</th><th>kernel family</th><th>axis</th><th>evidence (file:line) · reachable lowering node</th><th>relief evidence</th></tr></thead><tbody>'+
     grp(fg.actions_executable_for_campaign?'executable graph actions':'graph candidates (campaign fingerprint not current)', open)+
+    grp('FRONTIER novel slots — no red link yet', frontier, s=>slotRow('FRONTIER', s))+
+    grp('perpetual standalone-API slots — never close', standalone, s=>slotRow('STANDALONE', s))+
     grp('exposed end-to-end through the programmer API', exposed)+
     grp('non-executable findings retained as context', context)+
     '</tbody></table></div>';
@@ -793,13 +816,21 @@ async function load(){
     const headline = ac.hypothesis_first_sentence || t.hypothesis ||
       t.search_dimension || 'change description not recorded';
     // Δ-evidence strip: the candidate program's ISA-graph delta vs the baseline
-    // population — proof this is an algorithm change, not a re-tuned knob.
+    // population — proof this is an algorithm change, not a re-tuned knob. The
+    // novelty score δ (api_novelty.delta.delta_pct) and its explicit similarity
+    // complement R=1−δ lead the row: high R = the program is mostly the incumbent.
     const d = ac.delta;
+    const dpv = d && Number.isFinite(d.delta_pct) ? d.delta_pct : null;
+    const simR = d && Number.isFinite(d.similarity) ? d.similarity
+      : (dpv!=null ? 1-dpv : null);
+    const simChip = dpv!=null
+      ? 'δ='+dpv.toFixed(3)+' · similarity R=1−δ=<b>'+simR.toFixed(3)+'</b> · '
+      : 'δ=— (no novelty delta) · ';
     const strip = d
-      ? '<div class="cap-strip">Δ <b>'+num1(d.mass_compute)+'</b>cmp+<b>'+num1(d.mass_memory)+
-        '</b>mem ops vs floor '+num1(d.noise_floor)+' · coherent <b>'+
+      ? '<div class="cap-strip">'+simChip+'Δ <b>'+num1(d.mass_compute)+'</b>cmp+<b>'+num1(d.mass_memory)+
+        '</b>mem vs floor '+num1(d.noise_floor)+' · coherence <b>'+
         (d.coherence_largest??'?')+'</b> of '+(d.total_ops??'?')+' Δ-ops</div>'
-      : '<div class="cap-strip muted">no ISA-graph delta recorded (pre-guardrail round)</div>';
+      : '<div class="cap-strip muted">no ISA-graph delta recorded (pre-guardrail round) · δ/R unavailable</div>';
     const kfiles = (ac.kernel_files||[]).map(k=>{
       const lines = Number.isFinite(k.lines_added)
         ? ' <b>+'+k.lines_added+'</b>/−'+(k.lines_deleted??0) : '';

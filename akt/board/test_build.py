@@ -441,6 +441,7 @@ def test_api_change_assembly_from_a_synthetic_record(monkeypatch):
     assert change["delta"] == {
         "mass_compute": 12.0, "mass_memory": 6.0, "total_ops": 18,
         "coherence_largest": 18, "noise_floor": 4.0,
+        "delta_pct": None, "similarity": None,
     }
     assert change["genericity_family"] == 1.0
     assert change["genericity_stack"] == {
@@ -450,6 +451,13 @@ def test_api_change_assembly_from_a_synthetic_record(monkeypatch):
     assert relation["relation"] == "generalizes"
     assert relation["f_default_covered_by_variant"] == 0.87
     assert relation["f_variant_covered_by_default"] == 0.94
+
+    # δ (api_novelty.delta.delta_pct) is surfaced with its explicit similarity
+    # complement R = 1 − δ, so the board can print both scores per round.
+    record["api_novelty"]["delta"]["delta_pct"] = 0.051
+    scored = board_build._api_change(record, manifest, coverage, {"cap_x": "abc123"})
+    assert scored["delta"]["delta_pct"] == 0.051
+    assert abs(scored["delta"]["similarity"] - 0.949) < 1e-12
 
     # A declared kernel_path dimension makes the change a standalone API.
     standalone = board_build._api_change(
@@ -592,3 +600,101 @@ def test_design_funnel_attributes_selection_to_cases_and_knobs():
     totals = funnel["totals"]
     assert totals["research"] == 16 and totals["selected"] == 3
     assert board_build._design_funnel({}) == {"cases": [], "totals": {}}
+
+
+def test_measured_relief_reports_default_vs_best_alternative_or_stays_honest():
+    from akt.benchmark import adapter
+
+    action = {
+        "gap_id": "megablox_gmm_kernel:buffer_count:pipeline-depth",
+        "source_axis": "buffer_count",
+        "incumbent_value": 3,
+        "candidate_values": [2, 3, 4],
+        "kernel_ids": ["gmm_v2"],
+    }
+    summary = {"case_search": {"gmm_v2:test": {"measurements": [
+        {"config": {"buffer_count": 3}, "latency_s": 0.003},
+        {"config": {"buffer_count": 3}, "latency_s": 0.0031},
+        {"config": {"buffer_count": 4}, "latency_s": 0.002},
+        {"config": {"buffer_count": 2}, "latency_s": 0.004},
+    ]}}}
+
+    text = adapter._measured_axis_relief(action, summary)
+
+    assert text == ("measured[gmm_v2:test]: default=3.00ms "
+                    "best_alt(buffer_count=4)=2.00ms (-33.3%)")
+    # A deferred case or an unmeasured axis is honest — never an invented number.
+    assert adapter._measured_axis_relief(action, {"case_search": {}}) == (
+        "unmeasured on testbench (tpu-deferred)"
+    )
+    assert adapter._measured_axis_relief(
+        action,
+        {"case_search": {"gmm_v2:test": {"measurements": [
+            {"config": {"other_axis": 1}, "latency_s": 0.001},
+        ]}}},
+    ) == "unmeasured on testbench (tpu-deferred)"
+
+
+def test_campaign_diagnosis_relief_attaches_family_share_verdict_and_limiter():
+    from akt.benchmark import adapter
+
+    campaign = {
+        "levels": [{"level": 0, "segments": [
+            {"case": "kda:seq128_h2_d64", "share": 0.12,
+             "verdict": "dependency-bound"},
+            {"case": "kda:seq256_h4_d128", "share": 0.28,
+             "verdict": "dependency-bound"},
+            {"case": "gla:seq512_h8", "share": 0.18,
+             "verdict": "dependency-bound"},
+        ]}],
+        "limiter": {"kernel_id": "kda", "stage": "#47 jit|int32r2",
+                    "engine": "DMA", "verdict": "memory-bound"},
+        "hints": ["kda:enable_kda_fwd_intra_variant:schedule-toggle"],
+    }
+    slot = {
+        "gap_id": "kda:enable_kda_fwd_intra_variant:schedule-toggle",
+        "kernel_ids": ["kda"],
+    }
+
+    text = adapter._campaign_diagnosis_relief(slot, campaign)
+
+    assert text == ("diagnosis: family share=40.0% verdict=dependency-bound "
+                    "(L0 2 callsite(s)); LIMITER match: #47 jit|int32r2 DMA "
+                    "memory-bound; campaign frontier hint")
+    unmeasured = adapter._campaign_diagnosis_relief(
+        {"gap_id": "fused_mlp:new_api:standalone", "kernel_ids": ["fused_mlp"]},
+        campaign,
+    )
+    assert unmeasured == (
+        "diagnosis: family unmeasured on testbench (tpu-deferred); no L0 share"
+    )
+    assert adapter._campaign_diagnosis_relief(slot, {}) == (
+        "diagnosis: campaign diagnosis unavailable"
+    )
+
+
+def test_relief_evidence_covers_every_catalog_entry_and_reaches_the_board():
+    from akt.benchmark.adapter import relief_evidence
+
+    relief = relief_evidence()
+    graph = _flexgraph({})
+    assert graph["kind"] != "unavailable"
+    action_ids = {edge["gap_id"] for edge in graph["action_edges"]}
+    frontier_ids = {r["gap_id"] for r in graph.get("frontier_actions") or []}
+    standalone_ids = {
+        r["gap_id"] for r in graph.get("standalone_frontier_actions") or []
+    }
+    assert action_ids and frontier_ids and standalone_ids
+    # EVERY catalog entry — red-link actions, frontier toggle slots, perpetual
+    # standalone slots — carries a concrete relief-evidence string.
+    for gap_id in action_ids:
+        assert relief[gap_id].startswith(("measured[", "unmeasured on testbench"))
+    for gap_id in frontier_ids | standalone_ids:
+        assert relief[gap_id].startswith("diagnosis:")
+    # build.py passes the map through on the flexgraph document the board reads.
+    assert graph["relief"] == relief
+
+    html = (ROOT / "akt/board/index.html").read_text()
+    assert "relief evidence" in html          # the action-catalog panel column
+    assert "fg.relief" in html                # rendered from the passthrough
+    assert "similarity R=1−δ" in html         # explicit δ/R chip on trail rows

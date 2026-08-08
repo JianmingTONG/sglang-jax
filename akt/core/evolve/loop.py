@@ -192,7 +192,11 @@ YOUR TASK:
  1. Pick ONE executable red-link gap_id, or declare ONE novel algorithm via \
 `proposed_action`. Use the latest paired \
 model/callsite timings to estimate baseline share and expected aggregate relief >{target_pct:.0f}%; \
-record the calculation and do not repeat an unchanged failed estimate.
+record the calculation and do not repeat an unchanged failed estimate. Ground the \
+elevate-vs-invent choice in each catalog line's `relief:` evidence — measured \
+default-vs-best-alternative latency for red-link actions, campaign family-share/limiter \
+diagnosis for frontier/standalone slots; a preference for inventing over elevating (or \
+vice versa) must cite that per-entry evidence, never taste.
  2. IMPLEMENT it end-to-end. For an existing action: promote an existing runner/backend
 argument, or lift the exact graph-fingerprinted hardcoded selection into an entry argument
 while preserving its incumbent default exactly (copy the action's incumbent_value, including
