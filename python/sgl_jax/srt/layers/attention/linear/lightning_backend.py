@@ -296,6 +296,7 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
                 ),
                 output_impl=controls.output_impl,
                 chunk_impl=controls.chunk_impl,
+                walk_impl=controls.walk_impl,
             )
 
             # Skip writing back to dummy slot 0.

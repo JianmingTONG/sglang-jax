@@ -22,6 +22,16 @@ deferred per-row scaling of the output, so the gate-ratio tile disappears and th
 single `k^T v` contraction serves both the sub-chunk states and the chunk carry —
 the state stage, its transposes and its entrance-state buffer are gone. It owns
 both stages, so their toggles stay at their defaults for its configurations.
+`walk_impl` dispatches the WHOLE recurrence to the standalone
+`fused_walk_chunk_fwd` handle, which carries BOTH halves of the factored gate
+(and `scale`) inside the staged q/k operands -- so no contraction result is
+rescaled afterwards -- and issues the sub-chunk prefix and the chunk carry as one
+contraction against the shared `k^T v` by stacking the carry weights as the last
+row of the decay operator; `"fused_walk"` runs the whole walk at the reduced
+contraction pass count and `"fused_walk_exact_state"` keeps the merged
+state/carry operator at the full pass count. It owns both stages and excludes the
+other whole-recurrence handle, so those toggles stay at their defaults for its
+configurations.
 Historical
 state/output-elision axes remain visible as runner-only experiments but are
 invalid in this serving objective because the nonzero initial state and final
@@ -56,6 +66,7 @@ _OUTPUT_SUBCHUNK_SCHEDULE_CAPABILITY = "gla_output_subchunk_schedule"
 _STATE_DECAY_MATRIX_CAPABILITY = "gla_state_decay_matrix_closed_form"
 _BATCHED_VALUE_TILE_OUTPUT_CAPABILITY = "gla_batched_value_tile_output_api"
 _DECAY_RESCALED_CHUNK_CAPABILITY = "gla_decay_rescaled_chunk_api"
+_FUSED_WALK_CAPABILITY = "gla_fused_operand_walk_api"
 
 
 @functools.lru_cache(maxsize=None)
@@ -69,6 +80,7 @@ def _jit_chunk(
     enable_chunk_fwd_h_kernel_varlen_variant: bool,
     output_impl: str,
     chunk_impl: str,
+    walk_impl: str,
 ):
     def f(q, k, v, g_gamma, initial_state, cu):
         o, ht = chunk_simple_gla_fwd_varlen(
@@ -83,7 +95,8 @@ def _jit_chunk(
             enable_chunk_fwd_h_kernel_varlen_variant=(
                 enable_chunk_fwd_h_kernel_varlen_variant),
             output_impl=output_impl,
-            chunk_impl=chunk_impl)
+            chunk_impl=chunk_impl,
+            walk_impl=walk_impl)
         return o, ht
     return jax.jit(f)
 
@@ -99,6 +112,7 @@ def _run(inp, cfg):
         bool(cfg.get("enable_chunk_fwd_h_kernel_varlen_variant", False)),
         str(cfg.get("output_impl", "incumbent")),
         str(cfg.get("chunk_impl", "incumbent")),
+        str(cfg.get("walk_impl", "incumbent")),
     )(
         inp["q"],
         inp["k"],
@@ -129,6 +143,23 @@ def _space(seqlen: int, heads: int):
         output_value_tiles = c.get("output_value_tiles", 1)
         output_impl = c.get("output_impl", "incumbent")
         chunk_impl = c.get("chunk_impl", "incumbent")
+        walk_impl = c.get("walk_impl", "incumbent")
+        if walk_impl != "incumbent":
+            # The fused walk owns the WHOLE recurrence exactly as `chunk_impl`
+            # does -- the chunk state stage, the entrance-state buffer and the
+            # output stage are all inside it -- so it consumes neither stage's
+            # schedule toggle, neither elision toggle, and no other
+            # whole-recurrence handle. Its walk is two-level, so the chunk must
+            # be taller than one sub-chunk.
+            if (
+                chunk_impl != "incumbent"
+                or output_impl != "incumbent"
+                or c.get("enable__chunk_fwd_o_pl_variant", False)
+                or c.get("enable_chunk_fwd_h_kernel_varlen_variant", False)
+            ):
+                return False
+            if cs <= _OUTPUT_SUBCHUNK_ROWS or cs % _OUTPUT_SUBCHUNK_ROWS:
+                return False
         if chunk_impl != "incumbent":
             # The decay-rescaled handle owns the WHOLE recurrence: the chunk
             # state stage, the entrance-state buffer and the output stage are
@@ -229,6 +260,13 @@ def _space(seqlen: int, heads: int):
                 default="incumbent",
                 elevated_by=_DECAY_RESCALED_CHUNK_CAPABILITY,
                 programmer_control="gla.chunk_impl",
+            ),
+            Knob(
+                "walk_impl",
+                ["incumbent", "fused_walk", "fused_walk_exact_state"],
+                default="incumbent",
+                elevated_by=_FUSED_WALK_CAPABILITY,
+                programmer_control="gla.walk_impl",
             ),
         ],
         valid=_valid,

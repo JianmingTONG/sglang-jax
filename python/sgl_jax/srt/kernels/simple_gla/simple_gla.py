@@ -1327,6 +1327,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
         "enable_chunk_fwd_h_kernel_varlen_variant",
         "output_impl",
         "chunk_impl",
+        "walk_impl",
     ],
 )
 def chunk_simple_gla_fwd_varlen(
@@ -1350,6 +1351,7 @@ def chunk_simple_gla_fwd_varlen(
     enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
     output_impl: str = "incumbent",
     chunk_impl: str = "incumbent",
+    walk_impl: str = "incumbent",
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
@@ -1405,6 +1407,20 @@ def chunk_simple_gla_fwd_varlen(
     states and the chunk carry (see simple_gla_decay_rescaled.py). That handle
     owns both stages, so it consumes neither the state nor the output schedule
     toggle and emits the final recurrent state itself.
+
+    ``walk_impl`` selects which handle executes the whole recurrence as a
+    gate-complete walk. ``"incumbent"`` changes nothing. ``"fused_walk"``
+    dispatches to the standalone ``fused_walk_chunk_fwd`` handle (see
+    simple_gla_fused_walk.py), which carries BOTH halves of the factored gate
+    inside the staged operands -- the row half and ``scale`` ride on ``q`` -- so
+    no contraction result is rescaled afterwards, and which issues the sub-chunk
+    prefix and the chunk carry as ONE contraction against the shared ``k^T v``
+    by stacking the carry weights as the last row of the decay operator; the
+    whole walk is contracted at the reduced pass count.
+    ``"fused_walk_exact_state"`` is the same walk with that merged state/carry
+    operator -- the one contraction whose result propagates across chunks and
+    into decode -- kept at the full pass count. Like ``chunk_impl``, this handle
+    owns both stages and consumes neither stage's schedule toggle.
     """
     # Imported here, not at module scope: the handles reuse this module's
     # helpers, so a top-level import would be circular.
@@ -1413,6 +1429,9 @@ def chunk_simple_gla_fwd_varlen(
     )
     from sgl_jax.srt.kernels.simple_gla.simple_gla_decay_rescaled import (
         decay_rescaled_chunk_fwd,
+    )
+    from sgl_jax.srt.kernels.simple_gla.simple_gla_fused_walk import (
+        fused_walk_chunk_fwd,
     )
 
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
@@ -1448,6 +1467,52 @@ def chunk_simple_gla_fwd_varlen(
         assert single_chunk_state_elision, (
             "zero-state output elision requires single-chunk state elision"
         )
+
+    # Gate-complete whole-recurrence dispatch. The fused walk owns the state
+    # stage and the output stage together, and additionally carries BOTH halves
+    # of the factored gate inside its staged operands, so no contraction result
+    # is rescaled afterwards and the sub-chunk prefix and the chunk carry are one
+    # contraction against the shared k^T v.
+    walk_impl_handle = (
+        fused_walk_chunk_fwd
+        if walk_impl in ("fused_walk", "fused_walk_exact_state")
+        else None
+    )
+    # The merged state/carry operator is the one contraction whose result leaves
+    # the chunk, so its pass count is selectable independently of the four large
+    # contractions the walk reduces.
+    walk_exact_state_operator = walk_impl == "fused_walk_exact_state"
+    if walk_impl_handle is not None:
+        assert chunk_impl == "incumbent", (
+            "gla.walk_impl and gla.chunk_impl both own the whole recurrence"
+        )
+        assert not single_chunk_state_elision, (
+            "the fused walk owns the state stage, so it does not consume the "
+            "state-elision toggles"
+        )
+        o, ht = walk_impl_handle(
+            q_a,
+            k_a,
+            v_a,
+            g_gamma=g_gamma,
+            h0=h0,
+            scale=scale,
+            cu_seqlens_dev=aligned_cu,
+            seq_real_lens=real_seq_lens,
+            chunk_size=chunk_size,
+            output_value_tiles=output_value_tiles,
+            output_final_state=use_ht,
+            output_gather=_build_unalign_gather_idx(
+                cu_seqlens_dev, aligned_cu, T_orig
+            ),
+            exact_state_operator=walk_exact_state_operator,
+        )
+        if use_ht and ht is not None:
+            # Same zero-length repair the two-stage path performs: a sequence
+            # with no real token keeps its incoming state.
+            zero_len_mask = (real_seq_lens == 0)[:, None, None, None]
+            ht = jnp.where(zero_len_mask, h0 if h0 is not None else 0.0, ht)
+        return o, ht
 
     # Whole-recurrence dispatch. The decay-rescaled handle owns the state stage
     # and the output stage together, so it replaces both launches and the state
@@ -1605,6 +1670,7 @@ def simple_gla_fwd(
     enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
     output_impl: str = "incumbent",
     chunk_impl: str = "incumbent",
+    walk_impl: str = "incumbent",
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is None:
@@ -1634,4 +1700,5 @@ def simple_gla_fwd(
         ),
         output_impl=output_impl,
         chunk_impl=chunk_impl,
+        walk_impl=walk_impl,
     )

@@ -1,0 +1,72 @@
+{
+ "name": "gla_fused_operand_walk_api",
+ "gap_id": "simple_gla:walk_impl:schedule-toggle",
+ "action_graph_fingerprint": "75627c0938bea1feee3dbe69fc05ebcf9ac13c021f1e350a6a403edc71015622",
+ "hypothesis": "GLA's chunked prefill still pays for contraction PASSES it never had to issue, for three independent reasons, and the shipped kernels give a programmer no way to name any of them. (1) THE GATE RIDES OUTSIDE THE OPERANDS. The decay-rescaled walk kept in round 12 folds only the COLUMN half of the factored gate into k; the row half -- and `scale` -- stays outside every contraction and is applied afterwards as a full elementwise pass over the (G, num_sub, sub, V) output tile (8 MiB at tiny-linear-serving/gla-long). The row factor is a per-ROW scalar, so it commutes with every contraction acting on that row: folding it into the staged q instead makes the walk operand-complete -- after q_hat and k_hat are formed NO contraction result is ever rescaled again, the trailing output pass disappears into the staging fusion that was already reading q, and every op downstream of q_hat becomes a new node. (2) THE SAME OPERAND IS CONTRACTED TWICE AGAINST TWO OPERATORS. The sub-chunk prefix b_state and the chunk carry are two separate contractions over the SAME b_w = k_hat^T v and the SAME sub-chunk axis -- one weighted by the strictly-older decay matrix, one by the exit-rebased carry weights. They are two row blocks of ONE operator: stacking the carry as the last row of the decay matrix issues them as a single (num_sub + 1, num_sub) contraction, so the walk launches one contraction fewer and the carry's own reduction vanishes. Measured alone, at full precision, that merge plus the operand fold is 7.7% of gla-long. (3) THE PASS COUNT ITSELF IS A SCATTERED LITERAL. A contraction is not one matrix-unit operation: a TPU MXU consumes bf16 operands, so an f32 x f32 dot is reproduced by SIX passes and the error-compensated form by three. Which one a contraction gets is a per-einsum jax.lax.Precision literal written into each kernel -- decay_rescaled_chunk_fwd pins three of its five contractions to HIGHEST and leaves two at the unstated default -- so the pass count is not a schedule any argument, control or knob in the stack can name. This capability introduces a STANDALONE JAX API, fused_walk_chunk_fwd in the new file python/sgl_jax/srt/kernels/simple_gla/simple_gla_fused_walk.py, that makes all three one deployable property of the walk, and a free-named string dispatch control gla.walk_impl whose default 'incumbent' leaves both shipped recurrence paths untouched and bit-identical. The domain is three-valued because the pass count is NOT uniform in what it buys: the merged state/carry operator is the one contraction whose result leaves the chunk -- it emits the recurrent state that the next chunk and decode consume -- so 'fused_walk' runs the whole walk reduced while 'fused_walk_exact_state' keeps that single operator at the full pass count. Reducing the pass count of that one operator is NOT reliably a win on either target callsite: it is a (num_sub + 1, num_sub) x (num_sub, K, V) contraction over 17 and 5 terms, so it is launch-bound rather than pass-bound, and across repeated processes the two values measure within 0.1-5% of each other at both gla-long and gla-short with the ORDER FLIPPING between runs -- which is exactly why the pass count of the state operator is exposed as a choice the planner makes per callsite instead of being hardcoded a second time. Nothing is re-associated relative to the round-12 walk beyond moving a per-row scalar to the other side of a linear map: every exponent formed on the q side is a later-minus-earlier difference (non-positive), and the only growing factor, exp(a - s_j) on k_hat, still has its span bounded by one sub-chunk (|gamma| * 128, about e^12.8 for the repo's gate range) and still meets its matching row factor inside the same dot product. All 96 new deployable configurations (32 on gla:seq512_h8, 64 on gla:seq2048_h8) were run: every one matches the frozen pure-JAX fused_recurrent_simple_gla reference on BOTH compared outputs, worst case 1.24e-5 on the token output and 1.22e-4 on the final recurrent state against the 1e-3 contract tolerance -- 8x of margin at the worst configuration and 14x at the two the model DP selects.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/gla-long",
+  "baseline_share_pct": 7.71,
+  "expected_relief_pct": 2.8,
+  "reasoning": "SHARE: from the last completed target-hardware eval (.evolve_eval.json, round 014), taking its RETAINED-INCUMBENT branch since that round was rejected and its code reverted. tiny-linear-serving is the only model holding non-deferred cases on this backend (the other two defer all 10 of their calls), so it is 100% of the three-model aggregate. Its per-callsite costs at the retained incumbent plan are kda-long 1.2140ms, kda-short 0.4420ms, input-projection 0.3770ms (all three from the round-014 bottleneck report) and, read straight out of that eval's own case_search incumbent-branch measurements, gla-long 0.1769ms (cs=2048, compact, ovt=8, chunk_impl=decay_rescaled) and gla-short 0.0834ms (cs=512, same). Total 2.2933ms, so gla-long is 7.71% and gla-short 3.64%; both of this action's callsites are in that model, giving an addressable share of 11.35%. WHY THIS FAMILY, given it is not the biggest: kda (72.2%) and gmm (16.4%) are both closed to any capability under this pinned baseline, and that is measured, not assumed. kda's api-novelty floor is the p95 of its own one-knob deviation population in akt/core/analysis/api_baseline.json -- 3722 unmatched ops on kda:seq256_h4_d128 and 1784 on kda:seq128_h2_d64 -- while the whole fused-resident default program is 4784 ops and any faster replacement of its dominant stage traces a few hundred; round 13 measured 11.9% aggregate relief there and scored mass 96 against 3722. gmm cannot be measured at all: model_eval builds case_search only for models with no deferred call, so the gmm action's mandatory callsite tiny-moe-serving/router-projection (case gmm:m512_k512_n512_g8) has no measured population and the novelty guard errors out before speed is read; that is how round 10's 76.7% local win died. simple_gla is the only family whose every model_callsite sits inside the runnable model AND whose novelty floor is clearable (p95 = 0 on both gla cases, effective minimum 4). LOCALIZATION: measured in-process under the gate's own deterministic-XLA flags (--xla_gpu_autotune_level=0 --xla_gpu_deterministic_ops=true) with jax.clear_caches() between variants so the inner jit retraces. gla-long at its DP-selected plan is 161us of which a 25us jit-dispatch floor, ~37us of q/k/v staging (48 MiB moved at 1.3 TB/s), ~11us of output delivery and ~97us of five f32 contractions; the optimized HLO routes every one of them to a Triton gemm fusion at the non-autotuned default tiling, so the call runs 2.2 GFLOP at about 12.5 TFLOP/s -- it is pass-bound, not flop-bound. The shape is NOT where the headroom is and that was re-swept this round, not assumed: sub-chunk heights 32/64/256 measure 0.243/0.191/0.198ms against 0.161ms at 128, a two-level blocked state prefix is slower at every height, and merging the intra and inter output contractions is +1.2% on gla-long. MEASURED, one warmup then sixteen ORDER-ALTERNATING paired runs of the full runner entry per point (median of 7 per side, ratio = exp(median(log(candidate/incumbent)))), candidate against the exact configuration the retained incumbent plan selects: gla-long 0.1588ms -> 0.1088ms, paired ratio 0.6856 = 31.44% relief; gla-short 0.0832ms -> 0.0719ms, paired ratio 0.8562 = 14.38% relief. AGGREGATE = 0.0771*31.44 + 0.0364*14.38 = 2.42 + 0.52 = 2.94%. A separate one-process timing of the whole deployable top of both stages reproduced it higher (gla-long 0.1560 -> 0.1062 = 31.9%, gla-short 0.0724 -> 0.0591 = 18.4%, aggregate 3.13%), so 2.94% is the conservative of the two. That same run also measures what the action does to each stage's SECOND-cheapest configuration, which is what the bounded empirical panel varies: gla-long's runner-up gap falls from +46.96% (cs=1024, decay_rescaled) to +5.10% and gla-short's from +22.54% to +3.71%, because both stages' top two configurations are now this handle at its two pass-count settings -- so the two GLA panel factors shrink by about 0.043ms of absolute spread rather than growing. DISCOUNT: reported as 2.8%, cutting about a twentieth, because the gate re-selects plans on both sides of the pair; the discount is small here because unlike rounds 8/9/12 essentially none of this win is deleted XLA launches (which a deterministic TPU schedule rewards less than this GPU-interpret proxy), it is contraction passes and one merged operator, and the TPU pass ratio the reduced count buys (3 of 6) is if anything larger than the tf32 ratio it buys on the proxy. The same share-weighted method predicted 3.5% for round 12 against a measured paired 3.77% and 8.5% for round 9 against 9.31%, so it is calibrated conservative. NOT A REPEAT OF A FAILED ESTIMATE: the four recorded simple_gla estimate failures were on enable_chunk_fwd_h_kernel_varlen_variant (twice), state_output_impl and contract_impl; none proposed walk_impl, and none of the three rejected simple_gla actions carried either the operand fold or the merged state/carry operator -- state_output_impl only relocated the state recurrence into the output kernel, and contract_impl was a precision axis on the incumbent two-stage pipeline with no structural change, which is why it left the (G, num_sub, sub, V) output rescaling pass and the separate carry reduction in place and measured 27.1%/13.1% where this walk measures 31.4%/14.4%. NOVELTY: run through the frozen akt.core.analysis.api_metrics score path on both affected cases and both non-default values, the candidate scores mass=94 (compute 52, memory 42) with largest connected delta component 86 and zero_embed=0, against this family's calibrated per-case floor of 0 (effective minimum 4) on gla:seq512_h8 and gla:seq2048_h8 -- PASS on all four. SPACE: the handle owns the whole recurrence, so its configurations pin enable__chunk_fwd_o_pl_variant, enable_chunk_fwd_h_kernel_varlen_variant, output_impl and chunk_impl at their defaults, and its two-level walk bounds chunk_size to multiples of the 128-row sub-chunk above one sub-chunk; the runner therefore enumerates 64 new configurations for gla-long and 32 for gla-short (352->416 and 240->272, 812->908 campaign-wide) while every incumbent configuration is preserved exactly at the new dimension's default."
+ },
+ "search_dimensions": [
+  {
+   "control": "gla.walk_impl",
+   "kernel_function": "chunk_simple_gla_fwd_varlen",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "simple_gla:walk_impl:schedule-toggle",
+  "family": "simple_gla",
+  "kernel_ids": [
+   "gla"
+  ],
+  "source_axis": "walk_impl",
+  "source_function": "chunk_simple_gla_fwd_varlen",
+  "source_sink": {
+   "assignments": [
+    "walk_impl_handle",
+    "walk_exact_state_operator"
+   ],
+   "expression_asts": {
+    "walk_impl_handle": "IfExp(test=Compare(left=Name(id='walk_impl', ctx=Load()), ops=[In()], comparators=[Tuple(elts=[Constant(value='fused_walk'), Constant(value='fused_walk_exact_state')], ctx=Load())]), body=Name(id='fused_walk_chunk_fwd', ctx=Load()), orelse=Constant(value=None))",
+    "walk_exact_state_operator": "Compare(left=Name(id='walk_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='fused_walk_exact_state')])"
+   }
+  },
+  "incumbent_value": "incumbent",
+  "candidate_values": [
+   "incumbent",
+   "fused_walk",
+   "fused_walk_exact_state"
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+   "line": 1354,
+   "detail": "default='incumbent'"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/gla-long",
+   "tiny-linear-serving/gla-short"
+  ],
+  "action_edge": {
+   "source": "action:simple_gla:walk_impl:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla_fused_walk.py",
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_fused_operand_walk_api.json"
+ ],
+ "status": "kept",
+ "delta_pct": 3.04,
+ "measured_geomean_s": 0.001958634704351426,
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

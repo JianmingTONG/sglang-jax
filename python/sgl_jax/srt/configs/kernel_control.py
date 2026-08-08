@@ -60,6 +60,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "enable_chunk_fwd_h_kernel_varlen_variant",
         "output_impl",
         "chunk_impl",
+        "walk_impl",
     ),
 }
 
@@ -187,6 +188,17 @@ class GLAKernelControls:
     # contraction serves both the sub-chunk states and the chunk carry and the
     # state stage disappears entirely.
     chunk_impl: str = "incumbent"
+    # Which handle executes the whole chunked recurrence as a GATE-COMPLETE walk.
+    # "incumbent" changes nothing. "fused_walk" runs the standalone
+    # fused_walk_chunk_fwd handle, which carries both halves of the factored gate
+    # (and `scale`) inside the staged q/k operands, so no contraction result is
+    # rescaled afterwards, and which issues the sub-chunk prefix and the chunk
+    # carry as ONE contraction against the shared k^T v; the whole walk runs at
+    # the reduced contraction pass count. "fused_walk_exact_state" is the same
+    # walk with the merged state/carry operator -- the one contraction whose
+    # result propagates across chunks and into decode -- kept at the full pass
+    # count.
+    walk_impl: str = "incumbent"
 
     def validate(self, context: KernelControlContext | None = None) -> None:
         _require_choice(
@@ -200,6 +212,11 @@ class GLAKernelControls:
         )
         _require_choice(
             "gla.chunk_impl", self.chunk_impl, ("incumbent", "decay_rescaled")
+        )
+        _require_choice(
+            "gla.walk_impl",
+            self.walk_impl,
+            ("incumbent", "fused_walk", "fused_walk_exact_state"),
         )
         _require_bool("gla.compact_alignment", self.compact_alignment)
         _require_bool(
@@ -232,6 +249,26 @@ class GLAKernelControls:
                 raise ValueError(
                     "gla.chunk_impl='decay_rescaled' walks a chunk in 128-row "
                     f"sub-chunks; got chunk_size={self.chunk_size}"
+                )
+        if self.walk_impl != "incumbent":
+            if (
+                self.chunk_impl != "incumbent"
+                or self.output_impl != "incumbent"
+                or self.enable__chunk_fwd_o_pl_variant
+                or self.enable_chunk_fwd_h_kernel_varlen_variant
+                or self.single_chunk_state_elision
+                or self.zero_state_output_elision
+            ):
+                raise ValueError(
+                    "gla.walk_impl owns the state stage and the output stage "
+                    "together, so it consumes neither stage's schedule toggle, "
+                    "neither state-elision toggle, and no other whole-recurrence "
+                    "handle"
+                )
+            if self.chunk_size <= 128 or self.chunk_size % 128:
+                raise ValueError(
+                    "gla.walk_impl walks a chunk in 128-row sub-chunks; got "
+                    f"chunk_size={self.chunk_size}"
                 )
         if context is None:
             return

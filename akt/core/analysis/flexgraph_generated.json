@@ -3081,7 +3081,7 @@
     "chunk_size"
    ],
    "has_tuned_table": false,
-   "n_files": 4
+   "n_files": 5
   },
   {
    "family": "speculative",
@@ -4100,7 +4100,7 @@
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default='incumbent'",
-   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1351",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1352",
    "incumbent_value": "incumbent",
    "incumbent_value_known": true,
    "candidate_values": [
@@ -4150,7 +4150,7 @@
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default='incumbent'",
-   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1352",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1353",
    "incumbent_value": "incumbent",
    "incumbent_value_known": true,
    "candidate_values": [
@@ -4173,6 +4173,59 @@
    ],
    "programmer_controls": [
     "gla.chunk_impl"
+   ],
+   "exposure_level": "programmer",
+   "in_akt_suite": true,
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dma_start",
+   "action_node": null
+  },
+  {
+   "gap_id": "simple_gla:walk_impl:schedule-toggle",
+   "id": "simple_gla:walk_impl:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "axis": "walk_impl",
+   "source_axis": "walk_impl",
+   "source_function": "chunk_simple_gla_fwd_varlen",
+   "category": "schedule-toggle",
+   "status": "schedule-toggle",
+   "what": "schedule/fusion toggle never searched",
+   "detail": "default='incumbent'",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1354",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent",
+    "fused_walk",
+    "fused_walk_exact_state"
+   ],
+   "source_sink": {
+    "assignments": [
+     "walk_impl_handle",
+     "walk_exact_state_operator"
+    ],
+    "expression_asts": {
+     "walk_impl_handle": "IfExp(test=Compare(left=Name(id='walk_impl', ctx=Load()), ops=[In()], comparators=[Tuple(elts=[Constant(value='fused_walk'), Constant(value='fused_walk_exact_state')], ctx=Load())]), body=Name(id='fused_walk_chunk_fwd', ctx=Load()), orelse=Constant(value=None))",
+     "walk_exact_state_operator": "Compare(left=Name(id='walk_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='fused_walk_exact_state')])"
+    }
+   },
+   "reachable_prim": "dma_start",
+   "elevated_in_akt": true,
+   "programmer_exposed": true,
+   "runner_axes": [
+    "walk_impl"
+   ],
+   "programmer_controls": [
+    "gla.walk_impl"
    ],
    "exposure_level": "programmer",
    "in_akt_suite": true,
@@ -4340,7 +4393,7 @@
    "label": "schedule/fusion toggle never searched",
    "reachable_prim": "dma_start",
    "salience": 4,
-   "count": 9
+   "count": 10
   },
   "backend-gated": {
    "label": "tuned table gated to one TPU generation",
@@ -4765,6 +4818,33 @@
    "access": "frontier"
   },
   {
+   "gap_id": "simple_gla:enable_fused_walk_chunk_fwd_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "source_axis": "enable_fused_walk_chunk_fwd_variant",
+   "source_function": "fused_walk_chunk_fwd",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla_fused_walk.py:342",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the fused_walk_chunk_fwd Pallas launch, selectable behind a new enable_fused_walk_chunk_fwd_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "action_edge": {
+    "source": "action:simple_gla:enable_fused_walk_chunk_fwd_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
    "gap_id": "update_kv_cache:enable_kv_cache_update_impl_variant:schedule-toggle",
    "family": "update_kv_cache",
    "kernel_ids": [
@@ -5046,12 +5126,12 @@
   "active_primitives": 54,
   "kernels_scanned": 9,
   "pallas_families": 14,
-  "auto_gaps": 30,
+  "auto_gaps": 31,
   "open_gaps": 22,
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
-  "frontier_slots": 17,
+  "frontier_slots": 18,
   "standalone_frontier_slots": 8,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true
