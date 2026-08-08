@@ -272,10 +272,10 @@
   }
  },
  "testbench": true,
- "round": 4,
+ "round": 7,
  "target_improvement": 0.02,
- "incumbent_geomean": 0.010579681955277916,
- "incumbent_choices": 435,
+ "incumbent_geomean": 0.010040470398962498,
+ "incumbent_choices": 659,
  "base_search_geomean": 0.02560094464570284,
  "incumbent_case_spaces": {
   "gla:seq512_h8": [
@@ -285,7 +285,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -293,7 +294,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -301,7 +321,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -309,7 +330,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -317,7 +357,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -325,7 +366,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -333,7 +393,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -341,7 +402,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -349,7 +429,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -357,7 +438,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -365,7 +465,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -373,7 +474,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -381,7 +501,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -389,7 +510,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -397,7 +537,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -405,7 +546,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -413,7 +573,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -421,7 +582,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -429,7 +609,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -437,7 +618,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -445,7 +645,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -453,7 +654,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -461,7 +681,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -469,7 +690,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -477,7 +717,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -485,7 +726,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -493,7 +753,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -501,7 +762,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -509,7 +789,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -517,7 +798,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -525,7 +825,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -533,7 +834,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -541,7 +861,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -549,7 +870,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -557,7 +897,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -565,7 +906,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -573,7 +933,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -581,7 +942,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -589,7 +969,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -597,7 +978,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -605,7 +1005,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -613,7 +1014,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -621,7 +1041,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -629,7 +1050,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -637,7 +1077,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -645,7 +1086,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -653,7 +1113,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -661,7 +1122,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -669,7 +1149,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -677,7 +1158,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -685,7 +1185,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -693,7 +1194,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -701,7 +1221,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -709,7 +1230,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -717,7 +1257,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -725,7 +1266,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -733,7 +1293,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -741,7 +1302,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -749,7 +1329,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -757,7 +1338,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -765,7 +1365,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -773,7 +1374,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -781,7 +1401,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -789,7 +1410,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -797,7 +1437,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -805,7 +1446,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -813,7 +1473,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -821,7 +1482,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -829,7 +1509,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -837,7 +1518,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -845,7 +1545,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -853,7 +1554,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -861,7 +1581,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -869,7 +1590,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -877,7 +1617,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -885,7 +1626,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -893,7 +1653,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -901,7 +1662,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -909,7 +1689,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -917,7 +1698,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -925,7 +1725,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -933,7 +1734,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -941,7 +1761,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -949,7 +1770,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -957,7 +1797,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -965,7 +1806,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -973,7 +1833,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -981,7 +1842,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -989,7 +1869,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -997,7 +1878,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1005,7 +1905,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1013,7 +1914,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1021,7 +1941,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1029,7 +1950,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1037,7 +1977,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1045,7 +1986,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    }
   ],
   "gla:seq2048_h8": [
@@ -1055,7 +2015,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1063,7 +2024,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -1071,7 +2051,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1079,7 +2060,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -1087,7 +2087,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1095,7 +2096,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -1103,7 +2123,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1111,7 +2132,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -1119,7 +2159,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1127,7 +2168,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -1135,7 +2195,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1143,7 +2204,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -1151,7 +2231,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1159,7 +2240,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 16,
@@ -1167,7 +2267,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 16,
@@ -1175,7 +2276,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 16,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1183,7 +2303,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1191,7 +2312,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1199,7 +2339,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1207,7 +2348,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1215,7 +2375,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1223,7 +2384,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1231,7 +2411,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1239,7 +2420,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1247,7 +2447,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1255,7 +2456,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1263,7 +2483,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1271,7 +2492,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1279,7 +2519,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1287,7 +2528,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 32,
@@ -1295,7 +2555,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 32,
@@ -1303,7 +2564,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 32,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1311,7 +2591,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1319,7 +2600,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1327,7 +2627,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1335,7 +2636,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1343,7 +2663,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1351,7 +2672,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1359,7 +2699,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1367,7 +2708,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1375,7 +2735,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1383,7 +2744,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1391,7 +2771,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1399,7 +2780,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1407,7 +2807,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1415,7 +2816,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 64,
@@ -1423,7 +2843,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 64,
@@ -1431,7 +2852,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 64,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1439,7 +2879,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1447,7 +2888,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1455,7 +2915,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1463,7 +2924,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1471,7 +2951,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1479,7 +2960,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1487,7 +2987,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1495,7 +2996,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1503,7 +3023,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1511,7 +3032,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1519,7 +3059,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1527,7 +3068,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1535,7 +3095,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1543,7 +3104,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 128,
@@ -1551,7 +3131,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 128,
@@ -1559,7 +3140,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 128,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1567,7 +3167,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1575,7 +3176,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1583,7 +3203,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1591,7 +3212,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1599,7 +3239,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1607,7 +3248,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1615,7 +3275,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1623,7 +3284,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1631,7 +3311,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1639,7 +3320,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1647,7 +3347,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1655,7 +3356,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1663,7 +3383,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1671,7 +3392,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 256,
@@ -1679,7 +3419,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 256,
@@ -1687,7 +3428,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 256,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1695,7 +3455,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1703,7 +3464,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1711,7 +3491,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1719,7 +3500,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1727,7 +3527,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1735,7 +3536,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1743,7 +3563,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1751,7 +3572,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1759,7 +3599,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1767,7 +3608,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1775,7 +3635,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1783,7 +3644,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1791,7 +3671,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1799,7 +3680,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 512,
@@ -1807,7 +3707,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 512,
@@ -1815,7 +3716,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 512,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1823,7 +3743,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1831,7 +3752,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1839,7 +3779,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1847,7 +3788,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1855,7 +3815,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1863,7 +3824,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1871,7 +3851,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1879,7 +3860,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1887,7 +3887,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1895,7 +3896,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1903,7 +3923,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1911,7 +3932,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1919,7 +3959,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1927,7 +3968,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 1024,
@@ -1935,7 +3995,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 1024,
@@ -1943,7 +4004,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 1024,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -1951,7 +4031,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -1959,7 +4040,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -1967,7 +4067,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -1975,7 +4076,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -1983,7 +4103,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -1991,7 +4112,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -1999,7 +4139,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -2007,7 +4148,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": false,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -2015,7 +4175,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -2023,7 +4184,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 1,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 1,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -2031,7 +4211,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -2039,7 +4220,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 2,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 2,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -2047,7 +4247,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -2055,7 +4256,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 4,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 4,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    },
    {
     "chunk_size": 2048,
@@ -2063,7 +4283,8 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": false
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
    },
    {
     "chunk_size": 2048,
@@ -2071,7 +4292,26 @@
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false,
     "output_value_tiles": 8,
-    "enable__chunk_fwd_o_pl_variant": true
+    "enable__chunk_fwd_o_pl_variant": false,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": false
+   },
+   {
+    "chunk_size": 2048,
+    "compact_alignment": true,
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false,
+    "output_value_tiles": 8,
+    "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true
    }
   ],
   "kda:seq128_h2_d64": [
@@ -4197,6 +6437,7 @@
     "chunk_size": 512,
     "compact_alignment": true,
     "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true,
     "output_value_tiles": 8,
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
@@ -4204,8 +6445,8 @@
    "tiny-linear-serving/kda-short": {
     "chunk_size": 64,
     "compute_block_chunks": 2,
-    "intra_block_size": 8,
-    "scalar_intra_solve": true,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
     "single_chunk_state_elision": false,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
@@ -4215,15 +6456,16 @@
     "chunk_size": 2048,
     "compact_alignment": true,
     "enable__chunk_fwd_o_pl_variant": true,
+    "enable_chunk_fwd_h_kernel_varlen_variant": true,
     "output_value_tiles": 8,
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
    "tiny-linear-serving/kda-long": {
     "chunk_size": 128,
-    "compute_block_chunks": 1,
-    "intra_block_size": 16,
-    "scalar_intra_solve": false,
+    "compute_block_chunks": 2,
+    "intra_block_size": 8,
+    "scalar_intra_solve": true,
     "single_chunk_state_elision": false,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
@@ -4234,13 +6476,13 @@
  "incumbent_output_hashes": {
   "tiny-linear-serving": {
    "tiny-linear-serving/input-projection": "c3e070a9e93af51fb7498ecdddb8a244928ce763bb276313abb32dc613b1ac81",
-   "tiny-linear-serving/gla-short": "25cfc73a219037fd850e79e56eea81f1f703c93334f38f872eaafffa4bbba625",
-   "tiny-linear-serving/kda-short": "0e4d568472b865ac51d162224c9f15f93f0bb626c4ac9c560c3f14b4bcd3b57f",
-   "tiny-linear-serving/gla-long": "3c110e2b8754ced705d6e52ca49737e05b39c8b9169c66e107c35e0afef9e78c",
-   "tiny-linear-serving/kda-long": "c9bd54c39b076b2bc6e894475dddd5cb4c18fa7783b344f6eb99706ac6fc76f7"
+   "tiny-linear-serving/gla-short": "f216bcf1b495e0c60b606da13b0faf04751e965b95fa74a33c232405b77ba4de",
+   "tiny-linear-serving/kda-short": "6a2c8209fad4f3bcce1c3127b2f1c848e6676e29c46f804b0bc22d911ffca178",
+   "tiny-linear-serving/gla-long": "40539c15072fcc0d7b7c061e21f72781b726e4fd8c6d8585805050d3878dbc5e",
+   "tiny-linear-serving/kda-long": "f58f2a0b787abcf9f7a6bfa2377689851f58178340ea1455fa440dea4d0d8a8f"
   }
  },
- "incumbent_commit": "e1835c81b0bd7003a112cc960a112769bd010ed3",
+ "incumbent_commit": "04bec876efed8dbce9549d37aab890a17fb94038",
  "expected_models": [
   "tiny-linear-serving"
  ],
@@ -4253,7 +6495,7 @@
  ],
  "workload_fingerprint": "f3c807d1475f504c772914bcac3124302a48085b9e7a8ec3739b9c7200c8ed39",
  "model_contract_fingerprint": "2f1c43e50a4dc3ac709ce4a99f6b3da8c17420c00fffb471d49a315cbdf677d6",
- "action_graph_fingerprint": "65a20089bc4503338f65c0f17c194acb12f3674384609797ea066e8e9aef92a5",
+ "action_graph_fingerprint": "0a7af2fece7ed60b3cb2703bc308b3adbf7c3c6f4cd062c17597aa80428578c8",
  "target_hardware_fingerprint": "fbe8c68970c068917f58d4c06cfa49245c4b32331f1c0dc9f3a82cf391110de1",
  "gate_contract": {
   "objective_name": "paired_model_geomean_s",
