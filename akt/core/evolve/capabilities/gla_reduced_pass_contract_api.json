@@ -1,0 +1,68 @@
+{
+ "name": "gla_reduced_pass_contract_api",
+ "gap_id": "simple_gla:contract_impl:schedule-toggle",
+ "action_graph_fingerprint": "75627c0938bea1feee3dbe69fc05ebcf9ac13c021f1e350a6a403edc71015622",
+ "hypothesis": "An f32 contraction is not one matrix-unit operation. A TPU MXU consumes bf16 operands, so Mosaic reproduces an f32 x f32 dot by splitting each operand and issuing SIX passes; the error-compensated bf16_3x form is three, a raw bf16 product is one. Which one a contraction gets is chosen per-einsum by `jax.lax.Precision`, and across the shipped simple_gla kernels that choice is a scattered hardcoded literal -- `decay_rescaled_chunk_fwd` pins three of its five contractions to `Precision.HIGHEST` and leaves the other two at the unstated JAX default. No argument, no control and no knob anywhere in the stack names it, so the pass count is not a schedule a programmer can select; it is whatever each einsum was written with. This capability makes it one explicit, uniform, deployable choice for the whole chunked recurrence. The chunked GLA prefill is the workload where the reduced count is nearly free: its four dominant contractions are short-accumulation (K = V = sub = 128) products whose operands are already pivoted to one sub-chunk of decay, so the compensated form carries both observed outputs to ~7e-5 against the kernel's own frozen 1e-3 contract -- more than a decade of margin -- while cutting the passes in half. Dropping the count is only sound if the operands entering the matrix unit are the FINISHED ones, so the handle restages the arithmetic rather than merely relabelling it. (1) BOTH halves of the factored gate ride the operands: `decay_rescaled_chunk_fwd` folds the column half exp(a - s_j) into k and defers the row half exp(s_i - a) to a pass over the summed output, which re-inflates after the contraction exactly what a reduced mantissa dropped; here the row half, carrying the K**-0.5 scale with it, is folded into q next to the staging transpose that already touches every q element, the two halves meet INSIDE the dot product, and the chunk emits finished output rows -- the whole (G, num_sub, sub, V) output rescaling pass is gone. (2) The chunk-entrance state stops sharing the state contraction: the shipped form splices it in as an extra column of the decay matrix, which costs a full (G, num_sub + 1, K, V) concatenation -- a copy the size of the tile it feeds -- and puts a term carrying the whole preceding sequence into the same accumulator as one sub-chunk's contribution; splitting it back out as its own decayed term deletes the copy and leaves the contraction accumulating like-sized terms. The one contraction that does observe the whole preceding sequence, the chunk carry that produces the final recurrent state, keeps the full pass count. Nothing is approximated structurally -- it is the same sum re-associated, with the same non-positive exponents the decay-rescaled schedule established, the only growing factor still exp(a - s_j) on k_hat with a span of one sub-chunk and still meeting its match inside the same dot product. Delivered as a standalone JAX-callable handle, `reduced_pass_chunk_fwd` in the new file python/sgl_jax/srt/kernels/simple_gla/simple_gla_reduced_pass.py, selected by a free-named string dispatch control gla.contract_impl whose default 'incumbent' leaves every shipped path untouched and bit-identical. Explicit bf16 operand staging was implemented and measured as the alternative and is NOT what shipped: it is both slower (+9.1% / +3.4% against this handle's +27.1% / +13.1%) and 8x closer to the tolerance (5.8e-4 state error), because the casts cost more passes over the operands than the compensated contraction saves.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/gla-long",
+  "baseline_share_pct": 8.84,
+  "expected_relief_pct": 2.6,
+  "reasoning": "SHARE: from the last completed target-hardware eval (.evolve_eval.json, round 013), whose paired incumbent model latency is 2.0371ms. tiny-linear-serving is the only model with non-deferred cases on this backend, so it is 100% of the three-model aggregate; its per-callsite costs at the incumbent plan sum to 2.3790ms and split kda-long 1.3068ms (54.93%), kda-short 0.4101ms (17.24%), input-projection 0.3618ms (15.21%), gla-long 0.2102ms (8.84%), gla-short 0.0901ms (3.79%). Both of this action's callsites are in that model, so the addressable share is 12.63%. WHY THIS FAMILY, given it is not the biggest: kda (72.17%) and gmm (15.21%) are both closed to any capability under this pinned baseline, and that is measured, not assumed. kda's api-novelty floor is an UNMATCHED-OP COUNT of 3722 (seq256_h4_d128) / 1784 (seq128_h2_d64), calibrated from chunk_size tweaks that re-roll thousands of unrolled substitution steps; round 13's log-depth solve measured +18.93% / +8.98% paired relief, correct to 3.1e-7, and scored mass=96 and 48 -- any kda algorithm that is faster traces FEWER ops, so it cannot clear an op-count floor set at twice the incumbent program's size. gmm's graph-owned model_callsites include tiny-moe-serving/router-projection, whose case gmm:m512_k512_n512_g8 lives in a deferred model and therefore has no measured population, which errors the novelty guard before relief is even read. simple_gla is the only family whose every callsite sits in the runnable model and whose per-case novelty floor (p95 = 0 on both gla cases, i.e. the epsilon floor of 4) is clearable. LOCALIZATION, measured in-process at the DP-selected plans under the gate's deterministic XLA flags with round-robin rotated-reversed interleaving: the incumbent decay-rescaled call spends 30.2% (gla-long) / 29.2% (gla-short) in the input staging transposes and the rest in four equal batched contractions plus their elementwise passes; the sub-chunk height is already optimal at 128 (sub=64 is -9.1%, sub=256 is -17.4% on gla-long), and every contraction merge was re-measured at BOTH pass counts and none is taken ([s_A|q]@[v;b_state] and q@[k_hat^T|b_state] land between -1.2% and +7.4% at the full pass count and between -4.2% and -4.7% at the reduced one). The live lever is the pass count: holding the algorithm fixed and moving all five einsums to Precision.HIGH alone is +25.3% (gla-long) / +15.7% (gla-short), and the two structural restagings alone are +2.8% / +4.6% -- so the pass count is the dominant term and the restaging is what makes it sound and adds the remainder. On this XLA:GPU proxy Precision.DEFAULT measures identical to HIGHEST for f32 (0.1760 vs 0.1767ms), so the incumbent runs the whole recurrence at full precision here and the baseline reflects that. MEASURED, end to end through the full runner entry: every deployable configuration of both cases was re-run and re-timed. All 48 new configurations are correct against the frozen fused_recurrent_simple_gla reference -- worst error 6.98e-5 (gla-long) and 7.06e-5 (gla-short) on the two compared outputs against a 1e-3 tolerance. In the whole-space sweep (384 configs for gla-long, 256 for gla-short, 7 interleaved runs each) the best incumbent-dimension configuration goes 0.1960 -> 0.1556ms on gla-long (+20.64%) and 0.0859 -> 0.0784ms on gla-short (+8.64%); the new value wins at the SELECTED plan on both cases, so the DP takes it. Re-timing just the DP-relevant plans tightly (median of 31, round-robin rotated-reversed -- the protocol the gate's own model pairing uses) gives 0.1669 -> 0.1217ms (+27.06%) and 0.0818 -> 0.0711ms (+13.14%). AGGREGATE: the two protocols bracket the answer at 0.0884*20.64 + 0.0379*8.64 = 2.15% and 0.0884*27.06 + 0.0379*13.14 = 2.89%; taken as absolute time against the model's own paired incumbent_s of 2.0371ms the saving is 0.0569 + 0.0118 = 0.0687ms = 3.37%. REPORTED as 2.6%, below the paired figure and near the drift-prone whole-space figure, because the gate re-selects plans on both sides and because the win is a matrix-unit pass count -- a real MXU with a real bf16_3x path rewards that differently from a GPU proxy where the compensated form is a TF32 tensor-core kernel. The same share-weighted method predicted 70% for round 8 against a measured 75.64%, 8.5% for round 9 against 9.31% and 3.5% for round 12 against 3.77%, so it has been calibrated conservative; the >2% bar is met on the conservative bracket alone. EMPIRICAL PANEL: the binary panel keeps its 4 factors -- input-projection remains the single-candidate stage, so no new factor is created, which is the failure mode that falsified rounds 10 and 11 -- and both GLA factors SHRINK rather than grow. gla-long's second-cheapest becomes the incumbent decay_rescaled cs=2048 at 0.1960 vs 0.1556, a singleton ratio of about 1.023 against round 13's measured 1.0439, and gla-short's becomes decay_rescaled cs=512 at 0.0818 vs 0.0711, about 1.005 against 1.0116. Round 13's max |additivity residual| was 0.0158 against the 0.02 tolerance and its two largest terms (-0.01405, -0.01413) are both pairs containing gla-long, so shrinking that factor moves the panel away from the tolerance. NOVELTY, run through the frozen akt.core.analysis.api_metrics.delta_verdict against the pinned baseline before implementing the deployment path: mass=90 (compute 53, memory 37) on BOTH gla:seq2048_h8 and gla:seq512_h8 against those cases' calibrated floors of 0 (effective floor = the epsilon of 4), largest coherent component 82 across 2 components, zero_embed 0, verdict PASS on both. The mass is ancestry-closed: folding the row gate into the staged q gives the q operand a derivation no catalog program has, so every contraction downstream of it -- the score tile, its mask, both output contractions, their sum and the output permutation -- is new, and the concat-free state term adds a second chain. GRAPH CLOSURE, verified by regenerating the graph with the frozen extractor: simple_gla:contract_impl:schedule-toggle is mined programmer-exposed at simple_gla.py:1354 with source_function chunk_simple_gla_fwd_varlen, sink assignment contract_impl_handle, incumbent 'incumbent', candidates ['incumbent','reduced_pass'] and callsites gla-long/gla-short, while the perpetual simple_gla:new_api:standalone slot is still emitted as required. NOT A REPEAT OF A FAILED ESTIMATE: the recorded simple_gla estimate failures are two on enable_chunk_fwd_h_kernel_varlen_variant (a frozen-workload fingerprint change, since fixed by the harness's deterministic flags, and a manifest schema slip) and one on state_output_impl (empirical additive-DP). None proposed a contraction pass-count axis and none touched how the contraction operands are staged. SPACE: the handle owns the whole recurrence, so its configurations pin the state and output schedule toggles, both elision toggles and chunk_impl at their defaults, and its two-level walk needs a chunk taller than one 128-row sub-chunk; the runner therefore enumerates 32 new configurations for gla-long (352 -> 384) and 16 for gla-short (240 -> 256), 812 -> 860 campaign-wide, while every incumbent configuration is preserved exactly at the new axis's default."
+ },
+ "search_dimensions": [
+  {
+   "control": "gla.contract_impl",
+   "kernel_function": "chunk_simple_gla_fwd_varlen",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "simple_gla:contract_impl:schedule-toggle",
+  "family": "simple_gla",
+  "kernel_ids": [
+   "gla"
+  ],
+  "source_axis": "contract_impl",
+  "source_function": "chunk_simple_gla_fwd_varlen",
+  "source_sink": {
+   "assignments": [
+    "contract_impl_handle"
+   ],
+   "expression_asts": {
+    "contract_impl_handle": "IfExp(test=Compare(left=Name(id='contract_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='reduced_pass')]), body=Name(id='reduced_pass_chunk_fwd', ctx=Load()), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": "incumbent",
+  "candidate_values": [
+   "incumbent",
+   "reduced_pass"
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+   "line": 1354,
+   "detail": "default='incumbent'"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/gla-long",
+   "tiny-linear-serving/gla-short"
+  ],
+  "action_edge": {
+   "source": "action:simple_gla:contract_impl:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla_reduced_pass.py",
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_reduced_pass_contract_api.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "EMPIRICAL ADDITIVE-DP GUARD FAILED: falsified",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

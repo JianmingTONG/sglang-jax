@@ -1,0 +1,68 @@
+{
+ "name": "kda_log_depth_solve_api",
+ "gap_id": "kda:solve_impl:schedule-toggle",
+ "action_graph_fingerprint": "75627c0938bea1feee3dbe69fc05ebcf9ac13c021f1e350a6a403edc71015622",
+ "hypothesis": "Every shipped KDA chunk path -- the four-stage pipeline and round 8's fused resident pipeline alike -- inverts the intra-chunk delta-rule operator by FORWARD SUBSTITUTION. `_solve_unit_lower_triangular` walks the chunk one row at a time and each row subtracts a dot product against every row already solved, so a BT-row chunk is BT strictly sequential steps, each a rank-j correction too small to fill a matrix unit. The arithmetic is trivial -- BT^2/2 multiply-adds against V columns -- but the DEPTH is BT, and depth is what the stage costs. Measured in-process at the DP-selected plans, under the gate's own deterministic-XLA flags with jax.clear_caches() between variants, deleting the substitution removes 60.5% of tiny-linear-serving/kda-long and 38.7% of tiny-linear-serving/kda-short, while deleting the ENTIRE gated operator construction around it (the [BT, BT, K] exp2(g_i - g_j) decay tensor and both of its reductions) removes 3.0% and -1.6%. That is the campaign's `dependency-bound` verdict localized to one stage: kda-long is not moving bytes and is not doing arithmetic, it is waiting on a chain 256 links long. The substitution is sequential only because it is written as one. The operator is I + A with A strictly lower triangular, hence NILPOTENT (A^BT = 0), so its inverse is a finite Neumann sum whose binary expansion factors: (I + A)^-1 = sum_{j<BT} (-A)^j = prod_{p<log2(BT)} (I + (-A)^(2^p)). This capability introduces a STANDALONE JAX API -- log_depth_kda_fwd in the new file python/sgl_jax/srt/kernels/kda/log_depth_solve.py -- that applies those factors to the right-hand side instead of forming the inverse: x <- x + M x with M <- M^2 between steps, i.e. 2*log2(BT)-1 dense full-tile products and a dependency chain of the same length -- 15 steps instead of 256 at the kda-long plan. The chunk's BT tiny rank-1 corrections become a handful of dense (BT,BT)x(BT,*) products, which is the shape the matrix unit exists for. The trade is explicit and is why this is a SELECTABLE handle rather than a replacement: the substitution performs BT^2*V/2 multiply-adds and the product form roughly log2(BT)*(BT^3 + BT^2*V), so it wins exactly where the shipped schedule is latency-bound rather than throughput-bound, which is what a serving prefill's chunk-sized tiles are. Nothing is approximated -- the product is the same finite sum re-associated. Everything else in the handle is round 8's resident program unchanged: the delta-rule correction still enters the solve's right-hand side rather than being applied to a separately solved w, the chunk state still stays in a VMEM scratch across a group's chunks, every tile is still placed by a BlockSpec index map over the BT-blocked time axis, and the body is straight-line -- the entrance reset, the padded tail and the final-state write are selects and masked weights, not pl.when regions. Deployment goes through a free-named string dispatch control kda.solve_impl whose default 'incumbent' leaves both shipped pipelines untouched and bit-identical. All 9 new deployable configurations were run: every one matches the frozen pure-JAX naive_recurrent_kda reference to at most 3.1e-7 on both compared outputs (token output and final recurrent state) against a 1e-2 tolerance -- an order of magnitude TIGHTER than the substitution's own 4.1e-6 at the same plans, because a product of dense contractions accumulates less rounding than 256 chained rank-1 updates.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/kda-long",
+  "baseline_share_pct": 54.0,
+  "expected_relief_pct": 10.0,
+  "reasoning": "SHARE: from the last completed target-hardware eval (evals/c1786023097_round_012, the KEPT round), whose certified additive optimum is full_dp_cost_s=2.2512ms. tiny-linear-serving is the only model holding non-deferred cases on this backend (the other two defer 9 of their 10 calls and contribute nothing), so it is 100% of the three-model aggregate; its per-callsite modeled costs at the selected plan are kda-long 1.216ms (54.02%), kda-short 0.417ms (18.52%), input-projection 0.335ms (14.88%), gla-long 0.196ms (8.71%), gla-short 0.087ms (3.87%). Both of this action's callsites are in that model, so the addressable share is 72.54% -- after rounds 6, 9 and 12 took the GLA state, output and chunk stages, KDA is where essentially all remaining time is. LOCALIZATION: the campaign LIMITER is kda-long -> dependency-bound. Ablating the fused resident kernel body in-process at the DP-selected plans (deterministic XLA flags, jax.clear_caches() between variants, median of 11 runs) attributes 60.5% of kda-long and 38.7% of kda-short to _solve_unit_lower_triangular alone, and 3.0%/-1.6% to the whole [BT,BT,K] gated-decay operator construction -- so the depth of the substitution, not the width of the tiles it consumes, is the stage. Timed standalone on the same operands, the Neumann-product solve is 2.27x the substitution at (BT=256, V=128, H=4) and 1.64x at (BT=128, V=64, H=2). MEASURED, end to end through the full runner entry, every deployable configuration of both cases re-timed in one process (median of 13 runs, jax.clear_caches() between configurations): kda-long's best incumbent configuration is fused_resident cs=256 at 1.1537ms and its best log_depth configuration is cs=256 at 0.9353ms = 18.93% relief; kda-short's best incumbent is fused_resident cs=128 at 0.3810ms against 0.3468ms = 8.98% relief. The win is uniform, not a single lucky point: log_depth beats the incumbent at EVERY shared chunk size on both cases (kda-long 128: 1.2036 -> 1.0256; kda-short 64: 0.4950 -> 0.4871, 32: 0.6687 -> 0.5398, 16: 0.7662 -> 0.7259). AGGREGATE = 0.5402*18.93 + 0.1852*8.98 = 10.23 + 1.66 = 11.89%. DISCOUNT: reported as 10.0%, cutting about a sixth, because the gate re-selects plans on both sides of the pair and because the win is the collapse of a 256-deep dependency chain into 15 dense products -- a deterministic TPU schedule with a real matrix unit and a real sequencer rewards that differently from this GPU-interpret proxy, and the product form pays log2(BT)*BT^3 more arithmetic to buy the depth, which is cheap on the proxy and less cheap where the MXU is already the constraint. The same share-weighted method predicted 70% for round 8 against a measured paired 75.64%, 8.5% for round 9 against 9.31%, and 3.5% for round 12 against 3.77%, so it is calibrated conservative; the >2% bar is cleared five times over even if only kda-long improved and only by half the measured amount. EMPIRICAL PANEL: the binary panel keeps its 4 factors (input-projection stays the single-candidate stage, so no new factor is created -- the failure mode that falsified rounds 10 and 11), and because the handle contributes SEVERAL fast configurations per callsite the panel's second-best stays close: kda-long's alternative becomes log_depth cs=128 (+9.65% of that stage, not the +85% an incumbent alternative would be) and kda-short's becomes fused_resident cs=128 (+9.86%). Rebasing round 12's measured singletons onto the post-win total gives per-factor deltas of 0.048/0.019/0.028/0.015 and a second-order interaction residual of 0.0042, BELOW round 12's 0.0046 and well inside the 0.02 tolerance. NOT A REPEAT OF A FAILED ESTIMATE: the recorded kda estimate failures were three on enable_kda_fwd_intra_variant (frozen-workload guards, since fixed by the harness's deterministic flags) and one on kda:kda_impl (round 7's packed-resident layout, api-novelty); none proposed solve_impl, and none touched the substitution's dependency depth -- round 7 only re-addressed the same operations, and round 8 re-associated the delta-rule correction into the solve's right-hand side while leaving the substitution itself intact. SPACE: the handle owns the whole chunk pipeline, so its configurations pin pipeline_impl, intra_block_size, scalar_intra_solve, compute_block_chunks, state_block_chunks and state_dim_alignment at their defaults (a product-form solve has no substitution block size); the runner therefore enumerates 5 new configurations for kda-long and 4 for kda-short (91->96 and 128->132, 812->821 campaign-wide) while every incumbent configuration is preserved exactly at the new dimension's default. DISCLOSED RISK -- API-NOVELTY: run through the frozen akt.core.analysis.api_metrics.delta_verdict against the pinned baseline, this candidate scores mass=96 (compute 88, memory 8) on kda:seq256_h4_d128 against that case's calibrated floor of 3722, and mass=48 against 1784 on kda:seq128_h2_d64 (coherence largest=24, zero_embed=0). It therefore FAILS the delta-redundancy guardrail as pinned. The reason is structural and worth recording rather than working around: the guardrail measures novelty as unmatched-operation COUNT, kda's floor was calibrated from chunk_size tweaks that re-roll thousands of unrolled substitution steps, and this capability's entire point is that the 256-step unrolled chain IS the cost -- the candidate program contains roughly 400 operations in total where the incumbent contains 4784, so no op-count-reducing kda algorithm can exceed a 3722-op floor at any implementation quality. The measured relief above is nonetheless real, verified against the frozen reference at every deployable configuration, and the code stands on its own; clearing the guardrail requires rebaselining it, not a different algorithm."
+ },
+ "search_dimensions": [
+  {
+   "control": "kda.solve_impl",
+   "kernel_function": "chunk_kda_fwd",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "kda:solve_impl:schedule-toggle",
+  "family": "kda",
+  "kernel_ids": [
+   "kda"
+  ],
+  "source_axis": "solve_impl",
+  "source_function": "chunk_kda_fwd",
+  "source_sink": {
+   "assignments": [
+    "chunk_kda_solve_handle"
+   ],
+   "expression_asts": {
+    "chunk_kda_solve_handle": "IfExp(test=Compare(left=Name(id='solve_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='log_depth')]), body=Name(id='log_depth_kda_fwd', ctx=Load()), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": "incumbent",
+  "candidate_values": [
+   "incumbent",
+   "log_depth"
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/kda/kda.py",
+   "line": 1272,
+   "detail": "default='incumbent'"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/kda-long",
+   "tiny-linear-serving/kda-short"
+  ],
+  "action_edge": {
+   "source": "action:kda:solve_impl:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/log_depth_solve.py",
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_log_depth_solve_api.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "API-NOVELTY GUARD FAILED (parameter tweak / insufficient coverage):  |\u0394|cmp=44.000 |\u0394|mem=4.000 vs noise_floor=1784.000; coherence components=2 largest=24 max_depth=16 zero_embed=0; G_delta=1.000 vs cut=0.500",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

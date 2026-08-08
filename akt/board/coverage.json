@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-08 03:35:09",
+ "generated": "2026-08-08 07:33:26",
  "suite": "full",
  "nodes": [
   {
@@ -1870,6 +1870,10 @@
    "reason": "invalid config"
   },
   {
+   "id": "gla:seq512_h8@chunk_impl=decay_rescaled",
+   "reason": "invalid config"
+  },
+  {
    "id": "gla:seq2048_h8@single_chunk_state_elision=True",
    "reason": "invalid config"
   },
@@ -1879,6 +1883,10 @@
   },
   {
    "id": "gla:seq2048_h8@output_impl=batched_value_tiles",
+   "reason": "invalid config"
+  },
+  {
+   "id": "gla:seq2048_h8@chunk_impl=decay_rescaled",
    "reason": "invalid config"
   },
   {
@@ -1943,6 +1951,6 @@
   }
  ],
  "edge_errors": [],
- "runtime_s": 91.08,
+ "runtime_s": 91.65,
  "note": "f_ab = fraction of a's substantive op mass reproducible from b alone (api_metrics.subtract_catalog two-pass delta); 'generalizes' means a reproduces b (a \u2287 b). Cross-case pairs restricted to case-default nodes; variant nodes compare against case defaults only. suite=full."
 }
