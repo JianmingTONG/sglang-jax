@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-08 07:33:26",
+ "generated": "2026-08-08 18:04:36",
  "suite": "full",
  "nodes": [
   {
@@ -1874,6 +1874,14 @@
    "reason": "invalid config"
   },
   {
+   "id": "gla:seq512_h8@walk_impl=fused_walk",
+   "reason": "invalid config"
+  },
+  {
+   "id": "gla:seq512_h8@walk_impl=fused_walk_exact_state",
+   "reason": "invalid config"
+  },
+  {
    "id": "gla:seq2048_h8@single_chunk_state_elision=True",
    "reason": "invalid config"
   },
@@ -1887,6 +1895,14 @@
   },
   {
    "id": "gla:seq2048_h8@chunk_impl=decay_rescaled",
+   "reason": "invalid config"
+  },
+  {
+   "id": "gla:seq2048_h8@walk_impl=fused_walk",
+   "reason": "invalid config"
+  },
+  {
+   "id": "gla:seq2048_h8@walk_impl=fused_walk_exact_state",
    "reason": "invalid config"
   },
   {
@@ -1951,6 +1967,6 @@
   }
  ],
  "edge_errors": [],
- "runtime_s": 91.65,
+ "runtime_s": 92.04,
  "note": "f_ab = fraction of a's substantive op mass reproducible from b alone (api_metrics.subtract_catalog two-pass delta); 'generalizes' means a reproduces b (a \u2287 b). Cross-case pairs restricted to case-default nodes; variant nodes compare against case defaults only. suite=full."
 }

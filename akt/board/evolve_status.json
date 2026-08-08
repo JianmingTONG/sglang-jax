@@ -1,19 +1,19 @@
 {
  "state": "idle",
- "updated_ts": 1786184134.463383,
+ "updated_ts": 1786212369.858259,
  "init_ts": 1786023097.9306195,
- "round": 14,
- "capability": "gla_reduced_pass_contract_api",
+ "round": 15,
+ "capability": "gla_fused_operand_walk_api",
  "phase": null,
  "started_ts": null,
  "testbench": true,
  "last": {
-  "round": 14,
-  "capability": "gla_reduced_pass_contract_api",
-  "decision": "reject",
-  "reason": "EMPIRICAL ADDITIVE-DP GUARD FAILED: falsified",
-  "geomean_s": 0.001975649967789651,
-  "delta_pct": -3.09,
-  "finished_ts": 1786184134.4633813
+  "round": 15,
+  "capability": "gla_fused_operand_walk_api",
+  "decision": "keep",
+  "reason": "paired three-model candidate beats incumbent by 3.04% (paired=3.04%, absolute=3.70%; both strictly > 2%)",
+  "geomean_s": 0.001958634704351426,
+  "delta_pct": -3.04,
+  "finished_ts": 1786212369.858258
  }
 }
