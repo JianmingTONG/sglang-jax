@@ -1,0 +1,69 @@
+{
+ "name": "kda_resident_pipeline_api",
+ "gap_id": "kda:pipeline_impl:schedule-toggle",
+ "action_graph_fingerprint": "0a7af2fece7ed60b3cb2703bc308b3adbf7c3c6f4cd062c17597aa80428578c8",
+ "hypothesis": "The shipped KDA prefill runs the chunked delta rule as four Pallas launches that hand every intermediate through HBM, and the reason is a data dependency the four-stage decomposition creates for itself. Stage 2 cannot use the chunk's entrance state -- stage 3 has not produced it yet -- so it solves the unit-lower-triangular system against THREE stacked right-hand sides, [v*beta | k*exp2(g)*beta | I] = V+K+BT columns, materializing u, w and an explicit BT x BT inverse as [NC, BT, *] tensors purely so stage 3 can later form v_new = u - w @ h and stage 4 can re-read Aqk. Stages 2 and 4 then address their chunks through a RUNTIME start-offset vector: each gathers its tiles with a vmapped dynamic_slice and scatter-adds its results back into T+BT-row staging buffers through an [NC, BT] int32 position vector -- exactly the campaign's named LIMITER (kda-long -> #47 jit|int32r2 -> DMA memory-bound, cmp=0%/bw=100%, 'cut bytes moved / keep data resident'). This capability introduces a STANDALONE JAX API -- resident_pipeline_kda_fwd in the new file python/sgl_jax/srt/kernels/kda/resident_pipeline.py -- that executes stages 2-4 as ONE pass with the chunk state resident in a VMEM scratch, which makes a different algorithm available: because the solve is a linear operator, u - w @ h equals (I - L)^-1 (v*beta - k*exp2(g)*beta @ h), so the entrance state enters the RHS and the pass solves V columns instead of V+K+BT while u, w and A_inv are never formed at all. That substitution is only expressible once the intra solve and the state recurrence share a program, which is the point of the fusion rather than a side effect of it. The state then advances in place across the group's chunks and across the grid's sequential block axis, every tile is placed by a BlockSpec index map over the BT-blocked time axis (_align_seqs guarantees each sequence starts on a group boundary), and the deterministic gather/scatter index round trip disappears with the staging buffers it addressed. The handle is deliberately NARROWER than chunk_kda_fwd: owning the whole chunk pipeline, it fixes the per-stage micro-schedule the incumbent exposes separately (compute_block_chunks, state_block_chunks, scalar_intra_solve, state_dim_alignment) and consumes only chunk_size and intra_block_size, so the deployment space grows by one configuration per chunk_size (+9 campaign-wide) instead of duplicating the incumbent grid. Deployment goes through a free-named string dispatch control kda.pipeline_impl whose default 'incumbent' leaves the shipped four-stage path untouched and bit-identical. All nine new deployable configurations were run: every one matches the frozen pure-JAX naive_recurrent_kda reference to at most 4.1e-6 on both compared outputs (token output and final recurrent state) against a 1e-2 tolerance.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/kda-long",
+  "baseline_share_pct": 60.0,
+  "expected_relief_pct": 70.0,
+  "reasoning": "SHARE: taken from the last completed target-hardware eval (evals/c1786023097_round_007), each callsite timed at its incumbent-plan configuration. tiny-linear-serving is the only model with non-deferred cases on this backend (the other two defer all 9 of their calls), so it is 100% of the three-model aggregate; its incumbent per-callsite measurements are kda-long 6.448ms (59.99%), kda-short 3.315ms (30.84%), gla-long 0.358ms (3.33%), input-projection 0.357ms (3.32%), gla-short 0.271ms (2.52%), summing to 10.7481ms against a paired model incumbent_s of 9.7475ms. The action's two affected callsites are therefore 90.8% of the aggregate: after rounds 1 and 6 took the GLA state and output stages, KDA is where essentially all remaining time is. LOCALIZATION: the campaign LIMITER is kda-long -> #47 jit|int32r2 -> DMA memory-bound; those int32 segments are the aligned-space position vectors and their scatter/gather, and this action removes both the index round trip and the staging buffers it addressed, while cutting the triangular solve from V+K+BT=320 right-hand-side columns to V=128. MEASURED, in-process, under the gate's own deterministic-XLA flags (--xla_gpu_autotune_level=0 --xla_gpu_deterministic_ops=true), one warmup and the median of 9 runs of the full runner entry: kda-long at its DP-selected incumbent plan (cs=128, ibs=8, scalar=True, cbc=2, sbc=2, sda=128) is 6.174ms and the best fused_resident configuration (cs=256) is 1.168ms = 81.07% relief; kda-short at its DP-selected incumbent plan (cs=64, ibs=16, scalar=False, cbc=2, sbc=2, sda=64) is 3.124ms and the best fused_resident configuration (cs=128) is 0.372ms = 88.08% relief. AGGREGATE = 0.5999*81.07 + 0.3084*88.08 = 48.63 + 27.16 = 75.8%. DISCOUNT: reported as 70%, cutting roughly a twelfth, because part of the win is the annihilation of a deterministic-GPU scatter/gather round trip and a deterministic TPU permutation is less pathological than the GPU equivalent, and because the gate's DP re-selects plans on both sides of the pair. The same share-weighted model predicted 66.8% for round 7 against a measured paired 68.06%, so the method is calibrated slightly conservative; the >2% bar is cleared by more than an order of magnitude even if only one of the two callsites improved. NOT A REPEAT: round 7 (kda_packed_resident_api, gap_id kda:kda_impl:schedule-toggle) reached the same measurement stage and was rejected by the API-NOVELTY guard with |delta|cmp=0.000 |delta|mem=32.000 against a noise floor of 1784 -- its resident layout only DELETED the index round trip, so every surviving operation matched an existing catalog signature and the candidate program was a re-parameterization by that measure. This round changes the algorithm, not only the addressing: folding the delta-rule correction into the solve's RHS and carrying the state across an unrolled chunk group gives each chunk's operations an ancestry that spans its predecessor. Run through the frozen akt.core.analysis.api_metrics.delta_verdict with the pinned baseline and the real runner path, the candidate now scores mass=4645 vs floor 3722 (kda:seq256_h4_d128) and mass=2330 vs floor 1784 (kda:seq128_h2_d64), coherence largest=1158 >= 3, zero_embed=0, PASS on both. The three earlier rejections of a resident schedule (kda_packed_resident_chunk_schedule, kda_resident_chunk_handoff, kda_resident_chunk_layout) never reached a measurement at all: each died with rc=-9, the Linux OOM killer, because a plain boolean axis DOUBLES this family's searched configuration count. The narrower standalone signature is what avoids that here -- it consumes neither compute_block_chunks nor state_block_chunks nor scalar_intra_solve nor state_dim_alignment, so the runner enumerates 5 new configurations for kda-long and 4 for kda-short (86->91 and 124->128) while the incumbent space is preserved exactly."
+ },
+ "search_dimensions": [
+  {
+   "control": "kda.pipeline_impl",
+   "kernel_function": "chunk_kda_fwd",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "kda:pipeline_impl:schedule-toggle",
+  "family": "kda",
+  "kernel_ids": [
+   "kda"
+  ],
+  "source_axis": "pipeline_impl",
+  "source_function": "chunk_kda_fwd",
+  "source_sink": {
+   "assignments": [
+    "chunk_kda_pipeline_handle"
+   ],
+   "expression_asts": {
+    "chunk_kda_pipeline_handle": "IfExp(test=Compare(left=Name(id='pipeline_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='fused_resident')]), body=Name(id='resident_pipeline_kda_fwd', ctx=Load()), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": "incumbent",
+  "candidate_values": [
+   "incumbent",
+   "fused_resident"
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/kda/kda.py",
+   "line": 1270,
+   "detail": "default='incumbent'"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/kda-long",
+   "tiny-linear-serving/kda-short"
+  ],
+  "action_edge": {
+   "source": "action:kda:pipeline_impl:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/resident_pipeline.py",
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_resident_pipeline_api.json"
+ ],
+ "status": "kept",
+ "delta_pct": 75.64,
+ "measured_geomean_s": 0.0023791920393705377,
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

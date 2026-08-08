@@ -3001,7 +3001,7 @@
     "intra_block_size"
    ],
    "has_tuned_table": false,
-   "n_files": 2
+   "n_files": 3
   },
   {
    "family": "megablox_gmm_kernel",
@@ -3853,6 +3853,48 @@
    "action_node": null
   },
   {
+   "gap_id": "kda:BT,chunk_size,intra_block_size:missing-tuned-table",
+   "id": "kda:BT,chunk_size,intra_block_size:missing-tuned-table",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "axis": "BT,chunk_size,intra_block_size",
+   "source_axis": "BT,chunk_size,intra_block_size",
+   "source_function": null,
+   "category": "missing-tuned-table",
+   "status": "missing-tuned-table",
+   "what": "tiles reachable but kernel ships no tuned table",
+   "detail": "resident_pipeline.py constructs tiles but references no tuned table",
+   "evidence": "python/sgl_jax/srt/kernels/kda/resident_pipeline.py:0",
+   "incumbent_value": null,
+   "incumbent_value_known": false,
+   "candidate_values": [],
+   "source_sink": null,
+   "reachable_prim": "dot_general",
+   "elevated_in_akt": true,
+   "programmer_exposed": true,
+   "runner_axes": [
+    "chunk_size",
+    "intra_block_size"
+   ],
+   "programmer_controls": [
+    "kda.chunk_size",
+    "kda.intra_block_size"
+   ],
+   "exposure_level": "programmer",
+   "in_akt_suite": true,
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": false,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dot_general",
+   "action_node": null
+  },
+  {
    "gap_id": "simple_gla:BT,chunk_size:missing-tuned-table",
    "id": "simple_gla:BT,chunk_size:missing-tuned-table",
    "family": "simple_gla",
@@ -3890,6 +3932,56 @@
    "existing_low_level_proven": false,
    "eligible_for_current_gate": false,
    "graph_node": "pallas:dot_general",
+   "action_node": null
+  },
+  {
+   "gap_id": "kda:pipeline_impl:schedule-toggle",
+   "id": "kda:pipeline_impl:schedule-toggle",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "axis": "pipeline_impl",
+   "source_axis": "pipeline_impl",
+   "source_function": "chunk_kda_fwd",
+   "category": "schedule-toggle",
+   "status": "schedule-toggle",
+   "what": "schedule/fusion toggle never searched",
+   "detail": "default='incumbent'",
+   "evidence": "python/sgl_jax/srt/kernels/kda/kda.py:1270",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent",
+    "fused_resident"
+   ],
+   "source_sink": {
+    "assignments": [
+     "chunk_kda_pipeline_handle"
+    ],
+    "expression_asts": {
+     "chunk_kda_pipeline_handle": "IfExp(test=Compare(left=Name(id='pipeline_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='fused_resident')]), body=Name(id='resident_pipeline_kda_fwd', ctx=Load()), orelse=Constant(value=None))"
+    }
+   },
+   "reachable_prim": "dma_start",
+   "elevated_in_akt": true,
+   "programmer_exposed": true,
+   "runner_axes": [
+    "pipeline_impl"
+   ],
+   "programmer_controls": [
+    "kda.pipeline_impl"
+   ],
+   "exposure_level": "programmer",
+   "in_akt_suite": true,
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dma_start",
    "action_node": null
   },
   {
@@ -4136,7 +4228,7 @@
    "label": "tiles reachable but kernel ships no tuned table",
    "reachable_prim": "dot_general",
    "salience": 5,
-   "count": 6
+   "count": 7
   },
   "dead-tuned-table": {
    "label": "tuned table exists but selector never consults it",
@@ -4148,7 +4240,7 @@
    "label": "schedule/fusion toggle never searched",
    "reachable_prim": "dma_start",
    "salience": 4,
-   "count": 6
+   "count": 7
   },
   "backend-gated": {
    "label": "tuned table gated to one TPU generation",
@@ -4353,6 +4445,33 @@
    ],
    "action_edge": {
     "source": "action:kda:enable_chunk_kda_fwd_o_gk_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
+   "gap_id": "kda:enable_resident_pipeline_stage_variant:schedule-toggle",
+   "family": "kda",
+   "kernel_ids": [
+    "kda"
+   ],
+   "source_axis": "enable_resident_pipeline_stage_variant",
+   "source_function": "resident_pipeline_stage",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/kda/resident_pipeline.py:238",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the resident_pipeline_stage Pallas launch, selectable behind a new enable_resident_pipeline_stage_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/kda-long",
+    "tiny-linear-serving/kda-short"
+   ],
+   "action_edge": {
+    "source": "action:kda:enable_resident_pipeline_stage_variant:schedule-toggle",
     "target": "pallas:dma_start"
    },
    "access": "frontier"
@@ -4773,12 +4892,12 @@
   "active_primitives": 54,
   "kernels_scanned": 9,
   "pallas_families": 14,
-  "auto_gaps": 26,
+  "auto_gaps": 28,
   "open_gaps": 22,
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
-  "frontier_slots": 14,
+  "frontier_slots": 15,
   "standalone_frontier_slots": 8,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true

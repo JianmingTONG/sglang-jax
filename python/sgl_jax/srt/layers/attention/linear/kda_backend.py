@@ -10,7 +10,8 @@ from sgl_jax.srt.configs.kernel_control import (
     KernelControlContext,
     KernelControlPolicy,
 )
-from sgl_jax.srt.kernels.kda import chunk_kda, naive_recurrent_kda
+from sgl_jax.srt.kernels.kda.kda import chunk_kda_fwd as chunk_kda
+from sgl_jax.srt.kernels.kda.naive import naive_recurrent_kda
 from sgl_jax.srt.layers.attention.hybrid_linear_attn_backend import (
     LinearRecurrentAttnBackend,
     get_current_device_kind,
@@ -396,6 +397,7 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
                 compute_block_chunks=controls.compute_block_chunks,
                 state_block_chunks=controls.state_block_chunks,
                 state_dim_alignment=controls.state_dim_alignment,
+                pipeline_impl=controls.pipeline_impl,
                 single_chunk_state_elision=controls.single_chunk_state_elision,
                 zero_state_output_elision=controls.zero_state_output_elision,
             )

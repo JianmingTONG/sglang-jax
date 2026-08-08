@@ -9,7 +9,10 @@ stage-2 triangular solve, exact `scalar_intra_solve` scheduling, and kept
 `compute_block_chunks` for grouping the independent stage-2/stage-4 programs.
 `state_block_chunks` separately groups stage-3 propagation, while
 `state_dim_alignment` exposes its K/V state tile instead of always rounding
-both dimensions to 128. Historical state/output-elision axes remain visible as
+both dimensions to 128. `pipeline_impl` dispatches the whole recurrence to the
+standalone `resident_pipeline_kda_fwd` handle, which fuses stages 2-4 into one
+resident-state pass; it owns that schedule, so the per-stage grouping knobs are
+pinned at their defaults for its configurations. Historical state/output-elision axes remain visible as
 runner-only experiments but are invalid in this serving objective because the
 nonzero initial state and final recurrent state are both observed.
 
@@ -44,6 +47,7 @@ _STATE_CAPABILITY = "kda_state_block_chunks"
 _STATE_DIM_CAPABILITY = "kda_state_dim_alignment"
 _STATE_ELISION_CAPABILITY = "kda_single_chunk_state_elision"
 _OUTPUT_ELISION_CAPABILITY = "kda_zero_state_output_elision"
+_PIPELINE_CAPABILITY = "kda_resident_pipeline_api"
 
 
 @functools.lru_cache(maxsize=None)
@@ -56,6 +60,7 @@ def _jit_chunk(
     state_dim_alignment: int,
     single_chunk_state_elision: bool,
     zero_state_output_elision: bool,
+    pipeline_impl: str,
     scale: float,
 ):
     # Match the production prefill contract: an existing recurrent state enters
@@ -79,6 +84,7 @@ def _jit_chunk(
             state_dim_alignment=state_dim_alignment,
             single_chunk_state_elision=single_chunk_state_elision,
             zero_state_output_elision=zero_state_output_elision,
+            pipeline_impl=pipeline_impl,
         )
         return out[0], out[1]
     return jax.jit(f)
@@ -94,6 +100,7 @@ def _run(inp, cfg):
         int(cfg.get("state_dim_alignment", 128)),
         bool(cfg.get("single_chunk_state_elision", False)),
         bool(cfg.get("zero_state_output_elision", False)),
+        str(cfg.get("pipeline_impl", "incumbent")),
         float(inp["scale"]),
     )(
         inp["q"],
@@ -127,6 +134,21 @@ def _space(seqlen: int, head_dim: int) -> DesignSpace:
         state_dim_alignment = c.get("state_dim_alignment", 128)
         state_elision = c.get("single_chunk_state_elision", False)
         output_elision = c.get("zero_state_output_elision", False)
+        pipeline_impl = c.get("pipeline_impl", "incumbent")
+        if pipeline_impl != "incumbent":
+            # The fused resident pipeline owns the whole chunk schedule: it
+            # consumes neither the stage-2/stage-4 grouping nor the stage-3
+            # state tiling, so those knobs stay at their defaults and the
+            # deployment space gains one configuration per chunk_size instead
+            # of a duplicate of the entire incumbent grid.
+            if (
+                intra_block_size != 16
+                or scalar_intra_solve
+                or compute_block_chunks != 1
+                or state_block_chunks != 1
+                or state_dim_alignment != 128
+            ):
+                return False
         return (
             chunk_size >= 16
             and (chunk_size & (chunk_size - 1)) == 0
@@ -194,6 +216,13 @@ def _space(seqlen: int, head_dim: int) -> DesignSpace:
                 default=128,
                 elevated_by=_STATE_DIM_CAPABILITY,
                 programmer_control="kda.state_dim_alignment",
+            ),
+            Knob(
+                "pipeline_impl",
+                ["incumbent", "fused_resident"],
+                default="incumbent",
+                elevated_by=_PIPELINE_CAPABILITY,
+                programmer_control="kda.pipeline_impl",
             ),
             Knob(
                 "single_chunk_state_elision",

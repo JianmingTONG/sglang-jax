@@ -50,6 +50,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "compute_block_chunks",
         "state_block_chunks",
         "state_dim_alignment",
+        "pipeline_impl",
     ),
     "gla": (
         "chunk_size",
@@ -113,6 +114,10 @@ class KDAKernelControls:
     compute_block_chunks: int = 1
     state_block_chunks: int = 1
     state_dim_alignment: int = 128
+    # Which pipeline executes the chunked recurrence. "incumbent" is the shipped
+    # four-launch path; "fused_resident" runs the intra solve, the state
+    # recurrence and the output as one pass with the chunk state resident.
+    pipeline_impl: str = "incumbent"
     # Internal execution flags, deliberately absent from the programmer registry:
     # serving observes the final recurrent state, so these must remain disabled.
     single_chunk_state_elision: bool = False
@@ -124,6 +129,9 @@ class KDAKernelControls:
         _require_choice("kda.compute_block_chunks", self.compute_block_chunks, (1, 2))
         _require_choice("kda.state_block_chunks", self.state_block_chunks, (1, 2, 4))
         _require_choice("kda.state_dim_alignment", self.state_dim_alignment, (64, 128))
+        _require_choice(
+            "kda.pipeline_impl", self.pipeline_impl, ("incumbent", "fused_resident")
+        )
         _require_bool("kda.scalar_intra_solve", self.scalar_intra_solve)
         _require_bool("kda.single_chunk_state_elision", self.single_chunk_state_elision)
         _require_bool("kda.zero_state_output_elision", self.zero_state_output_elision)

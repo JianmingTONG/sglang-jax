@@ -1228,6 +1228,7 @@ def _unalign_output(o, orig_cu_seqlens, aligned_cu_seqlens, T_out):
         "state_dim_alignment",
         "single_chunk_state_elision",
         "zero_state_output_elision",
+        "pipeline_impl",
         "safe_gate",
         "lower_bound",
         "use_gate_in_kernel",
@@ -1266,6 +1267,7 @@ def chunk_kda_fwd(
     state_dim_alignment: int = 128,
     single_chunk_state_elision: bool = False,
     zero_state_output_elision: bool = False,
+    pipeline_impl: str = "incumbent",
 ):
     """KDA chunked forward pass for variable-length sequences (varlen).
 
@@ -1285,9 +1287,42 @@ def chunk_kda_fwd(
          zero inter-chunk term and its q/g/h loads.
       4. Output computation (inter-chunk state + intra-chunk attention)
 
+    ``pipeline_impl`` selects which pipeline executes the recurrence.
+    ``"incumbent"`` keeps the four-stage path documented above;
+    ``"fused_resident"`` dispatches to the standalone
+    ``resident_pipeline_kda_fwd`` handle, which runs stages 2-4 as one pass with
+    the chunk state resident in VMEM (see kda/resident_pipeline.py).
+
     Returns:
         12-tuple: o, final_state, g, Aqk, Akk, w, u, qg, kg, v_new, h, initial_state
     """
+    # Imported here, not at module scope: resident_pipeline reuses this module's
+    # solve/alignment helpers, so a top-level import would be circular.
+    from sgl_jax.srt.kernels.kda.resident_pipeline import resident_pipeline_kda_fwd
+
+    chunk_kda_pipeline_handle = (
+        resident_pipeline_kda_fwd if pipeline_impl == "fused_resident" else None
+    )
+    if chunk_kda_pipeline_handle is not None:
+        return chunk_kda_pipeline_handle(
+            q,
+            k,
+            v,
+            g,
+            beta,
+            scale,
+            initial_state,
+            output_final_state,
+            cu_seqlens,
+            chunk_size=chunk_size,
+            intra_block_size=intra_block_size,
+            safe_gate=safe_gate,
+            lower_bound=lower_bound,
+            use_gate_in_kernel=use_gate_in_kernel,
+            A_log=A_log,
+            dt_bias=dt_bias,
+        )
+
     B, T, H, K = q.shape
     V = v.shape[-1]
     BT = chunk_size
