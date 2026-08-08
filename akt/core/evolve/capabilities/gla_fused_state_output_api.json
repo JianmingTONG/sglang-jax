@@ -1,0 +1,68 @@
+{
+ "name": "gla_fused_state_output_api",
+ "gap_id": "simple_gla:state_output_impl:schedule-toggle",
+ "action_graph_fingerprint": "2d2cfb6dcf43b7b1ca938cae30aa871bea9582adf27ae0b70ad0153b0cf2c17e",
+ "hypothesis": "GLA's chunked prefill still runs its recurrence as TWO separate device stages that communicate through memory. chunk_fwd_h_kernel_varlen walks the chunk axis and writes the state each chunk ENTERS with into an (NT, H, K, V) buffer plus the final state; the output stage then reads that buffer back, one chunk block at a time, to add its inter-chunk term to the intra-chunk attention. The entrance states are produced, materialized and re-read even though their only consumer is the very next stage, both k and v are streamed twice, and the state stage pays a whole launch (or, on the closed-form schedule kept in round 6, a whole XLA stage with its own (H, T, K)/(H, T, V) transposes) for arithmetic that is a rounding error next to it. Measured in-process under the gate's own deterministic-XLA flags at the plans the model DP selects (gla-long chunk_size=2048, gla-short 512, both output_value_tiles=8), deleting the state stage from the pipeline removes 35.1% of gla-long and 18.0% of gla-short -- the stage is paying for its launch and its buffer round trip, not for its FLOPs. This capability introduces a STANDALONE JAX API -- fused_state_output_gla in the new file python/sgl_jax/srt/kernels/simple_gla/simple_gla_fused_state_output.py -- that carries the (K, V) recurrent state RESIDENT in Pallas scratch across the chunk axis of a single launch, so one program per head-value tile block both consumes a chunk's entrance state and produces the next one: the chunk axis becomes the launch's `arbitrary` grid dimension, the h intermediate disappears entirely, and the final state leaves the same kernel that produced the output. Two things make it a real win rather than a relabelling. First, the carry costs no second pass over the chunk's rows: the shipped update S <- exp(gamma*L) S + K^T (V * exp(gamma*(L-i-1))) is exactly the per-sub-chunk contractions b_u the output half ALREADY performs, re-based from each sub-chunk's exit onto the chunk's real end, so the whole chunk contribution is one (G, num_sub) weighted sum of tensors already in registers; every surviving re-basing exponent spans less than one sub-chunk, and sub-chunks holding no real row are dropped before the exponent is formed, so nothing overflows and nothing is approximated. Second, the stage is written STRAIGHT-LINE: the sequence-entrance reset, the empty-sequence skip and the final-state write are all selects and masks (a chunk with no real row gets L = 0, whose decay is exp(0) = 1 and whose re-basing weights are all masked off, so the carry passes through untouched) rather than pl.when branches -- with the branches in, the fused kernel was 12-30% SLOWER than the split pipeline it replaces; without them it is 29.4%/17.5% faster. Deployment goes through a free-named string dispatch control gla.state_output_impl whose default 'incumbent' leaves the shipped two-stage path untouched and bit-identical. All 48 new deployable configurations were run: every one matches the frozen pure-JAX fused_recurrent_simple_gla reference to at most 7.5e-6 on both compared outputs (token output and final recurrent state) against a 1e-3 tolerance, and the handle also reproduces the shipped SEQUENTIAL state stage to 5.2e-8 on a three-sequence varlen packing with partial final chunks.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/gla-long",
+  "baseline_share_pct": 10.6,
+  "expected_relief_pct": 3.2,
+  "reasoning": "SHARE: taken from the last completed target-hardware eval (evals/c1786023097_round_010), each callsite timed at the configuration that is now the incumbent plan. tiny-linear-serving is the only model with non-deferred cases on this backend (the other two defer all 10 of their calls), so it is 100% of the three-model aggregate; its per-callsite incumbent measurements are kda-long 1.281ms (52.6%), kda-short 0.457ms (18.8%), input-projection 0.324ms (13.3%), gla-long 0.259ms (10.6%), gla-short 0.116ms (4.8%), summing to 2.437ms against a paired model incumbent_s of 2.148ms. The action's two affected callsites are therefore 15.4% of the aggregate. FAMILY CHOICE IS EVIDENCE-BASED, NOT TASTE: the two larger callsites are both closed to this round. kda (71.4%) carries the suite's only real API-novelty barrier -- the pinned per-case unmatched-op floors are 3722 (kda:seq256_h4_d128) and 1784 (kda:seq128_h2_d64) against 0/effective-4 for simple_gla -- and the KDA path has already been fused end to end by round 8, so any further KDA win is work-DELETING and scores no novelty mass; input-projection belongs to megablox_gmm_kernel, whose round-10 attempt measured 76.7% locally and was still rejected because introducing a second candidate at that stage broke the empirical additive-DP panel (interaction residual 0.0217 against a 0.02 tolerance), and it is on the do-not-re-attempt list. simple_gla is the largest remaining callsite pair with an open, unmeasured structural gap -- its family relief line reads share=45.4%, dependency-bound, 2 L0 callsites -- and the gap is concrete and source-derived: the state stage is a separate device stage whose only consumer is the next one. LOCALIZATION: measured in-process under the gate's own deterministic-XLA flags (--xla_gpu_autotune_level=0 --xla_gpu_deterministic_ops=true), replacing the state stage with a passthrough at the incumbent plan removes 35.1% of gla-long and 18.0% of gla-short, versus 8.7%/-0.9% for both alignment gathers together -- so the separate state stage is the one structural saving of any size left in this call, and the fused handle realizes roughly four fifths of it. MEASURED, through the runner entry itself with one warmup and an INTERLEAVED A/B median of 11 alternating pairs: gla-long at its DP-selected incumbent plan (cs=2048, compact, ovt=8, state variant on, batched output handle) is 0.2191ms and the best fused_state_output configuration (cs=2048, compact, ovt=8) is 0.1548ms = 29.38% relief; gla-short at its incumbent plan (cs=512, compact, ovt=8, same) is 0.0937ms and its best fused configuration (cs=512, compact, ovt=8) is 0.0773ms = 17.51% relief. AGGREGATE = 0.1063*29.38 + 0.0476*17.51 = 3.12 + 0.83 = 3.95%. DISCOUNT: reported as 3.2%, cutting about a fifth, because the gate's DP re-selects plans on both sides of the pair and because the fused handle's margin over the incumbent narrows quickly away from the one-chunk plans the DP happens to pick (at cs=1024 on gla-long the same measurement gives 10.5% instead of 27%), so a plan shift costs more here than it did in earlier rounds. The same share-weighted method predicted 8.5% for round 9 against a measured paired 9.31%, 70% for round 8 against 75.64%, and 8.40% for round 6 against 10.39%, so it is calibrated conservative; the >2% bar is cleared even if only gla-long improved (3.1% on its own). NOT A REPEAT OF A FAILED ESTIMATE: no prior round proposed simple_gla:state_output_impl or any state/output FUSION; the two recorded simple_gla failures were both on enable_chunk_fwd_h_kernel_varlen_variant -- one a workload-fingerprint rejection since fixed by the harness's deterministic XLA flags, one a manifest schema slip -- and both concerned the state stage's internal schedule, not its existence as a separate stage. NOVELTY: run through the frozen akt.core.analysis.api_metrics.delta_verdict with the pinned baseline and the real runner path, the candidate scores mass=85 (compute 44, memory 41) against this family's calibrated floor of 4 on BOTH cases, largest connected delta component 76 >= 3, zero_embed=0, PASS -- the cross-chunk carry is a genuine new data dependency, not a deletion. SPACE: the handle owns the chunk-state recurrence AND the output stage, so output_impl and both stage schedule toggles are pinned at their defaults for its configurations and its two-level walk's own precondition (a chunk taller than one 128-row sub-chunk) bounds chunk_size -- the runner enumerates 32 new configurations for gla-long and 16 for gla-short (320->352 and 224->240, 764->812 campaign-wide) while every incumbent configuration is preserved exactly at the new dimension's default."
+ },
+ "search_dimensions": [
+  {
+   "control": "gla.state_output_impl",
+   "kernel_function": "chunk_simple_gla_fwd_varlen",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "simple_gla:state_output_impl:schedule-toggle",
+  "family": "simple_gla",
+  "kernel_ids": [
+   "gla"
+  ],
+  "source_axis": "state_output_impl",
+  "source_function": "chunk_simple_gla_fwd_varlen",
+  "source_sink": {
+   "assignments": [
+    "state_output_handle"
+   ],
+   "expression_asts": {
+    "state_output_handle": "IfExp(test=Compare(left=Name(id='state_output_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='fused_state_output')]), body=Name(id='fused_state_output_gla', ctx=Load()), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": "incumbent",
+  "candidate_values": [
+   "incumbent",
+   "fused_state_output"
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+   "line": 1352,
+   "detail": "default='incumbent'"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/gla-long",
+   "tiny-linear-serving/gla-short"
+  ],
+  "action_edge": {
+   "source": "action:simple_gla:state_output_impl:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla_fused_state_output.py",
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_fused_state_output_api.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "EMPIRICAL ADDITIVE-DP GUARD FAILED: falsified",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

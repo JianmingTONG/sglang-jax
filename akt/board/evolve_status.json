@@ -1,19 +1,19 @@
 {
  "state": "idle",
- "updated_ts": 1786154049.0331461,
+ "updated_ts": 1786168407.9967885,
  "init_ts": 1786023097.9306195,
- "round": 8,
- "capability": "kda_resident_pipeline_api",
+ "round": 11,
+ "capability": "gla_fused_state_output_api",
  "phase": null,
  "started_ts": null,
  "testbench": true,
  "last": {
-  "round": 8,
-  "capability": "kda_resident_pipeline_api",
-  "decision": "keep",
-  "reason": "paired three-model candidate beats incumbent by 75.64% (paired=75.64%, absolute=76.30%; both strictly > 2%)",
-  "geomean_s": 0.0023791920393705377,
-  "delta_pct": -75.64,
-  "finished_ts": 1786154049.033145
+  "round": 11,
+  "capability": "gla_fused_state_output_api",
+  "decision": "reject",
+  "reason": "EMPIRICAL ADDITIVE-DP GUARD FAILED: falsified",
+  "geomean_s": 0.002040612511336804,
+  "delta_pct": -4.29,
+  "finished_ts": 1786168407.9967866
  }
 }

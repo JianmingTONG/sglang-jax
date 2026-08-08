@@ -27,6 +27,16 @@ The enforced objective scope is `model-serving-empirical-dp-v2`.
   stop emitting the slot AND to mine the declared finding programmer-exposed,
   field-for-field equal to the declaration. Undeclared invention and declaration
   drift from the slot both fail closed.
+- ELEVATE→INVENT serialization: proposal forms are ordered, not parallel. A
+  `proposed_action` manifest is admissible only when `elevate_remaining` is empty —
+  every red-link action measurable under the current campaign (callsite-scoped, so
+  the GPU testbench cannot deadlock on unmeasurable dense/MoE actions) has a
+  keep/reject record under the active objective. The QUERY carries a binding PHASE
+  line; violation voids the round in `run` and errors in `submit`. The honest
+  exhaustion path for a sub-bar red-link is a below-bar elevate manifest, recorded
+  as a cheap no-eval reject (`cheap_reject: true` in history — auditable; the
+  residual that an oracle could serially declare red-links below-bar to reach the
+  INVENT phase is accepted and visible in the ledger, one round each).
 - Runner-only benchmark knobs are default-only in the deployment space. Promoting an
   existing knob to a stable programmer control expands the exact graph-owned domain
   without changing the incumbent default.

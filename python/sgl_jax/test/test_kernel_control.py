@@ -61,6 +61,9 @@ def test_empty_policy_preserves_kernel_defaults():
         "compute_block_chunks": 1,
         "state_block_chunks": 1,
         "state_dim_alignment": 128,
+        # kept capability kda_resident_pipeline_api (R8): dispatch control whose
+        # "incumbent" default preserves the output-hash-pinned incumbent path.
+        "pipeline_impl": "incumbent",
         "single_chunk_state_elision": False,
         "zero_state_output_elision": False,
     }

@@ -12,7 +12,16 @@ them as different kinds — it picks one `gap_id` from one catalog.
 
 A round either ELEVATES a red-link action — adding the control-plane plumbing
 needed to name it (`KernelControlPolicy`, a production forwarding path, and
-planner metadata) — or fills a FRONTIER SLOT with a NOVEL algorithm/variant: the
+planner metadata) — or fills a FRONTIER SLOT with a NOVEL algorithm/variant. The
+two forms are SERIALIZED, elevate-first: while any red-link action measurable
+under the current campaign remains un-attempted (no keep/reject record under the
+active objective), a novel proposal is inadmissible — the QUERY's PHASE line says
+ELEVATE and the validators void a `proposed_action` manifest. A red-link the
+oracle judges unable to clear the KEEP bar is declared, not skipped: an elevate
+manifest with `estimate.expected_relief_pct` at or below the bar is recorded as a
+cheap no-eval reject and counts as attempted. Only when every measurable red-link
+has been attempted (or none is measurable under the campaign scope) does the
+PHASE flip to INVENT and unlock frontier/standalone proposals. For a NOVEL round: the
 manifest foreign-keys the slot's `gap_id`, its `proposed_action` COMPLETES the
 slot record, the implementation sits strictly behind the slot's prescribed axis
 whose default preserves the incumbent algorithm bit-exactly, and the frozen
@@ -88,7 +97,9 @@ separate live-model gate conditionally runs the actual
    graph currently has five source-proven actions.
 3. A proposal selects one `gap_id` under the complete graph fingerprint — a
    red-link action (ELEVATE) or a frontier slot (NOVEL); the two sources share one
-   contract, so the oracle never treats them differently. Source evidence, axis,
+   contract, so the oracle never treats them differently — but the FORMS are
+   SERIALIZED: the PHASE line (from `elevate_remaining`) admits novel proposals
+   only after every measurable red-link action has been attempted. Source evidence, axis,
    family, incumbent value, finite candidate domain, semantic sink, and affected
    callsites are derived from that foreign key rather than copied into the
    manifest; a frontier round's `proposed_action` completes the slot record,

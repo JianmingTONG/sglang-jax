@@ -147,14 +147,21 @@ def test_round_requires_current_head_to_match_measured_incumbent(monkeypatch):
         loop.validate_incumbent_head({"incumbent_commit": "measured-commit"})
 
 
-def test_estimate_must_clear_the_campaign_keep_threshold():
+def test_estimate_threshold_serializes_below_bar_by_proposal_mode():
     state = {"target_improvement": 0.02}
-    validate_estimate_threshold(
+    assert validate_estimate_threshold(
         {"estimate": {"expected_relief_pct": 2.1}}, state
+    ) is None
+    # ELEVATE mode below-bar: an honest infeasibility declaration, not an error —
+    # returned as the cheap-reject reason so the action counts as attempted.
+    reason = validate_estimate_threshold(
+        {"estimate": {"expected_relief_pct": 2.0}}, state
     )
+    assert "below the KEEP bar" in reason
+    # NOVEL mode below-bar stays a hard error.
     with pytest.raises(ValueError, match="strictly >"):
         validate_estimate_threshold(
-            {"estimate": {"expected_relief_pct": 2.0}}, state
+            {"estimate": {"expected_relief_pct": 2.0}, "proposed_action": {}}, state
         )
 
 
@@ -1226,3 +1233,104 @@ def test_opus_oracle_forces_opus_model_at_max_effort():
     assert "--output-format stream-json" in command
     assert "--verbose" in command
     assert command.startswith("cat {prompt} | claude -p ")
+
+
+def _serialization_catalog(monkeypatch, actions):
+    import akt.core.evolve.action_catalog as action_catalog
+
+    monkeypatch.setattr(
+        action_catalog,
+        "action_catalog_context",
+        lambda _repo: {"actions": actions, "fingerprint": "fp"},
+    )
+
+
+def test_elevate_remaining_filters_scope_and_attempted(tmp_path, monkeypatch):
+    """The serialization key counts only red-links measurable under THIS campaign
+    and not yet attempted (keep/reject under the active objective)."""
+    actions = [
+        {"access": "existing", "gap_id": "a:x:pipeline-depth",
+         "model_callsites": ["tiny-linear-serving/gla-short"]},
+        {"access": "existing", "gap_id": "b:y:schedule-toggle",
+         "model_callsites": ["tiny-moe-serving/expert-v2"]},   # out of campaign scope
+        {"access": "existing", "gap_id": "c:z:schedule-toggle",
+         "model_callsites": ["tiny-linear-serving/kda-short"]},  # already attempted
+        {"access": "frontier", "gap_id": "d:new:schedule-toggle",
+         "model_callsites": ["tiny-linear-serving/gla-short"]},  # not a red-link
+    ]
+    _serialization_catalog(monkeypatch, actions)
+    hist = tmp_path / "evolve_history.jsonl"
+    hist.write_text(json.dumps({
+        "gap_id": "c:z:schedule-toggle", "decision": "reject",
+        "objective_scope": loop.OBJECTIVE_SCOPE}) + "\n")
+    monkeypatch.setattr(loop, "HIST", hist)
+    state = {"expected_callsites": [
+        "tiny-linear-serving/gla-short", "tiny-linear-serving/kda-short"]}
+
+    assert loop.elevate_remaining(state) == ["a:x:pipeline-depth"]
+
+    # Attempting the last measurable red-link empties the list -> INVENT phase.
+    hist.write_text(hist.read_text() + json.dumps({
+        "gap_id": "a:x:pipeline-depth", "decision": "keep",
+        "objective_scope": loop.OBJECTIVE_SCOPE}) + "\n")
+    assert loop.elevate_remaining(state) == []
+
+
+def test_phase_serialization_blocks_novel_until_elevations_attempted(
+    tmp_path, monkeypatch
+):
+    actions = [{"access": "existing", "gap_id": "a:x:pipeline-depth",
+                "model_callsites": ["tiny-linear-serving/gla-short"]}]
+    _serialization_catalog(monkeypatch, actions)
+    hist = tmp_path / "evolve_history.jsonl"
+    monkeypatch.setattr(loop, "HIST", hist)
+    state = {"expected_callsites": ["tiny-linear-serving/gla-short"]}
+    novel = {"proposed_action": {"gap_id": "d:new:schedule-toggle"}}
+
+    # ELEVATE phase: a novel manifest is inadmissible; elevate manifests pass.
+    with pytest.raises(ValueError, match="PHASE SERIALIZATION"):
+        loop.enforce_phase_serialization(novel, state)
+    loop.enforce_phase_serialization({"gap_id": "a:x:pipeline-depth"}, state)
+    assert "PHASE: ELEVATE" in loop.phase_block(state)
+
+    # A cheap below-bar reject marks the red-link attempted -> INVENT unlocks.
+    hist.write_text(json.dumps({
+        "gap_id": "a:x:pipeline-depth", "decision": "reject",
+        "objective_scope": loop.OBJECTIVE_SCOPE, "cheap_reject": True}) + "\n")
+    loop.enforce_phase_serialization(novel, state)
+    assert "PHASE: INVENT" in loop.phase_block(state)
+
+
+def test_record_phase_reject_marks_attempted_without_eval(tmp_path, monkeypatch):
+    """A below-bar declaration must reject+restore+append history atomically."""
+    hist = tmp_path / "evolve_history.jsonl"
+    state_path = tmp_path / "evolve_state.json"
+    manifest_path = tmp_path / "cap.json"
+    state = {"round": 3, "incumbent_commit": "abc", "incumbent_geomean": 1.0,
+             "target_improvement": 0.02}
+    manifest = {"name": "cap", "gap_id": "a:x:pipeline-depth",
+                "estimate": {"expected_relief_pct": 1.0},
+                "files_touched": ["akt/core/evolve/capabilities/cap.json"],
+                "status": "pending"}
+    manifest_path.write_text(json.dumps(manifest))
+    restored = []
+    monkeypatch.setattr(loop, "HIST", hist)
+    monkeypatch.setattr(loop, "STATE", state_path)
+    monkeypatch.setattr(loop, "restore_capability",
+                        lambda m, commit: restored.append((m["name"], commit)))
+    monkeypatch.setattr(loop, "write_board", lambda: None)
+    monkeypatch.setattr(loop, "write_status", lambda *a, **k: None)
+
+    decision = loop.record_phase_reject(state, manifest, manifest_path,
+                                        "declared below the KEEP bar")
+    assert decision == "reject"
+    assert restored == [("cap", "abc")]
+    assert state["round"] == 4
+    saved_manifest = json.loads(manifest_path.read_text())
+    assert saved_manifest["status"] == "rejected"
+    record = json.loads(hist.read_text().splitlines()[-1])
+    assert record["cheap_reject"] is True
+    assert record["decision"] == "reject"
+    assert record["gap_id"] == "a:x:pipeline-depth"
+    assert record["objective_scope"] == loop.OBJECTIVE_SCOPE
+    assert json.loads(state_path.read_text())["round"] == 4

@@ -138,7 +138,14 @@ round, then STOP — do NOT run the evolve loop or `submit`; the harness gates y
 {query}
 
 DOMAIN: the validated flexibility-graph snapshot below is a FROZEN guardrail for this
-round, not brainstorming material. TWO proposal modes exist:
+round, not brainstorming material. TWO proposal modes exist, and they are SERIALIZED —
+the PHASE line in the QUERY above is binding: while it says ELEVATE, you MUST select an
+un-attempted red-link action (mode (a)); a novel proposal (any manifest carrying
+`proposed_action`) is inadmissible and VOIDS the round. Only when the PHASE line says
+INVENT (every measurable red-link attempted, or none measurable under this campaign)
+may you use mode (b). A red-link you judge unable to clear the KEEP bar is declared,
+not skipped: submit its elevate manifest with estimate.expected_relief_pct <= the bar —
+the loop records a cheap no-eval reject and the action counts as attempted.
  (a) ELEVATE an existing action. Each red-link action is one source-proven,
 already-existing low-level selection point that is not exposed to programmers. Its
 stable gap_id, graph fingerprint, family, source axis/function/sink, finite candidate
@@ -189,14 +196,16 @@ model planner. A new knob alone, a default change, or widening an existing contr
 {action_contract}
 
 YOUR TASK:
- 1. Pick ONE executable red-link gap_id, or declare ONE novel algorithm via \
+ 1. Follow the PHASE line: in ELEVATE, pick ONE un-attempted executable red-link \
+gap_id (novel proposals void the round); in INVENT, declare ONE novel algorithm via \
 `proposed_action`. Use the latest paired \
 model/callsite timings to estimate baseline share and expected aggregate relief >{target_pct:.0f}%; \
 record the calculation and do not repeat an unchanged failed estimate. Ground the \
-elevate-vs-invent choice in each catalog line's `relief:` evidence — measured \
+choice within the admissible form in each catalog line's `relief:` evidence — measured \
 default-vs-best-alternative latency for red-link actions, campaign family-share/limiter \
-diagnosis for frontier/standalone slots; a preference for inventing over elevating (or \
-vice versa) must cite that per-entry evidence, never taste.
+diagnosis for frontier/standalone slots; cite that per-entry evidence, never taste. \
+In ELEVATE, a red-link whose evidence shows it cannot clear the bar gets a below-bar \
+declaration manifest (see DOMAIN), not silence.
  2. IMPLEMENT it end-to-end. For an existing action: promote an existing runner/backend
 argument, or lift the exact graph-fingerprinted hardcoded selection into an entry argument
 while preserving its incumbent default exactly (copy the action's incumbent_value, including
@@ -654,10 +663,12 @@ def query(st):
         f"   LEGACY kept (code is in baseline; old deltas are not evidence): {legacies}\n"
         f"   REJECTED under active objective (do not re-attempt unmodified): {rejs}\n"
         f"{bottleneck_block()}\n"
+        f"{phase_block(st)}\n"
         f"{action_space_block()}\n"
         f"{failed_estimates_block()}\n"
-        f"== DECIDE: elevate one red-link action OR implement one frontier slot (novel\n"
-        f"   variant) — both listed in the same contract. Then, off-loop:\n"
+        f"== DECIDE per the PHASE line (forms are SERIALIZED — elevate first): in\n"
+        f"   ELEVATE, pick one un-attempted red-link action; only in INVENT may you\n"
+        f"   implement a frontier slot / standalone API (novel). Then, off-loop:\n"
         f"   (1) estimate model-level bottleneck relief; (2) implement it end-to-end across\n"
         f"   backend -> production consumer -> KernelControlPolicy -> runner -> model DP;\n"
         f"   (3) report concrete selected backend execution;\n"
@@ -998,14 +1009,159 @@ def validate_manifest_scope(m, changed_before=()):
 
 
 def validate_estimate_threshold(m, st):
+    """Validate the declared relief estimate against the KEEP bar.
+
+    Returns None when the estimate clears the bar. For an ELEVATE manifest (no
+    ``proposed_action``) a below-bar estimate is NOT an error: it is the honest
+    infeasibility declaration for a red-link action — the caller records it as a
+    cheap reject (no eval), which marks the action attempted and advances the
+    ELEVATE→INVENT serialization. Returns the reject reason string in that case.
+    A below-bar NOVEL proposal stays a hard error (don't bother inventing)."""
     expected = (m.get("estimate") or {}).get("expected_relief_pct")
     required = max(float(st.get("target_improvement", 0.02)), 0.02) * 100
     if not isinstance(expected, (int, float)) or isinstance(expected, bool):
         raise ValueError("estimate.expected_relief_pct must be numeric")
     if expected <= required:
+        if m.get("proposed_action") is None:
+            return (
+                f"declared below the KEEP bar (estimate {expected}% <= "
+                f"{required:.1f}%): red-link action recorded as attempted "
+                "without evaluation"
+            )
         raise ValueError(
             f"estimated aggregate relief must be strictly > {required:.1f}%; got {expected}"
         )
+    return None
+
+
+def _attempted_gap_ids():
+    """gap_ids with a keep/reject record under the ACTIVE objective scope."""
+    ids = set()
+    if not HIST.exists():
+        return ids
+    for line in HIST.read_text().splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            record.get("objective_scope") == OBJECTIVE_SCOPE
+            and record.get("decision") in ("keep", "reject")
+            and isinstance(record.get("gap_id"), str)
+        ):
+            ids.add(record["gap_id"])
+    return ids
+
+
+def elevate_remaining(st):
+    """Un-attempted red-link actions measurable under THIS campaign.
+
+    The ELEVATE→INVENT serialization key: while this list is non-empty the round
+    must elevate an existing-but-not-exposed flexibility; novel proposals are
+    inadmissible. An action counts as measurable only when it touches a callsite
+    of a workload the campaign can actually run (`expected_callsites` — on the GPU
+    testbench that excludes the non-runnable dense/MoE workloads, so ELEVATE
+    cannot deadlock on actions the gate could never measure). Attempted = any
+    keep/reject record under the active objective, including cheap below-bar
+    rejects."""
+    from akt.core.evolve.action_catalog import action_catalog_context
+
+    context = action_catalog_context(ROOT)
+    expected = set(st.get("expected_callsites") or [])
+    attempted = _attempted_gap_ids()
+    return sorted(
+        action["gap_id"]
+        for action in context.get("actions") or []
+        if action.get("access") == "existing"
+        and action["gap_id"] not in attempted
+        and (not expected or set(action.get("model_callsites") or []) & expected)
+    )
+
+
+def enforce_phase_serialization(m, st):
+    """ELEVATE before INVENT (serialized proposal forms).
+
+    A manifest carrying ``proposed_action`` (frontier slot / standalone API — a NEW
+    flexibility) is admissible only when every measurable red-link action has been
+    attempted under the active objective. Raises otherwise, naming the remaining
+    elevations."""
+    if m.get("proposed_action") is None:
+        return
+    remaining = elevate_remaining(st)
+    if remaining:
+        raise ValueError(
+            "PHASE SERIALIZATION: novel proposals are inadmissible while "
+            f"{len(remaining)} measurable red-link action(s) remain un-attempted: "
+            f"{remaining}. Elevate one of these first; a red-link that cannot "
+            "clear the KEEP bar may be declared below-bar (estimate <= bar), which "
+            "is recorded as a cheap reject and counts as attempted."
+        )
+
+
+def record_phase_reject(st, m, mpath, reason):
+    """Record a no-eval reject (below-bar red-link declaration) as a full round.
+
+    Mirrors gate_capability's reject bookkeeping without paying for the
+    three-model measurement: manifest → rejected, files restored, history line
+    appended (marks the gap_id attempted for the serialization), board rebuilt."""
+    st["round"] += 1
+    rnd = st["round"]
+    m.pop("delta_pct", None)
+    m.pop("measured_geomean_s", None)
+    m.update(status="rejected", reject_reason=reason, objective_scope=OBJECTIVE_SCOPE)
+    restore_capability(m, st["incumbent_commit"])
+    mpath.write_text(json.dumps(m, indent=1))
+    rec = {
+        "round": rnd,
+        "capability": m["name"],
+        "gap_id": m.get("gap_id"),
+        "action_graph_fingerprint": m.get("action_graph_fingerprint"),
+        "hypothesis": m.get("hypothesis"),
+        "estimate": m.get("estimate"),
+        "search_dimensions": m.get("search_dimensions"),
+        "files_touched": m.get("files_touched"),
+        "correct": None,
+        "geomean_s": None,
+        "incumbent_geomean": st.get("incumbent_geomean"),
+        "improvement_pct": None,
+        "absolute_improvement_pct": None,
+        "target_pct": max(float(st.get("target_improvement", 0.02)), 0.02) * 100,
+        "objective_scope": OBJECTIVE_SCOPE,
+        "cheap_reject": True,
+        "decision": "reject",
+        "reason": reason,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    HIST.open("a").write(json.dumps(rec, allow_nan=False) + "\n")
+    save(st)
+    write_board()
+    write_status("idle", round=rnd, capability=m["name"], last={
+        "round": rnd, "capability": m["name"], "decision": "reject",
+        "reason": reason, "geomean_s": None, "delta_pct": None,
+        "finished_ts": time.time()})
+    print(f"== ROUND {rnd} REJECT (no eval): {reason}")
+    return "reject"
+
+
+def phase_block(st):
+    """The serialized proposal phase surfaced to the oracle in every QUERY."""
+    remaining = elevate_remaining(st)
+    if remaining:
+        body = "\n".join(f"   [{i}] {gap_id}" for i, gap_id in enumerate(remaining))
+        return (
+            "== PHASE: ELEVATE (forms are serialized) — un-attempted measurable "
+            "red-link actions remain; a novel proposal (proposed_action / frontier "
+            "slot / standalone API) is INADMISSIBLE this round and voids it:\n"
+            f"{body}\n"
+            "   To mark a red-link infeasible, submit its elevate manifest with "
+            "estimate.expected_relief_pct <= the KEEP bar — recorded as a cheap "
+            "reject (attempted, no eval)."
+        )
+    return (
+        "== PHASE: INVENT — every measurable red-link action has been attempted "
+        "(or none is measurable under this campaign); novel proposals via "
+        "`proposed_action` are admissible this round."
+    )
 
 
 def restore_capability(m, incumbent_commit):
@@ -2509,8 +2665,12 @@ def cmd_submit(args):
     validate_incumbent_head(st)
     validate_campaign_action_graph(st)
     m, mpath = load_manifest(args.capability, require_pending=True)
-    validate_estimate_threshold(m, st)
+    below_bar = validate_estimate_threshold(m, st)
+    enforce_phase_serialization(m, st)
     validate_manifest_scope(m)
+    if below_bar:
+        record_phase_reject(st, m, mpath, below_bar)
+        return
     gate_capability(st, m, mpath, args)
 
 
@@ -3057,7 +3217,8 @@ def cmd_run(args):
             continue
         try:
             m, mpath = load_manifest(name, require_pending=True)
-            validate_estimate_threshold(m, st)
+            below_bar = validate_estimate_threshold(m, st)
+            enforce_phase_serialization(m, st)
             validate_manifest_scope(m, changed_before)
         except Exception as e:
             consec_void += 1
@@ -3074,6 +3235,11 @@ def cmd_run(args):
             continue
         consec_void = 0
         gated += 1
+        if below_bar:
+            # Honest infeasibility declaration for a red-link: recorded reject,
+            # no eval — the action counts as attempted for the phase serialization.
+            record_phase_reject(st, m, mpath, below_bar)
+            continue
         gate_capability(st, m, mpath, args)          # keep/restore + board + history + status
     print("[evolve] autonomous run finished.")
 
