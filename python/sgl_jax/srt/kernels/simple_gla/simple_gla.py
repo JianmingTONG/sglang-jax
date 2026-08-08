@@ -1326,6 +1326,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
         "enable__chunk_fwd_o_pl_variant",
         "enable_chunk_fwd_h_kernel_varlen_variant",
         "output_impl",
+        "chunk_impl",
     ],
 )
 def chunk_simple_gla_fwd_varlen(
@@ -1348,6 +1349,7 @@ def chunk_simple_gla_fwd_varlen(
     enable__chunk_fwd_o_pl_variant: bool = False,
     enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
     output_impl: str = "incumbent",
+    chunk_impl: str = "incumbent",
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
@@ -1391,11 +1393,26 @@ def chunk_simple_gla_fwd_varlen(
     the value-tile axis as a batch dimension of every contraction instead of a
     Python loop bound (see simple_gla_batched_output.py). That handle owns the
     whole output schedule, so it consumes no output schedule toggle.
+
+    ``chunk_impl`` selects which handle executes the WHOLE chunked recurrence.
+    ``"incumbent"`` keeps the shipped two-stage pipeline (state stage, then
+    output stage, communicating through the ``(NT, H, K, V)`` entrance-state
+    buffer) together with every schedule toggle documented above;
+    ``"decay_rescaled"`` dispatches to the standalone ``decay_rescaled_chunk_fwd``
+    handle, which folds the scalar gate into a per-sub-chunk rescaling of ``k``
+    and a deferred per-row scaling of the output, so the gate ratio tile
+    disappears and the single ``k^T v`` contraction serves both the sub-chunk
+    states and the chunk carry (see simple_gla_decay_rescaled.py). That handle
+    owns both stages, so it consumes neither the state nor the output schedule
+    toggle and emits the final recurrent state itself.
     """
-    # Imported here, not at module scope: the handle reuses this module's
+    # Imported here, not at module scope: the handles reuse this module's
     # helpers, so a top-level import would be circular.
     from sgl_jax.srt.kernels.simple_gla.simple_gla_batched_output import (
         batched_value_tile_fwd_o,
+    )
+    from sgl_jax.srt.kernels.simple_gla.simple_gla_decay_rescaled import (
+        decay_rescaled_chunk_fwd,
     )
 
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
@@ -1431,6 +1448,40 @@ def chunk_simple_gla_fwd_varlen(
         assert single_chunk_state_elision, (
             "zero-state output elision requires single-chunk state elision"
         )
+
+    # Whole-recurrence dispatch. The decay-rescaled handle owns the state stage
+    # and the output stage together, so it replaces both launches and the state
+    # buffer between them rather than sitting inside either one.
+    chunk_impl_handle = (
+        decay_rescaled_chunk_fwd if chunk_impl == "decay_rescaled" else None
+    )
+    if chunk_impl_handle is not None:
+        assert not single_chunk_state_elision, (
+            "the decay-rescaled forward owns the state stage, so it does not "
+            "consume the state-elision toggles"
+        )
+        o, ht = chunk_impl_handle(
+            q_a,
+            k_a,
+            v_a,
+            g_gamma=g_gamma,
+            h0=h0,
+            scale=scale,
+            cu_seqlens_dev=aligned_cu,
+            seq_real_lens=real_seq_lens,
+            chunk_size=chunk_size,
+            output_value_tiles=output_value_tiles,
+            output_final_state=use_ht,
+            output_gather=_build_unalign_gather_idx(
+                cu_seqlens_dev, aligned_cu, T_orig
+            ),
+        )
+        if use_ht and ht is not None:
+            # Same zero-length repair the two-stage path performs: a sequence
+            # with no real token keeps its incoming state.
+            zero_len_mask = (real_seq_lens == 0)[:, None, None, None]
+            ht = jnp.where(zero_len_mask, h0 if h0 is not None else 0.0, ht)
+        return o, ht
 
     if single_chunk_state_elision:
         assert N == 1, "single-chunk state elision requires exactly one sequence"
@@ -1553,6 +1604,7 @@ def simple_gla_fwd(
     enable__chunk_fwd_o_pl_variant: bool = False,
     enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
     output_impl: str = "incumbent",
+    chunk_impl: str = "incumbent",
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is None:
@@ -1581,4 +1633,5 @@ def simple_gla_fwd(
             enable_chunk_fwd_h_kernel_varlen_variant
         ),
         output_impl=output_impl,
+        chunk_impl=chunk_impl,
     )

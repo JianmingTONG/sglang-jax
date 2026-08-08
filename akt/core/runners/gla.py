@@ -15,7 +15,14 @@ Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
 stage to the standalone `batched_value_tile_fwd_o` handle, which runs the same
 two-level walk with the value-tile axis as a batch dimension of every
 contraction instead of a Python loop bound; it owns that schedule, so the output
-schedule toggle stays at its default for its configurations. Historical
+schedule toggle stays at its default for its configurations. `chunk_impl`
+dispatches the WHOLE recurrence to the standalone `decay_rescaled_chunk_fwd`
+handle, which folds the scalar gate into a per-sub-chunk rescaling of `k` and a
+deferred per-row scaling of the output, so the gate-ratio tile disappears and the
+single `k^T v` contraction serves both the sub-chunk states and the chunk carry —
+the state stage, its transposes and its entrance-state buffer are gone. It owns
+both stages, so their toggles stay at their defaults for its configurations.
+Historical
 state/output-elision axes remain visible as runner-only experiments but are
 invalid in this serving objective because the nonzero initial state and final
 recurrent state are both observed.
@@ -48,6 +55,7 @@ _VALUE_TILE_GROUPING_CAPABILITY = "gla_value_tile_grouping"
 _OUTPUT_SUBCHUNK_SCHEDULE_CAPABILITY = "gla_output_subchunk_schedule"
 _STATE_DECAY_MATRIX_CAPABILITY = "gla_state_decay_matrix_closed_form"
 _BATCHED_VALUE_TILE_OUTPUT_CAPABILITY = "gla_batched_value_tile_output_api"
+_DECAY_RESCALED_CHUNK_CAPABILITY = "gla_decay_rescaled_chunk_api"
 
 
 @functools.lru_cache(maxsize=None)
@@ -60,6 +68,7 @@ def _jit_chunk(
     enable__chunk_fwd_o_pl_variant: bool,
     enable_chunk_fwd_h_kernel_varlen_variant: bool,
     output_impl: str,
+    chunk_impl: str,
 ):
     def f(q, k, v, g_gamma, initial_state, cu):
         o, ht = chunk_simple_gla_fwd_varlen(
@@ -73,7 +82,8 @@ def _jit_chunk(
             enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
             enable_chunk_fwd_h_kernel_varlen_variant=(
                 enable_chunk_fwd_h_kernel_varlen_variant),
-            output_impl=output_impl)
+            output_impl=output_impl,
+            chunk_impl=chunk_impl)
         return o, ht
     return jax.jit(f)
 
@@ -88,6 +98,7 @@ def _run(inp, cfg):
         bool(cfg.get("enable__chunk_fwd_o_pl_variant", False)),
         bool(cfg.get("enable_chunk_fwd_h_kernel_varlen_variant", False)),
         str(cfg.get("output_impl", "incumbent")),
+        str(cfg.get("chunk_impl", "incumbent")),
     )(
         inp["q"],
         inp["k"],
@@ -117,6 +128,22 @@ def _space(seqlen: int, heads: int):
         output_elision = c.get("zero_state_output_elision", False)
         output_value_tiles = c.get("output_value_tiles", 1)
         output_impl = c.get("output_impl", "incumbent")
+        chunk_impl = c.get("chunk_impl", "incumbent")
+        if chunk_impl != "incumbent":
+            # The decay-rescaled handle owns the WHOLE recurrence: the chunk
+            # state stage, the entrance-state buffer and the output stage are
+            # all inside it, so it consumes neither stage's schedule toggle and
+            # neither elision toggle. Its walk is two-level, so the chunk must
+            # be taller than one sub-chunk. The deployment space therefore gains
+            # only the chunk/value-tile combinations the handle actually reads.
+            if (
+                output_impl != "incumbent"
+                or c.get("enable__chunk_fwd_o_pl_variant", False)
+                or c.get("enable_chunk_fwd_h_kernel_varlen_variant", False)
+            ):
+                return False
+            if cs <= _OUTPUT_SUBCHUNK_ROWS or cs % _OUTPUT_SUBCHUNK_ROWS:
+                return False
         if output_impl != "incumbent":
             # The batched value-tile handle OWNS the output schedule: it is the
             # two-level walk with its own token-order delivery, so it consumes
@@ -195,6 +222,13 @@ def _space(seqlen: int, heads: int):
                 default="incumbent",
                 elevated_by=_BATCHED_VALUE_TILE_OUTPUT_CAPABILITY,
                 programmer_control="gla.output_impl",
+            ),
+            Knob(
+                "chunk_impl",
+                ["incumbent", "decay_rescaled"],
+                default="incumbent",
+                elevated_by=_DECAY_RESCALED_CHUNK_CAPABILITY,
+                programmer_control="gla.chunk_impl",
             ),
         ],
         valid=_valid,

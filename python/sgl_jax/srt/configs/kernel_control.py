@@ -59,6 +59,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "enable__chunk_fwd_o_pl_variant",
         "enable_chunk_fwd_h_kernel_varlen_variant",
         "output_impl",
+        "chunk_impl",
     ),
 }
 
@@ -178,6 +179,14 @@ class GLAKernelControls:
     # standalone batched_value_tile_fwd_o handle, whose value-tile axis is a
     # batch dimension of every contraction instead of a Python loop bound.
     output_impl: str = "incumbent"
+    # Which handle executes the WHOLE chunked recurrence. "incumbent" is the
+    # shipped two-stage pipeline (chunk-state stage, entrance-state buffer,
+    # output stage); "decay_rescaled" runs the standalone
+    # decay_rescaled_chunk_fwd handle, which folds the scalar gate into a
+    # rescaling of k and a deferred row scaling of the output, so one k^T v
+    # contraction serves both the sub-chunk states and the chunk carry and the
+    # state stage disappears entirely.
+    chunk_impl: str = "incumbent"
 
     def validate(self, context: KernelControlContext | None = None) -> None:
         _require_choice(
@@ -188,6 +197,9 @@ class GLAKernelControls:
         _require_choice("gla.output_value_tiles", self.output_value_tiles, (1, 2, 4, 8))
         _require_choice(
             "gla.output_impl", self.output_impl, ("incumbent", "batched_value_tiles")
+        )
+        _require_choice(
+            "gla.chunk_impl", self.chunk_impl, ("incumbent", "decay_rescaled")
         )
         _require_bool("gla.compact_alignment", self.compact_alignment)
         _require_bool(
@@ -203,6 +215,24 @@ class GLAKernelControls:
             raise ValueError(
                 "gla.zero_state_output_elision requires single_chunk_state_elision"
             )
+        if self.chunk_impl != "incumbent":
+            if (
+                self.output_impl != "incumbent"
+                or self.enable__chunk_fwd_o_pl_variant
+                or self.enable_chunk_fwd_h_kernel_varlen_variant
+                or self.single_chunk_state_elision
+                or self.zero_state_output_elision
+            ):
+                raise ValueError(
+                    "gla.chunk_impl owns the state stage and the output stage "
+                    "together, so it consumes neither stage's schedule toggle "
+                    "nor the state-elision toggles"
+                )
+            if self.chunk_size <= 128 or self.chunk_size % 128:
+                raise ValueError(
+                    "gla.chunk_impl='decay_rescaled' walks a chunk in 128-row "
+                    f"sub-chunks; got chunk_size={self.chunk_size}"
+                )
         if context is None:
             return
         if context.head_dim % 128 or context.value_dim % 128:

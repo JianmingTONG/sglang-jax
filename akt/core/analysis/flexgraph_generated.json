@@ -3081,7 +3081,7 @@
     "chunk_size"
    ],
    "has_tuned_table": false,
-   "n_files": 3
+   "n_files": 4
   },
   {
    "family": "speculative",
@@ -4100,7 +4100,7 @@
    "status": "schedule-toggle",
    "what": "schedule/fusion toggle never searched",
    "detail": "default='incumbent'",
-   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1350",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1351",
    "incumbent_value": "incumbent",
    "incumbent_value_known": true,
    "candidate_values": [
@@ -4123,6 +4123,56 @@
    ],
    "programmer_controls": [
     "gla.output_impl"
+   ],
+   "exposure_level": "programmer",
+   "in_akt_suite": true,
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dma_start",
+   "action_node": null
+  },
+  {
+   "gap_id": "simple_gla:chunk_impl:schedule-toggle",
+   "id": "simple_gla:chunk_impl:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "axis": "chunk_impl",
+   "source_axis": "chunk_impl",
+   "source_function": "chunk_simple_gla_fwd_varlen",
+   "category": "schedule-toggle",
+   "status": "schedule-toggle",
+   "what": "schedule/fusion toggle never searched",
+   "detail": "default='incumbent'",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1352",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent",
+    "decay_rescaled"
+   ],
+   "source_sink": {
+    "assignments": [
+     "chunk_impl_handle"
+    ],
+    "expression_asts": {
+     "chunk_impl_handle": "IfExp(test=Compare(left=Name(id='chunk_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='decay_rescaled')]), body=Name(id='decay_rescaled_chunk_fwd', ctx=Load()), orelse=Constant(value=None))"
+    }
+   },
+   "reachable_prim": "dma_start",
+   "elevated_in_akt": true,
+   "programmer_exposed": true,
+   "runner_axes": [
+    "chunk_impl"
+   ],
+   "programmer_controls": [
+    "gla.chunk_impl"
    ],
    "exposure_level": "programmer",
    "in_akt_suite": true,
@@ -4290,7 +4340,7 @@
    "label": "schedule/fusion toggle never searched",
    "reachable_prim": "dma_start",
    "salience": 4,
-   "count": 8
+   "count": 9
   },
   "backend-gated": {
    "label": "tuned table gated to one TPU generation",
@@ -4661,6 +4711,33 @@
    "access": "frontier"
   },
   {
+   "gap_id": "simple_gla:enable_decay_rescaled_chunk_fwd_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "source_axis": "enable_decay_rescaled_chunk_fwd_variant",
+   "source_function": "decay_rescaled_chunk_fwd",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla_decay_rescaled.py:353",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the decay_rescaled_chunk_fwd Pallas launch, selectable behind a new enable_decay_rescaled_chunk_fwd_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "action_edge": {
+    "source": "action:simple_gla:enable_decay_rescaled_chunk_fwd_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
    "gap_id": "simple_gla:enable__launch_decode_simple_gla_variant:schedule-toggle",
    "family": "simple_gla",
    "kernel_ids": [
@@ -4969,12 +5046,12 @@
   "active_primitives": 54,
   "kernels_scanned": 9,
   "pallas_families": 14,
-  "auto_gaps": 29,
+  "auto_gaps": 30,
   "open_gaps": 22,
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
-  "frontier_slots": 16,
+  "frontier_slots": 17,
   "standalone_frontier_slots": 8,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true
