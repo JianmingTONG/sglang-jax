@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-06 21:15:29",
+ "generated": "2026-08-08 01:52:36",
  "suite": "full",
  "nodes": [
   {
@@ -237,6 +237,16 @@
    "mass_memory": 1359.0
   },
   {
+   "id": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "case": "kda:seq128_h2_d64",
+   "kernel": "kda",
+   "knob": "pipeline_impl",
+   "value": "fused_resident",
+   "ops": 2601,
+   "mass_compute": 484.0,
+   "mass_memory": 2117.0
+  },
+  {
    "id": "kda:seq256_h4_d128@intra_block_size=8",
    "case": "kda:seq256_h4_d128",
    "kernel": "kda",
@@ -285,6 +295,16 @@
    "ops": 1937,
    "mass_compute": 557.0,
    "mass_memory": 1380.0
+  },
+  {
+   "id": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "case": "kda:seq256_h4_d128",
+   "kernel": "kda",
+   "knob": "pipeline_impl",
+   "value": "fused_resident",
+   "ops": 4956,
+   "mass_compute": 824.0,
+   "mass_memory": 4132.0
   }
  ],
  "edges": [
@@ -1437,6 +1457,62 @@
    "f_ba": 0.0799
   },
   {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "gla:seq512_h8",
+   "relation": "disjoint",
+   "f_ab": 0.0281,
+   "f_ba": 0.1896
+  },
+  {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "gla:seq2048_h8",
+   "relation": "disjoint",
+   "f_ab": 0.0281,
+   "f_ba": 0.1896
+  },
+  {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "kda:seq128_h2_d64",
+   "relation": "disjoint",
+   "f_ab": 0.0811,
+   "f_ba": 0.1079
+  },
+  {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "kda:seq256_h4_d128",
+   "relation": "disjoint",
+   "f_ab": 0.0811,
+   "f_ba": 0.1087
+  },
+  {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "gmm:m256_k512_n512_g4",
+   "relation": "disjoint",
+   "f_ab": 0.0246,
+   "f_ba": 0.1963
+  },
+  {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "gmm:m512_k512_n512_g8",
+   "relation": "disjoint",
+   "f_ab": 0.0246,
+   "f_ba": 0.1963
+  },
+  {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "moe_v1:t32_e8_k2_h2048_i1024",
+   "relation": "disjoint",
+   "f_ab": 0.0108,
+   "f_ba": 0.0144
+  },
+  {
+   "a": "kda:seq128_h2_d64@pipeline_impl=fused_resident",
+   "b": "moe_v2:t32_e8_k2_h512_i512",
+   "relation": "disjoint",
+   "f_ab": 0.0104,
+   "f_ba": 0.0423
+  },
+  {
    "a": "kda:seq256_h4_d128@intra_block_size=8",
    "b": "gla:seq512_h8",
    "relation": "overlaps",
@@ -1715,12 +1791,68 @@
    "relation": "disjoint",
    "f_ab": 0.0232,
    "f_ba": 0.0705
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "gla:seq512_h8",
+   "relation": "disjoint",
+   "f_ab": 0.0157,
+   "f_ba": 0.2026
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "gla:seq2048_h8",
+   "relation": "disjoint",
+   "f_ab": 0.0157,
+   "f_ba": 0.2026
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "kda:seq128_h2_d64",
+   "relation": "disjoint",
+   "f_ab": 0.0426,
+   "f_ba": 0.1079
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "kda:seq256_h4_d128",
+   "relation": "disjoint",
+   "f_ab": 0.0426,
+   "f_ba": 0.1087
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "gmm:m256_k512_n512_g4",
+   "relation": "disjoint",
+   "f_ab": 0.0133,
+   "f_ba": 0.2025
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "gmm:m512_k512_n512_g8",
+   "relation": "disjoint",
+   "f_ab": 0.0133,
+   "f_ba": 0.2025
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "moe_v1:t32_e8_k2_h2048_i1024",
+   "relation": "disjoint",
+   "f_ab": 0.0056,
+   "f_ba": 0.0144
+  },
+  {
+   "a": "kda:seq256_h4_d128@pipeline_impl=fused_resident",
+   "b": "moe_v2:t32_e8_k2_h512_i512",
+   "relation": "disjoint",
+   "f_ab": 0.0054,
+   "f_ba": 0.0423
   }
  ],
  "relations": {
   "equivalent": 7,
   "overlaps": 81,
-  "disjoint": 96,
+  "disjoint": 112,
   "generalizes": 20
  },
  "dropped_nodes": [],
@@ -1803,6 +1935,6 @@
   }
  ],
  "edge_errors": [],
- "runtime_s": 76.25,
+ "runtime_s": 91.24,
  "note": "f_ab = fraction of a's substantive op mass reproducible from b alone (api_metrics.subtract_catalog two-pass delta); 'generalizes' means a reproduces b (a \u2287 b). Cross-case pairs restricted to case-default nodes; variant nodes compare against case defaults only. suite=full."
 }

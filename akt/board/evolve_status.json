@@ -1,19 +1,19 @@
 {
  "state": "idle",
- "updated_ts": 1786056307.438096,
+ "updated_ts": 1786154049.0331461,
  "init_ts": 1786023097.9306195,
- "round": 7,
- "capability": "kda_packed_resident_api",
+ "round": 8,
+ "capability": "kda_resident_pipeline_api",
  "phase": null,
  "started_ts": null,
  "testbench": true,
  "last": {
-  "round": 7,
-  "capability": "kda_packed_resident_api",
-  "decision": "reject",
-  "reason": "API-NOVELTY GUARD FAILED (parameter tweak / insufficient coverage):  |\u0394|cmp=0.000 |\u0394|mem=32.000 vs noise_floor=1784.000; coherence components=11 largest=4 max_depth=4 zero_embed=0; G_delta=1.000 vs cut=0.500",
-  "geomean_s": 0.0030963206663727756,
-  "delta_pct": -68.06,
-  "finished_ts": 1786056307.4380941
+  "round": 8,
+  "capability": "kda_resident_pipeline_api",
+  "decision": "keep",
+  "reason": "paired three-model candidate beats incumbent by 75.64% (paired=75.64%, absolute=76.30%; both strictly > 2%)",
+  "geomean_s": 0.0023791920393705377,
+  "delta_pct": -75.64,
+  "finished_ts": 1786154049.033145
  }
 }

@@ -1,6 +1,6 @@
 {
  "start_ts": 1786023097.9077475,
- "deadline_ts": 1786066297.9077477,
+ "deadline_ts": 1786193180.0865874,
  "api_baseline": {
   "fingerprint": "91a687680dc18a7b97948acf72e0dca2fe824ceb83078d3ea1b9634a1041daf0",
   "backend": "gpu",
@@ -272,10 +272,10 @@
   }
  },
  "testbench": true,
- "round": 7,
+ "round": 8,
  "target_improvement": 0.02,
- "incumbent_geomean": 0.010040470398962498,
- "incumbent_choices": 659,
+ "incumbent_geomean": 0.0023791920393705377,
+ "incumbent_choices": 668,
  "base_search_geomean": 0.02560094464570284,
  "incumbent_case_spaces": {
   "gla:seq512_h8": [
@@ -4322,6 +4322,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4332,6 +4333,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4342,6 +4344,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4352,6 +4355,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4362,6 +4366,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4372,6 +4377,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4382,6 +4388,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4392,6 +4399,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4402,6 +4410,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4412,6 +4421,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4422,6 +4432,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4432,6 +4443,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4442,6 +4454,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4452,6 +4465,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4462,6 +4476,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4472,6 +4487,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4482,6 +4498,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4492,6 +4509,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4502,6 +4520,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4512,6 +4531,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4522,6 +4542,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4532,6 +4553,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4542,6 +4564,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4552,6 +4575,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4562,6 +4586,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4572,6 +4597,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4582,6 +4619,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4592,6 +4630,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4602,6 +4641,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4612,6 +4652,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4622,6 +4663,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4632,6 +4674,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4642,6 +4685,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4652,6 +4696,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4662,6 +4707,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4672,6 +4718,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4682,6 +4729,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4692,6 +4740,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4702,6 +4751,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4712,6 +4762,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4722,6 +4773,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4732,6 +4784,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4742,6 +4795,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4752,6 +4806,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4762,6 +4817,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4772,6 +4828,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4782,6 +4839,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4792,6 +4850,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4802,6 +4861,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4812,6 +4872,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4822,6 +4883,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4832,6 +4894,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4842,6 +4905,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4852,6 +4916,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4862,6 +4927,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4872,6 +4938,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4882,6 +4949,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4892,6 +4960,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4902,6 +4971,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4912,6 +4982,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4922,6 +4993,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4932,6 +5004,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4942,6 +5026,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4952,6 +5037,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4962,6 +5048,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4972,6 +5059,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4982,6 +5070,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -4992,6 +5081,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5002,6 +5092,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5012,6 +5103,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5022,6 +5114,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5032,6 +5125,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5042,6 +5136,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5052,6 +5147,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5062,6 +5158,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5072,16 +5169,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
-    "single_chunk_state_elision": false,
-    "zero_state_output_elision": false
-   },
-   {
-    "chunk_size": 32,
-    "intra_block_size": 32,
-    "scalar_intra_solve": false,
-    "compute_block_chunks": 1,
-    "state_block_chunks": 4,
-    "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5091,7 +5179,19 @@
     "scalar_intra_solve": false,
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
+    "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 32,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5102,6 +5202,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5112,6 +5213,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5122,6 +5224,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5132,6 +5235,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5142,6 +5246,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5152,6 +5257,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5162,6 +5268,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5172,6 +5279,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5182,6 +5290,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5192,6 +5301,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5202,6 +5312,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5212,6 +5323,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5222,6 +5334,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5232,6 +5345,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5242,6 +5356,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5252,6 +5367,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5262,6 +5378,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5272,6 +5389,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5282,6 +5400,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5292,6 +5411,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5302,6 +5422,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5312,6 +5433,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5322,6 +5444,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5332,6 +5455,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5342,6 +5477,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5352,6 +5488,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5362,6 +5499,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5372,6 +5510,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5382,6 +5521,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5392,6 +5532,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5402,6 +5543,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5412,6 +5554,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5422,6 +5565,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5432,6 +5576,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5442,6 +5587,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5452,6 +5598,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5462,6 +5609,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5472,6 +5620,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5482,6 +5631,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5492,6 +5642,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5502,6 +5653,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5512,6 +5664,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5522,6 +5675,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5532,6 +5686,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5542,6 +5708,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 64,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5552,6 +5719,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    }
@@ -5564,6 +5732,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5574,6 +5743,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5584,6 +5754,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5594,6 +5765,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5604,6 +5776,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5614,6 +5787,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5624,6 +5798,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5634,6 +5809,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5644,6 +5820,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5654,6 +5831,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5664,6 +5842,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5674,6 +5853,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5684,6 +5864,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 16,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5694,6 +5886,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5704,6 +5897,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5714,6 +5908,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5724,6 +5919,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5734,6 +5930,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5744,6 +5941,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5754,6 +5952,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5764,6 +5963,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5774,6 +5974,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5784,6 +5985,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5794,6 +5996,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5804,6 +6007,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5814,6 +6018,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5824,6 +6029,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5834,6 +6040,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5844,6 +6051,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5854,6 +6062,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5864,6 +6073,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 32,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5874,6 +6095,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5884,6 +6106,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5894,6 +6117,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5904,6 +6128,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5914,6 +6139,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5924,6 +6150,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5934,6 +6161,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5944,6 +6172,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5954,6 +6183,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5964,6 +6194,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5974,6 +6205,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5984,6 +6216,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -5994,6 +6227,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6004,6 +6238,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6014,6 +6249,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6024,6 +6260,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6034,6 +6271,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6044,6 +6282,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6054,6 +6293,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6064,6 +6304,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6074,6 +6315,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6084,6 +6326,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6094,6 +6337,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6104,6 +6348,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 64,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6114,6 +6370,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6124,6 +6381,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6134,6 +6392,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6144,6 +6403,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6154,6 +6414,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6164,6 +6425,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6174,6 +6436,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6184,6 +6447,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6194,6 +6458,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6204,6 +6469,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6214,6 +6480,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 4,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6224,6 +6491,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6234,6 +6502,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6244,6 +6513,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6254,6 +6524,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6264,6 +6535,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6274,6 +6546,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6284,6 +6557,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6294,6 +6568,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6304,6 +6579,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 128,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6314,6 +6601,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6324,6 +6612,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6334,6 +6623,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6344,6 +6634,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6354,6 +6645,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6364,6 +6656,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6374,6 +6667,7 @@
     "compute_block_chunks": 2,
     "state_block_chunks": 2,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6384,6 +6678,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6394,6 +6689,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6404,6 +6700,18 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
+    "single_chunk_state_elision": false,
+    "zero_state_output_elision": false
+   },
+   {
+    "chunk_size": 256,
+    "intra_block_size": 16,
+    "scalar_intra_solve": false,
+    "compute_block_chunks": 1,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
+    "pipeline_impl": "fused_resident",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    },
@@ -6414,6 +6722,7 @@
     "compute_block_chunks": 1,
     "state_block_chunks": 1,
     "state_dim_alignment": 128,
+    "pipeline_impl": "incumbent",
     "single_chunk_state_elision": false,
     "zero_state_output_elision": false
    }
@@ -6443,13 +6752,14 @@
     "zero_state_output_elision": false
    },
    "tiny-linear-serving/kda-short": {
-    "chunk_size": 64,
-    "compute_block_chunks": 2,
+    "chunk_size": 128,
+    "compute_block_chunks": 1,
     "intra_block_size": 16,
+    "pipeline_impl": "fused_resident",
     "scalar_intra_solve": false,
     "single_chunk_state_elision": false,
-    "state_block_chunks": 2,
-    "state_dim_alignment": 64,
+    "state_block_chunks": 1,
+    "state_dim_alignment": 128,
     "zero_state_output_elision": false
    },
    "tiny-linear-serving/gla-long": {
@@ -6462,12 +6772,13 @@
     "zero_state_output_elision": false
    },
    "tiny-linear-serving/kda-long": {
-    "chunk_size": 128,
-    "compute_block_chunks": 2,
-    "intra_block_size": 8,
-    "scalar_intra_solve": true,
+    "chunk_size": 256,
+    "compute_block_chunks": 1,
+    "intra_block_size": 16,
+    "pipeline_impl": "fused_resident",
+    "scalar_intra_solve": false,
     "single_chunk_state_elision": false,
-    "state_block_chunks": 2,
+    "state_block_chunks": 1,
     "state_dim_alignment": 128,
     "zero_state_output_elision": false
    }
@@ -6477,12 +6788,12 @@
   "tiny-linear-serving": {
    "tiny-linear-serving/input-projection": "c3e070a9e93af51fb7498ecdddb8a244928ce763bb276313abb32dc613b1ac81",
    "tiny-linear-serving/gla-short": "f216bcf1b495e0c60b606da13b0faf04751e965b95fa74a33c232405b77ba4de",
-   "tiny-linear-serving/kda-short": "6a2c8209fad4f3bcce1c3127b2f1c848e6676e29c46f804b0bc22d911ffca178",
+   "tiny-linear-serving/kda-short": "20f44c86fb0ac49782c3932aae025f6d3ace0fdd196ae3a0f16085e2de363b29",
    "tiny-linear-serving/gla-long": "40539c15072fcc0d7b7c061e21f72781b726e4fd8c6d8585805050d3878dbc5e",
-   "tiny-linear-serving/kda-long": "f58f2a0b787abcf9f7a6bfa2377689851f58178340ea1455fa440dea4d0d8a8f"
+   "tiny-linear-serving/kda-long": "8dfc17393c2cda620e217878367a4a92ceeef06c7d08a6e987b5b13899f80e3f"
   }
  },
- "incumbent_commit": "04bec876efed8dbce9549d37aab890a17fb94038",
+ "incumbent_commit": "246546b0458b2ed7e064c4642a04b19593f12c09",
  "expected_models": [
   "tiny-linear-serving"
  ],
@@ -6495,7 +6806,7 @@
  ],
  "workload_fingerprint": "f3c807d1475f504c772914bcac3124302a48085b9e7a8ec3739b9c7200c8ed39",
  "model_contract_fingerprint": "2f1c43e50a4dc3ac709ce4a99f6b3da8c17420c00fffb471d49a315cbdf677d6",
- "action_graph_fingerprint": "0a7af2fece7ed60b3cb2703bc308b3adbf7c3c6f4cd062c17597aa80428578c8",
+ "action_graph_fingerprint": "06dad90086701a8f0bb6cfafe673b245fcc9294e5c198ce730b83273015a67fa",
  "target_hardware_fingerprint": "fbe8c68970c068917f58d4c06cfa49245c4b32331f1c0dc9f3a82cf391110de1",
  "gate_contract": {
   "objective_name": "paired_model_geomean_s",
