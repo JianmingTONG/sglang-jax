@@ -3081,7 +3081,7 @@
     "chunk_size"
    ],
    "has_tuned_table": false,
-   "n_files": 2
+   "n_files": 3
   },
   {
    "family": "speculative",
@@ -4087,6 +4087,56 @@
    "action_node": null
   },
   {
+   "gap_id": "simple_gla:output_impl:schedule-toggle",
+   "id": "simple_gla:output_impl:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "axis": "output_impl",
+   "source_axis": "output_impl",
+   "source_function": "chunk_simple_gla_fwd_varlen",
+   "category": "schedule-toggle",
+   "status": "schedule-toggle",
+   "what": "schedule/fusion toggle never searched",
+   "detail": "default='incumbent'",
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py:1350",
+   "incumbent_value": "incumbent",
+   "incumbent_value_known": true,
+   "candidate_values": [
+    "incumbent",
+    "batched_value_tiles"
+   ],
+   "source_sink": {
+    "assignments": [
+     "chunk_fwd_o_handle"
+    ],
+    "expression_asts": {
+     "chunk_fwd_o_handle": "IfExp(test=Compare(left=Name(id='output_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='batched_value_tiles')]), body=Name(id='batched_value_tile_fwd_o', ctx=Load()), orelse=Constant(value=None))"
+    }
+   },
+   "reachable_prim": "dma_start",
+   "elevated_in_akt": true,
+   "programmer_exposed": true,
+   "runner_axes": [
+    "output_impl"
+   ],
+   "programmer_controls": [
+    "gla.output_impl"
+   ],
+   "exposure_level": "programmer",
+   "in_akt_suite": true,
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "open": false,
+   "existing_low_level_proven": true,
+   "eligible_for_current_gate": false,
+   "graph_node": "pallas:dma_start",
+   "action_node": null
+  },
+  {
    "gap_id": "grouped_topk/v1:bt:shape-pinned-tile",
    "id": "grouped_topk/v1:bt:shape-pinned-tile",
    "family": "grouped_topk/v1",
@@ -4240,7 +4290,7 @@
    "label": "schedule/fusion toggle never searched",
    "reachable_prim": "dma_start",
    "salience": 4,
-   "count": 7
+   "count": 8
   },
   "backend-gated": {
    "label": "tuned table gated to one TPU generation",
@@ -4584,6 +4634,33 @@
    "access": "frontier"
   },
   {
+   "gap_id": "simple_gla:enable_batched_value_tile_fwd_o_variant:schedule-toggle",
+   "family": "simple_gla",
+   "kernel_ids": [
+    "gla"
+   ],
+   "source_axis": "enable_batched_value_tile_fwd_o_variant",
+   "source_function": "batched_value_tile_fwd_o",
+   "category": "schedule-toggle",
+   "incumbent_value": false,
+   "incumbent_value_known": true,
+   "candidate_values": [
+    false,
+    true
+   ],
+   "evidence": "python/sgl_jax/srt/kernels/simple_gla/simple_gla_batched_output.py:292",
+   "detail": "unconsidered-flexibility slot: an alternative algorithm/schedule variant for the batched_value_tile_fwd_o Pallas launch, selectable behind a new enable_batched_value_tile_fwd_o_variant toggle; the incumbent path stays the exact default",
+   "model_callsites": [
+    "tiny-linear-serving/gla-long",
+    "tiny-linear-serving/gla-short"
+   ],
+   "action_edge": {
+    "source": "action:simple_gla:enable_batched_value_tile_fwd_o_variant:schedule-toggle",
+    "target": "pallas:dma_start"
+   },
+   "access": "frontier"
+  },
+  {
    "gap_id": "simple_gla:enable__launch_decode_simple_gla_variant:schedule-toggle",
    "family": "simple_gla",
    "kernel_ids": [
@@ -4892,12 +4969,12 @@
   "active_primitives": 54,
   "kernels_scanned": 9,
   "pallas_families": 14,
-  "auto_gaps": 28,
+  "auto_gaps": 29,
   "open_gaps": 22,
   "open_action_edges": 5,
   "hidden_lowering_boundaries": 40,
   "executable_action_gaps": 5,
-  "frontier_slots": 15,
+  "frontier_slots": 16,
   "standalone_frontier_slots": 8,
   "seed_patterns_rediscovered": "6/6",
   "focus_active": true

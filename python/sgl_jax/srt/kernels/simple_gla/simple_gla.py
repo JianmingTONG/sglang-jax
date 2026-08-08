@@ -1325,6 +1325,7 @@ def _unalign_output(o_aligned, cu_seqlens_orig, aligned_cu, T_orig):
         "output_value_tiles",
         "enable__chunk_fwd_o_pl_variant",
         "enable_chunk_fwd_h_kernel_varlen_variant",
+        "output_impl",
     ],
 )
 def chunk_simple_gla_fwd_varlen(
@@ -1346,6 +1347,7 @@ def chunk_simple_gla_fwd_varlen(
     output_value_tiles: int = 1,
     enable__chunk_fwd_o_pl_variant: bool = False,
     enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
+    output_impl: str = "incumbent",
 ) -> tuple[jax.Array, jax.Array | None]:
     """Chunked varlen Simple GLA.
 
@@ -1381,7 +1383,21 @@ def chunk_simple_gla_fwd_varlen(
     that recurrence into its closed form and resolves the whole carry as a single
     per-head decay matrix, so the number of launched steps stops scaling with the
     chunk count. Both paths emit the same states.
+
+    ``output_impl`` selects which handle executes the output stage.
+    ``"incumbent"`` keeps ``chunk_fwd_o`` and the schedule toggles documented
+    above; ``"batched_value_tiles"`` dispatches to the standalone
+    ``batched_value_tile_fwd_o`` handle, which runs the same two-level walk with
+    the value-tile axis as a batch dimension of every contraction instead of a
+    Python loop bound (see simple_gla_batched_output.py). That handle owns the
+    whole output schedule, so it consumes no output schedule toggle.
     """
+    # Imported here, not at module scope: the handle reuses this module's
+    # helpers, so a top-level import would be circular.
+    from sgl_jax.srt.kernels.simple_gla.simple_gla_batched_output import (
+        batched_value_tile_fwd_o,
+    )
+
     B, T_orig, H, K, V = *q.shape, v.shape[-1]
     N = cu_seqlens_dev.shape[0] - 1 if cu_seqlens_dev is not None else B
 
@@ -1463,27 +1479,47 @@ def chunk_simple_gla_fwd_varlen(
             ht = jnp.where(zero_len_mask, 0.0, ht)
     # The resident output schedule restores the token layout inside the output
     # stage, so the separate aligned-space scatter pass is not launched at all.
+    chunk_fwd_o_handle = (
+        batched_value_tile_fwd_o if output_impl == "batched_value_tiles" else None
+    )
+    # The batched handle always delivers in token order, exactly as the resident
+    # schedule does, so both restore the layout inside the output stage and the
+    # separate aligned-space scatter pass is not launched at all.
     unalign_gather = (
         _build_unalign_gather_idx(cu_seqlens_dev, aligned_cu, T_orig)
-        if enable__chunk_fwd_o_pl_variant
+        if (enable__chunk_fwd_o_pl_variant or chunk_fwd_o_handle is not None)
         else None
     )
-    o = chunk_fwd_o(
-        q=q_a,
-        k=k_a,
-        v=v_a,
-        g=g,
-        g_gamma=g_gamma,
-        h=h,
-        scale=scale,
-        cu_seqlens_cpu=cu_seqlens_cpu,
-        cu_seqlens_dev=aligned_cu,
-        chunk_size=chunk_size,
-        zero_state_output_elision=zero_state_output_elision,
-        output_value_tiles=output_value_tiles,
-        enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
-        output_gather=unalign_gather,
-    )
+    if chunk_fwd_o_handle is not None:
+        o = chunk_fwd_o_handle(
+            q=q_a,
+            k=k_a,
+            v=v_a,
+            g=g,
+            g_gamma=g_gamma,
+            h=h,
+            scale=scale,
+            chunk_size=chunk_size,
+            output_value_tiles=output_value_tiles,
+            output_gather=unalign_gather,
+        )
+    else:
+        o = chunk_fwd_o(
+            q=q_a,
+            k=k_a,
+            v=v_a,
+            g=g,
+            g_gamma=g_gamma,
+            h=h,
+            scale=scale,
+            cu_seqlens_cpu=cu_seqlens_cpu,
+            cu_seqlens_dev=aligned_cu,
+            chunk_size=chunk_size,
+            zero_state_output_elision=zero_state_output_elision,
+            output_value_tiles=output_value_tiles,
+            enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
+            output_gather=unalign_gather,
+        )
 
     if unalign_gather is None:
         o = _unalign_output(o, cu_seqlens_dev, aligned_cu, T_orig)
@@ -1516,6 +1552,7 @@ def simple_gla_fwd(
     output_value_tiles: int = 1,
     enable__chunk_fwd_o_pl_variant: bool = False,
     enable_chunk_fwd_h_kernel_varlen_variant: bool = False,
+    output_impl: str = "incumbent",
     mode: SimpleGLAKernelMode = SimpleGLAKernelMode.FUSED_CHUNK,
 ):
     if cu_seqlens_dev is None:
@@ -1543,4 +1580,5 @@ def simple_gla_fwd(
         enable_chunk_fwd_h_kernel_varlen_variant=(
             enable_chunk_fwd_h_kernel_varlen_variant
         ),
+        output_impl=output_impl,
     )

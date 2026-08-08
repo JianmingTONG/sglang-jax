@@ -294,6 +294,7 @@ class LightningAttnBackend(LinearRecurrentAttnBackend):
                 enable_chunk_fwd_h_kernel_varlen_variant=(
                     controls.enable_chunk_fwd_h_kernel_varlen_variant
                 ),
+                output_impl=controls.output_impl,
             )
 
             # Skip writing back to dummy slot 0.

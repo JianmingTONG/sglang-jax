@@ -1,0 +1,69 @@
+{
+ "name": "gla_batched_value_tile_output_api",
+ "gap_id": "simple_gla:output_impl:schedule-toggle",
+ "action_graph_fingerprint": "06dad90086701a8f0bb6cfafe673b245fcc9294e5c198ce730b83273015a67fa",
+ "hypothesis": "GLA's output stage is the last un-batched axis in the linear-serving trace. An earlier capability let one Pallas program own several independent head-value tiles (output_value_tiles), which amortizes the grid, but the kernel body then walks those tiles with a PYTHON LOOP -- `for local_value_tile in range(OUTPUT_VALUE_TILES)` in both _chunk_fwd_o_kernel and _chunk_fwd_o_subchunk_body -- so a program owning G tiles emits G independent copies of the entire output schedule: G score contractions, G decay-matrix carries, G state contractions, G masking chains. Grouping tiles therefore buys grid amortization and pays for it in traced program size, and at the plans the DP selects (gla-long chunk_size=2048, gla-short 512, both output_value_tiles=8) that is where the time is: the whole varlen forward traces 933 operations, replacing the output launch with zeros removes 68.3% of gla-long and 75.9% of gla-short, and the arithmetic that stage performs runs at roughly a tenth of this device's fp32 rate -- it is paying for the NUMBER of launched contractions, not their size. This capability introduces a STANDALONE JAX API -- batched_value_tile_fwd_o in the new file python/sgl_jax/srt/kernels/simple_gla/simple_gla_batched_output.py -- that rebuilds the stage with the value-tile axis as a leading BATCH DIMENSION of every contraction rather than a loop bound: the G tiles' intra-sub-chunk scores become one einsum('gnik,gnjk->gnij'), their sub-chunk decay-matrix carry one einsum('gnb,gbkd->gnkd'), their inter-chunk term one einsum('gnik,gnkd->gnid'). Nothing is shared between heads or value slices -- the batch axis IS the tile axis, so every tile's q/k/v/h and its own gate still meet only themselves and the emitted values are the same re-associated sum -- but a G-tile program's traced size stops scaling with G. The handle owns the whole output schedule, both levels of the two-level walk and the token-order delivery, so it consumes no output schedule toggle and needs no separate aligned-space unalignment pass. Deployment goes through a free-named string dispatch control gla.output_impl whose default 'incumbent' leaves the shipped chunk_fwd_o path untouched and bit-identical. All 96 new deployable configurations were run: every one matches the frozen pure-JAX fused_recurrent_simple_gla reference to at most 7.5e-6 on both compared outputs (token output and final recurrent state) against a 1e-3 tolerance.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/gla-long",
+  "baseline_share_pct": 13.3,
+  "expected_relief_pct": 8.5,
+  "reasoning": "SHARE: taken from the last completed target-hardware eval (evals/c1786023097_round_008), each callsite timed at the configuration that is now the incumbent plan. tiny-linear-serving is the only model with non-deferred cases on this backend (the other two defer all 10 of their calls), so it is 100% of the three-model aggregate; its per-callsite incumbent measurements are kda-long 1.219ms (46.4%), kda-short 0.416ms (15.8%), input-projection 0.351ms (13.4%), gla-long 0.349ms (13.3%), gla-short 0.290ms (11.1%), summing to 2.625ms against a paired model incumbent_s of 2.379ms. The action's two affected callsites are therefore 24.3% of the aggregate. LOCALIZATION: measured in-process under the gate's own deterministic-XLA flags (--xla_gpu_autotune_level=0 --xla_gpu_deterministic_ops=true), replacing chunk_fwd_o's launch with zeros at the incumbent plan removes 68.3% of gla-long and 75.9% of gla-short, versus 23.7%/9.8% for the state stage and 5.4%/-0.3% for the unalignment gather -- the output stage is the whole cost of both calls, and it is launch-count bound, not flop bound (its 2.2 GFLOP at gla-long retire in 0.23ms, about 9% of this device's fp32 rate). MEASURED, one warmup and the median of 9 runs of the full runner entry: gla-long at its DP-selected incumbent plan (cs=2048, compact, ovt=8, both variants on) is 0.3219ms and the best batched_value_tiles configuration (cs=2048, ovt=8, state variant on) is 0.2350ms = 27.0% relief; gla-short at its incumbent plan (cs=512, compact, ovt=8, both variants on) is 0.2370ms and its best batched_value_tiles configuration (cs=512, ovt=8, state variant on) is 0.1017ms = 57.1% relief. AGGREGATE = 0.1330*27.0 + 0.1105*57.1 = 3.59 + 6.31 = 9.90%. DISCOUNT: reported as 8.5%, cutting about a seventh, because the gate's DP re-selects plans on both sides of the pair and because part of the gla-short win comes from a chunk with only four sub-chunks, where the loop it removes is shortest and the measurement is most sensitive to fixed launch cost. The same share-weighted method predicted 70% for round 8 against a measured paired 75.64% and 8.40% for round 6 against 10.39%, so it is calibrated conservative; the >2% bar is cleared four-fold even if only gla-long improved. NOT A REPEAT OF A FAILED ESTIMATE: no prior round proposed simple_gla:output_impl, and the two recorded simple_gla failures were both on enable_chunk_fwd_h_kernel_varlen_variant -- one a workload-fingerprint rejection since fixed by the harness's deterministic XLA flags, one a manifest schema slip -- neither an output-stage action. NOVELTY: run through the frozen akt.core.analysis.api_metrics.delta_verdict with the pinned baseline and the real runner path, the candidate scores mass=59 (compute 25, memory 34) against this family's calibrated floor of 4 on both cases, largest connected delta component 52 >= 3, zero_embed=0, PASS. SPACE: the handle is genuinely narrower than chunk_fwd_o -- it owns the output schedule, so enable__chunk_fwd_o_pl_variant is pinned at its default and the two-level walk's own precondition (a chunk taller than one 128-row sub-chunk) bounds chunk_size -- so the runner enumerates 64 new configurations for gla-long and 32 for gla-short (256->320 and 192->224, 668->764 campaign-wide) while every incumbent configuration is preserved exactly at the new dimension's default."
+ },
+ "search_dimensions": [
+  {
+   "control": "gla.output_impl",
+   "kernel_function": "chunk_simple_gla_fwd_varlen",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "simple_gla:output_impl:schedule-toggle",
+  "family": "simple_gla",
+  "kernel_ids": [
+   "gla"
+  ],
+  "source_axis": "output_impl",
+  "source_function": "chunk_simple_gla_fwd_varlen",
+  "source_sink": {
+   "assignments": [
+    "chunk_fwd_o_handle"
+   ],
+   "expression_asts": {
+    "chunk_fwd_o_handle": "IfExp(test=Compare(left=Name(id='output_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='batched_value_tiles')]), body=Name(id='batched_value_tile_fwd_o', ctx=Load()), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": "incumbent",
+  "candidate_values": [
+   "incumbent",
+   "batched_value_tiles"
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+   "line": 1350,
+   "detail": "default='incumbent'"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/gla-long",
+   "tiny-linear-serving/gla-short"
+  ],
+  "action_edge": {
+   "source": "action:simple_gla:output_impl:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "gla",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla_batched_output.py",
+  "python/sgl_jax/srt/kernels/simple_gla/simple_gla.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/lightning_backend.py",
+  "akt/core/runners/gla.py",
+  "akt/core/evolve/capabilities/gla_batched_value_tile_output_api.json"
+ ],
+ "status": "kept",
+ "delta_pct": 9.31,
+ "measured_geomean_s": 0.0021210145205259327,
+ "objective_scope": "model-serving-empirical-dp-v2"
+}

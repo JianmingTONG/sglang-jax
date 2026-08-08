@@ -11,7 +11,11 @@ the config->kernel run mapping.
 
 Design space: base `chunk_size` plus capability-elevated `compact_alignment`,
 `output_value_tiles`, `enable__chunk_fwd_o_pl_variant` and
-`enable_chunk_fwd_h_kernel_varlen_variant`. Historical
+`enable_chunk_fwd_h_kernel_varlen_variant`. `output_impl` dispatches the output
+stage to the standalone `batched_value_tile_fwd_o` handle, which runs the same
+two-level walk with the value-tile axis as a batch dimension of every
+contraction instead of a Python loop bound; it owns that schedule, so the output
+schedule toggle stays at its default for its configurations. Historical
 state/output-elision axes remain visible as runner-only experiments but are
 invalid in this serving objective because the nonzero initial state and final
 recurrent state are both observed.
@@ -22,7 +26,10 @@ import functools
 
 import jax
 
-from sgl_jax.srt.kernels.simple_gla.simple_gla import chunk_simple_gla_fwd_varlen
+from sgl_jax.srt.kernels.simple_gla.simple_gla import (
+    _OUTPUT_SUBCHUNK_ROWS,
+    chunk_simple_gla_fwd_varlen,
+)
 
 from akt.benchmark.refs.gla import (
     ATOL,
@@ -40,6 +47,7 @@ _OUTPUT_ELISION_CAPABILITY = "gla_zero_state_output_elision"
 _VALUE_TILE_GROUPING_CAPABILITY = "gla_value_tile_grouping"
 _OUTPUT_SUBCHUNK_SCHEDULE_CAPABILITY = "gla_output_subchunk_schedule"
 _STATE_DECAY_MATRIX_CAPABILITY = "gla_state_decay_matrix_closed_form"
+_BATCHED_VALUE_TILE_OUTPUT_CAPABILITY = "gla_batched_value_tile_output_api"
 
 
 @functools.lru_cache(maxsize=None)
@@ -51,6 +59,7 @@ def _jit_chunk(
     output_value_tiles: int,
     enable__chunk_fwd_o_pl_variant: bool,
     enable_chunk_fwd_h_kernel_varlen_variant: bool,
+    output_impl: str,
 ):
     def f(q, k, v, g_gamma, initial_state, cu):
         o, ht = chunk_simple_gla_fwd_varlen(
@@ -63,7 +72,8 @@ def _jit_chunk(
             output_value_tiles=output_value_tiles,
             enable__chunk_fwd_o_pl_variant=enable__chunk_fwd_o_pl_variant,
             enable_chunk_fwd_h_kernel_varlen_variant=(
-                enable_chunk_fwd_h_kernel_varlen_variant))
+                enable_chunk_fwd_h_kernel_varlen_variant),
+            output_impl=output_impl)
         return o, ht
     return jax.jit(f)
 
@@ -77,6 +87,7 @@ def _run(inp, cfg):
         int(cfg.get("output_value_tiles", 1)),
         bool(cfg.get("enable__chunk_fwd_o_pl_variant", False)),
         bool(cfg.get("enable_chunk_fwd_h_kernel_varlen_variant", False)),
+        str(cfg.get("output_impl", "incumbent")),
     )(
         inp["q"],
         inp["k"],
@@ -105,6 +116,19 @@ def _space(seqlen: int, heads: int):
         state_elision = c.get("single_chunk_state_elision", False)
         output_elision = c.get("zero_state_output_elision", False)
         output_value_tiles = c.get("output_value_tiles", 1)
+        output_impl = c.get("output_impl", "incumbent")
+        if output_impl != "incumbent":
+            # The batched value-tile handle OWNS the output schedule: it is the
+            # two-level walk with its own token-order delivery, so it consumes
+            # no output schedule toggle (that knob stays at its default) and it
+            # is only defined for a chunk taller than one sub-chunk. The
+            # deployment space therefore gains the chunk/alignment/value-tile
+            # combinations the handle actually reads, not a duplicate of the
+            # whole incumbent grid.
+            if c.get("enable__chunk_fwd_o_pl_variant", False):
+                return False
+            if cs <= _OUTPUT_SUBCHUNK_ROWS or cs % _OUTPUT_SUBCHUNK_ROWS:
+                return False
         return (
             cs > 0
             and (cs & (cs - 1)) == 0          # power of two (maintainer convention)
@@ -164,6 +188,13 @@ def _space(seqlen: int, heads: int):
                 default=False,
                 elevated_by=_STATE_DECAY_MATRIX_CAPABILITY,
                 programmer_control="gla.enable_chunk_fwd_h_kernel_varlen_variant",
+            ),
+            Knob(
+                "output_impl",
+                ["incumbent", "batched_value_tiles"],
+                default="incumbent",
+                elevated_by=_BATCHED_VALUE_TILE_OUTPUT_CAPABILITY,
+                programmer_control="gla.output_impl",
             ),
         ],
         valid=_valid,

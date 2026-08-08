@@ -58,6 +58,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "output_value_tiles",
         "enable__chunk_fwd_o_pl_variant",
         "enable_chunk_fwd_h_kernel_varlen_variant",
+        "output_impl",
     ),
 }
 
@@ -172,6 +173,11 @@ class GLAKernelControls:
     output_value_tiles: int = 1
     enable__chunk_fwd_o_pl_variant: bool = False
     enable_chunk_fwd_h_kernel_varlen_variant: bool = False
+    # Which handle executes the output stage. "incumbent" is the shipped
+    # chunk_fwd_o path with its schedule toggles; "batched_value_tiles" runs the
+    # standalone batched_value_tile_fwd_o handle, whose value-tile axis is a
+    # batch dimension of every contraction instead of a Python loop bound.
+    output_impl: str = "incumbent"
 
     def validate(self, context: KernelControlContext | None = None) -> None:
         _require_choice(
@@ -180,6 +186,9 @@ class GLAKernelControls:
             (16, 32, 64, 128, 256, 512, 1024, 2048),
         )
         _require_choice("gla.output_value_tiles", self.output_value_tiles, (1, 2, 4, 8))
+        _require_choice(
+            "gla.output_impl", self.output_impl, ("incumbent", "batched_value_tiles")
+        )
         _require_bool("gla.compact_alignment", self.compact_alignment)
         _require_bool(
             "gla.enable__chunk_fwd_o_pl_variant", self.enable__chunk_fwd_o_pl_variant
