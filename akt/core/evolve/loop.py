@@ -1816,6 +1816,22 @@ def validate_api_novelty(manifest, contract_result, summary, state):
     # History stores the gate result verbatim EXCEPT delta.graph, which is
     # dropped with a note when it exceeds the 64KB record cap.
     _truncate_api_graph(result)
+    # STACK-level genericity: distinct frozen model callsites the delta covers,
+    # over the WHOLE frozen suite (len(inventory) == 15) — not just the affected
+    # kernel family. The board renders this next to the family-scoped
+    # genericity_min; older history records simply lack the key.
+    covered_patterns: set[str] = set()
+    for genericity_entry in (result.get("genericity") or {}).values():
+        if isinstance(genericity_entry, dict):
+            covered_patterns.update(
+                pattern
+                for pattern in genericity_entry.get("covered_patterns") or []
+                if isinstance(pattern, str)
+            )
+    result["genericity_stack"] = {
+        "covered": len(covered_patterns),
+        "total": len(inventory),
+    }
     if result.get("baseline_fingerprint") != pin.get("fingerprint"):
         result["ok"] = False
         result.setdefault("errors", []).append(

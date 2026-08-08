@@ -1,0 +1,22 @@
+{
+ "all_correct": false,
+ "target_hardware_ok": false,
+ "n_deferred": 0,
+ "objective_scope": "model-serving-empirical-dp-v2",
+ "models": [],
+ "case_search": {},
+ "runtime_evidence": {
+  "required": true,
+  "ok": false,
+  "errors": [
+   "not evaluated: static contract pre-check failed: estimate must contain exactly ['baseline_share_pct', 'callsite', 'expected_relief_pct', 'model', 'reasoning']"
+  ]
+ },
+ "error": "static contract pre-check failed: estimate must contain exactly ['baseline_share_pct', 'callsite', 'expected_relief_pct', 'model', 'reasoning']",
+ "gate_decision": "reject",
+ "gate_reason": "STATIC CONTRACT PRE-CHECK FAILED (target-HW eval skipped): estimate must contain exactly ['baseline_share_pct', 'callsite', 'expected_relief_pct', 'model', 'reasoning']",
+ "capability": "gla_state_decay_matrix_solve",
+ "improvement_pct": null,
+ "absolute_improvement_pct": null,
+ "retained_plan_role": "incumbent_plan"
+}

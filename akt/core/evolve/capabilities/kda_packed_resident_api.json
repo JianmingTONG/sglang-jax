@@ -1,0 +1,68 @@
+{
+ "name": "kda_packed_resident_api",
+ "gap_id": "kda:kda_impl:schedule-toggle",
+ "action_graph_fingerprint": "0a7af2fece7ed60b3cb2703bc308b3adbf7c3c6f4cd062c17597aa80428578c8",
+ "hypothesis": "Every chunk-blocked KDA stage reaches its chunks through a RUNTIME start-offset vector even though the entry has already fixed that tiling at trace time. Stage 2 (kda_fwd_intra) over-allocates the packed time axis by BT, materializes each chunk's q/k/gk/beta/v tile with a vmapped dynamic_slice, and returns its five live results by scatter-accumulating them through an [NC, BT] int32 position vector into zero-initialized T+BT-row staging buffers; stage 4 (chunk_kda_fwd_o_gk) re-gathers that staging layout one chunk at a time to read stage 2's Aqk back and scatters its own rows into a second staging buffer. But chunk_kda_fwd aligns every sequence to a multiple of the state block, which is a multiple of BT, so logical chunk c is EXACTLY rows [c*BT, (c+1)*BT) of the packed layout: the chunk axis is a static reshape of the time axis and the whole index space is redundant. This capability introduces a STANDALONE JAX API -- chunk_kda_fwd_resident in the new file python/sgl_jax/srt/kernels/kda/resident.py -- that blocks and un-blocks by that reshape on BOTH sides of the stage-2 -> stage-4 handoff, so the chunk-blocked results never leave the layout their launch produced them in: the reshape and its inverse annihilate and the aligned staging buffers are never materialized at all. Neither end alone suffices, which is the point -- whichever end keeps its data-dependent addressing pins the intermediate layout and forces the deterministic scatter/gather round trip. The handle reuses this family's Pallas kernel bodies (_kda_fwd_intra_kernel, _chunk_kda_fwd_o_gk_pl_kernel) and the shared inter-chunk state stage unchanged, so every launch keeps its exact arithmetic and each result row is written exactly once instead of accumulated into a zeroed buffer. It is deliberately NARROWER than chunk_kda_fwd: owning the chunk addressing of the two launches it re-implements, it fixes their micro-schedule at the incumbent defaults (intra_block_size=16, scalar_intra_solve=False, compute_block_chunks=1) and exposes only the layout axes it still consumes. Deployment goes through a free-named string dispatch control kda.kda_impl whose default 'incumbent' reproduces the shipped path bit-for-bit. Measured under the gate's deterministic-XLA regime, both compared outputs (token output and final recurrent state) are BITWISE identical to the incumbent's at every checked configuration and match the frozen pure-JAX recurrence to 4.4e-6 against a 1e-2 tolerance.",
+ "estimate": {
+  "model": "tiny-linear-serving",
+  "callsite": "tiny-linear-serving/kda-long",
+  "baseline_share_pct": 60.2,
+  "expected_relief_pct": 61.0,
+  "reasoning": "SHARE: recomputed from the LAST ACCEPTED eval (evals/c1786023097_round_006, each callsite timed at its own best measured configuration). tiny-linear-serving is the only model with non-deferred cases on this backend, so it is 100% of the three-model aggregate; its additive DP optimum is 10.7005ms = kda-long 6.4383ms (60.17%) + kda-short 3.2771ms (30.63%) + gla-long 0.3658ms (3.42%) + input-projection 0.3485ms (3.26%) + gla-short 0.2709ms (2.53%). The action's two affected callsites are therefore 90.8% of the aggregate -- after rounds 1 and 6 took the GLA state and output stages, KDA is where essentially all remaining time is. LOCALIZATION: the campaign's named LIMITER is kda-long -> #47 jit|int32r2 -> DMA memory-bound (cmp=0%/bw=100%, 'cut bytes moved / keep data resident'); those int32 segments ARE the aligned-space position vectors and their scatter/gather, which deterministic XLA makes pathologically expensive. This action removes both ends of that round trip so the staging buffers never materialize. MEASURED, in-process, under the gate's own deterministic-XLA flags (--xla_gpu_autotune_level=0 --xla_gpu_deterministic_ops=true), timing the full chunk_kda_fwd with one warmup and the median of 3 runs: kda-long at its DP-selected incumbent plan (cs=128, ibs=8, scalar=True, cbc=2, sbc=2, sda=128) is 6.2459ms and the best resident configuration (cs=128, sbc=2, sda=128) is 1.6230ms = 74.01% relief; kda-short at its DP-selected incumbent plan (cs=64, ibs=16, scalar=False, cbc=2, sbc=2, sda=64) is 3.1955ms and the best resident configuration (cs=64, sbc=2, sda=64) is 0.7452ms = 76.68% relief. Every one of the 30 new deployable configurations was run: both compared outputs are bitwise equal to the incumbent's and within 4.4e-6 of the frozen reference. AGGREGATE = 0.6017*74.01 + 0.3063*76.68 = 44.53 + 23.49 = 68.02%. DISCOUNT: reported as 61%, cutting roughly a tenth off, because the relief is the annihilation of a deterministic-GPU scatter/gather round trip and a deterministic TPU permutation is far less pathological than the GPU equivalent, and because the gate's DP re-selects plans on both sides of the pair. The bar is cleared by more than an order of magnitude even under the far weaker per-stage-only accounting. This estimate is NOT a repeat of a prior failed one: the three earlier rejections of this schedule (kda_packed_resident_chunk_schedule, kda_resident_chunk_handoff, kda_resident_chunk_layout, all against the kda:enable_kda_fwd_intra_variant frontier slot) never reached a measurement -- each died with rc=-9, the Linux OOM killer, during the exhaustive local search of kda:seq256_h4_d128, because a plain boolean axis DOUBLES that family's searched configuration count (86->172 and 124->248) and each configuration retains a fresh interpret-mode executable on a box that leaves the gate about 33GB. The standalone handle's narrower signature is what fixes that: it consumes neither intra_block_size, nor scalar_intra_solve, nor compute_block_chunks, so the runner enumerates 12 new configurations for kda-long and 18 for kda-short (86->98, 124->142; 659->689 configurations campaign-wide, versus 645 at the OOM) while the incumbent space is preserved exactly. Shares and both local reliefs are re-derived from the current round-6 baseline rather than the round-1 numbers those estimates used."
+ },
+ "search_dimensions": [
+  {
+   "control": "kda.kda_impl",
+   "kernel_function": "chunk_kda_fwd",
+   "consumer": "python/sgl_jax/srt/layers/attention/linear/kda_backend.py"
+  }
+ ],
+ "proposed_action": {
+  "gap_id": "kda:kda_impl:schedule-toggle",
+  "family": "kda",
+  "kernel_ids": [
+   "kda"
+  ],
+  "source_axis": "kda_impl",
+  "source_function": "chunk_kda_fwd",
+  "source_sink": {
+   "assignments": [
+    "chunk_kda_fwd_selected_impl"
+   ],
+   "expression_asts": {
+    "chunk_kda_fwd_selected_impl": "IfExp(test=Compare(left=Name(id='kda_impl', ctx=Load()), ops=[Eq()], comparators=[Constant(value='packed_resident')]), body=Name(id='chunk_kda_fwd_resident', ctx=Load()), orelse=Constant(value=None))"
+   }
+  },
+  "incumbent_value": "incumbent",
+  "candidate_values": [
+   "incumbent",
+   "packed_resident"
+  ],
+  "category": "schedule-toggle",
+  "source_evidence": {
+   "path": "python/sgl_jax/srt/kernels/kda/kda.py",
+   "line": 1270,
+   "detail": "default='incumbent'"
+  },
+  "model_callsites": [
+   "tiny-linear-serving/kda-long",
+   "tiny-linear-serving/kda-short"
+  ],
+  "action_edge": {
+   "source": "action:kda:kda_impl:schedule-toggle",
+   "target": "pallas:dma_start"
+  }
+ },
+ "audit_case": "kda",
+ "files_touched": [
+  "python/sgl_jax/srt/kernels/kda/kda.py",
+  "python/sgl_jax/srt/kernels/kda/resident.py",
+  "python/sgl_jax/srt/configs/kernel_control.py",
+  "python/sgl_jax/srt/layers/attention/linear/kda_backend.py",
+  "akt/core/runners/kda.py",
+  "akt/core/evolve/capabilities/kda_packed_resident_api.json"
+ ],
+ "status": "rejected",
+ "reject_reason": "API-NOVELTY GUARD FAILED (parameter tweak / insufficient coverage):  |\u0394|cmp=0.000 |\u0394|mem=32.000 vs noise_floor=1784.000; coherence components=11 largest=4 max_depth=4 zero_embed=0; G_delta=1.000 vs cut=0.500",
+ "objective_scope": "model-serving-empirical-dp-v2"
+}
