@@ -87,6 +87,21 @@ These traces use production kernels, but they are not downloaded checkpoints. Th
 separate live-model gate conditionally runs the actual
 `moonshotai/Kimi-Linear-48B-A3B-Instruct` checkpoint.
 
+**Formal workload layer** ([`benchmark/workload_spec.py`](benchmark/workload_spec.py) +
+[`benchmark/model_specs.py`](benchmark/model_specs.py)): workloads are also expressible
+as architecture-shaped specs — `WorkloadSpec` (arch params) → `BlockSpec` (repeated
+transformer block) → `OpSpec` (semantic operator: hidden/heads/seq, not case ids) —
+with a lowering onto the kernel inventory that reuses frozen cases where shapes match,
+materializes new `KernelCase`s from the same runner constructors otherwise, and reports
+ops the inventory cannot express (`attn_prefill_full`, fused-MoE/rpa OpSpec wiring) as
+explicit coverage gaps instead of dropping them. The library ships Qwen3-8B,
+Qwen3-30B-A3B (MoE), and Kimi-Linear (sgl_jax config defaults) plus testbench-scale
+siblings; `legacy_specs()` re-expresses the three frozen traces and
+`verify_legacy_roundtrip()` proves the lowering reproduces them call-for-call, so the
+pinned `contract_fingerprint` is untouched. New workloads join the measured objective
+only through an explicit `rebaseline`. CLI: `python akt/benchmark/model_specs.py
+--list / --describe <id> / --lower <id> / --verify-legacy`.
+
 ## One round
 
 1. `adapter.py bottleneck` reports the latest model/callsite timing and selected
