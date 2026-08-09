@@ -1,0 +1,33 @@
+<title>AKT campaign diagrams</title>
+<style>
+:root { --bg:#F3F5F7; --panel:#fff; --ink:#1C242E; --muted:#5A6879; --line:#D7DEE5;
+  --accent:#D97014; --accent-ink:#9A4E0C; --chip:#E8EDF1;
+  --kda:#2a78d6; --gmm:#eb6834; --gla:#1baf7a; --neut:#8a97a5; }
+@media (prefers-color-scheme: dark) { :root { --bg:#12181F; --panel:#1A222C; --ink:#E6EBF0;
+  --muted:#93A1B0; --line:#2B3642; --accent:#F08A2C; --accent-ink:#F0A55E; --chip:#232E3A;
+  --kda:#3987e5; --gmm:#d95926; --gla:#199e70; --neut:#7c8b9b; } }
+body { background:var(--bg); color:var(--ink); font-family:ui-monospace,Menlo,Consolas,monospace;
+  margin:2rem auto; max-width:900px; padding:0 1rem; }
+h1 { font-size:1.15rem; } a { color:var(--accent-ink); }
+figure { background:var(--panel); border:1px solid var(--line); padding:1rem .8rem; margin:1rem 0; overflow-x:auto; }
+figcaption { font-size:.75rem; color:var(--muted); padding-top:.5rem; }
+svg { min-width:720px; display:block; font-family:inherit; }
+.ct { font-size:10.5px; letter-spacing:.06em; fill:var(--muted); }
+.cax { font-size:9.5px; fill:var(--muted); } .cn { font-size:10px; fill:var(--ink); }
+.cnm { font-size:9px; fill:var(--muted); } .chdr { font-size:11px; fill:var(--ink); font-weight:600; }
+.cbase { stroke:var(--line); } .cgrid { stroke:var(--line); stroke-width:.5; stroke-dasharray:2 4; }
+.cpipe { fill:var(--chip); stroke:var(--line); stroke-width:.6; }
+.croof { stroke:var(--ink); stroke-width:1.4; } .cstep { stroke-width:2.4; }
+.cwedge { fill:var(--accent); opacity:.08; }
+.chot { fill:none; stroke:var(--accent); stroke-width:1.6; }
+.chotlab { font-size:9.5px; letter-spacing:.1em; fill:var(--accent-ink); }
+.climit { font-size:10.5px; fill:var(--accent-ink); }
+.unm { fill:var(--chip); stroke:var(--muted); stroke-dasharray:3 3; }
+.f-kda .cstep{stroke:var(--kda)} .f-kda .cfill{fill:var(--kda)}
+.f-gmm .cstep{stroke:var(--gmm)} .f-gmm .cfill{fill:var(--gmm)}
+.f-gla .cstep{stroke:var(--gla)} .f-gla .cfill{fill:var(--gla)}
+.f-oth .cstep{stroke:var(--neut)} .f-oth .cfill{fill:var(--neut)}
+</style>
+<h1>Campaign diagrams — all workloads</h1>
+<ul><li><a href='tiny-linear-serving.html'>tiny-linear-serving</a> — deterministic linear-attention prefill shape envelope</li><li><a href='tiny-dense-serving.html'>tiny-dense-serving</a> — deterministic dense transformer prefill and decode trace</li><li><a href='tiny-moe-serving.html'>tiny-moe-serving</a> — deterministic mixture-of-experts prefill and decode trace</li><li><a href='qwen3-8b.html'>qwen3-8b</a> — dense GQA transformer, 36L h4096 32q/8kv hd128 i12288 [dense; public Qwen3-8B HF config (hidden 4096</li><li><a href='qwen3-30b-a3b.html'>qwen3-30b-a3b</a> — MoE transformer, 48L h2048 128E top8 moe_i768 [moe; public Qwen3-30B-A3B HF config (hidden 2048, 48L</li><li><a href='kimi-linear-sgl-default.html'>kimi-linear-sgl-default</a> — hybrid linear-attention (KDA:3:1 full), 32L h4096 32h kd128 i11008 [hybrid-linear; sgl_jax KimiLinea</li><li><a href='qwen3-tiny-testbench.html'>qwen3-tiny-testbench</a> — dense GQA transformer, 2L h512 8q/2kv hd64 i512 [dense; qwen3 family scaled to testbench-measurable </li></ul>
+<p>generated 2026-08-09 23:52:07 · grammar: campaign_diagram_tools; see each page&#8217;s caption</p>
