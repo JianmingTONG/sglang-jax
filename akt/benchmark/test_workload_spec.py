@@ -117,3 +117,59 @@ def test_builders_cover_the_three_architecture_families():
     assert any(cid.startswith("kda:") for cid in hybrid_cases)
     moe_cases = [c.case_id for c in lower(moe).workload.calls]
     assert any(cid.endswith("_g8") for cid in moe_cases), "grouped expert matmul"
+
+
+def test_all_kernels_spec_covers_the_complete_frozen_inventory():
+    from akt.benchmark.model_specs import all_kernels_spec
+    from akt.benchmark.suites import load_cases
+
+    lowered = lower(all_kernels_spec())
+    assert not lowered.new_case_ids
+    assert {c.case_id for c in lowered.workload.calls} == {
+        case.case_id for case in load_cases("full")
+    }
+    # phases/seeds inherited from the frozen callsites, not invented
+    frozen = {c.case_id: c for w in MODEL_WORKLOADS for c in w.calls}
+    for call in lowered.workload.calls:
+        assert call.phase == frozen[call.case_id].phase
+        assert call.seed == frozen[call.case_id].seed
+
+
+def test_registry_coverage_maps_every_served_model_file():
+    from akt.benchmark.model_specs import registry_coverage
+
+    rows = registry_coverage()
+    files = {row["model_file"] for row in rows}
+    assert {"qwen3", "kimi_linear", "deepseek_v3", "llama"} <= files
+    assert any("UNCOVERED" in row["coverage"] for row in rows), \
+        "coverage report must stay honest about uncovered model families"
+
+
+def test_extended_workloads_env_gate_default_off_and_fail_closed():
+    import subprocess, sys, os, json as _json
+
+    code = (
+        "import json\n"
+        "from akt.benchmark.model_workloads import MODEL_WORKLOADS, "
+        "contract_fingerprint, validate_workloads\n"
+        "validate_workloads()\n"
+        "print(json.dumps({'n': len(MODEL_WORKLOADS), 'fp': contract_fingerprint()}))\n"
+    )
+    env = dict(os.environ, PYTHONPATH="python:.", PALLAS_INTERPRET="1")
+    env.pop("AKT_EXTENDED_WORKLOADS", None)
+    base = subprocess.run([sys.executable, "-c", code], env=env,
+                          capture_output=True, text=True, check=True)
+    base_row = _json.loads(base.stdout.strip().splitlines()[-1])
+    assert base_row["n"] == 3
+
+    env["AKT_EXTENDED_WORKLOADS"] = "all-kernels"
+    ext = subprocess.run([sys.executable, "-c", code], env=env,
+                         capture_output=True, text=True, check=True)
+    ext_row = _json.loads(ext.stdout.strip().splitlines()[-1])
+    assert ext_row["n"] == 4
+    assert ext_row["fp"] != base_row["fp"], "adoption must change the fingerprint (forces rebaseline)"
+
+    env["AKT_EXTENDED_WORKLOADS"] = "no-such-workload"
+    bad = subprocess.run([sys.executable, "-c", code], env=env,
+                         capture_output=True, text=True)
+    assert bad.returncode != 0, "unknown extended workload must fail closed"

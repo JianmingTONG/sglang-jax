@@ -133,8 +133,10 @@ def contract_fingerprint() -> str:
 
 
 def validate_workloads(expected_case_ids: Iterable[str] | None = None) -> None:
-    if len(MODEL_WORKLOADS) != 3:
+    if len(FROZEN_MODEL_WORKLOADS) != 3:
         raise ValueError("AKT requires exactly three frozen model workloads")
+    if MODEL_WORKLOADS[: len(FROZEN_MODEL_WORKLOADS)] != FROZEN_MODEL_WORKLOADS:
+        raise ValueError("extended workloads may only APPEND to the frozen three")
     model_ids = [model.model_id for model in MODEL_WORKLOADS]
     if len(model_ids) != len(set(model_ids)):
         raise ValueError("model workload identifiers must be unique")
@@ -152,18 +154,98 @@ def validate_workloads(expected_case_ids: Iterable[str] | None = None) -> None:
         if any(type(call.seed) is not int or call.seed < 0 for call in model.calls):
             raise ValueError(f"{model.model_id} has an invalid deterministic seed")
 
-    case_ids = [call.case_id for model in MODEL_WORKLOADS for call in model.calls]
-    if len(case_ids) != len(set(case_ids)):
-        raise ValueError("each frozen KernelCase must occur in exactly one model workload")
-    if expected_case_ids is not None and set(case_ids) != set(expected_case_ids):
+    frozen_case_ids = [
+        call.case_id for model in FROZEN_MODEL_WORKLOADS for call in model.calls
+    ]
+    if len(frozen_case_ids) != len(set(frozen_case_ids)):
+        raise ValueError("each frozen KernelCase must occur in exactly one FROZEN workload")
+    if expected_case_ids is not None and set(frozen_case_ids) != set(expected_case_ids):
         raise ValueError(
-            "model workloads do not cover the complete kernel inventory: "
-            f"missing={sorted(set(expected_case_ids) - set(case_ids))}, "
-            f"extra={sorted(set(case_ids) - set(expected_case_ids))}"
+            "frozen model workloads do not cover the complete kernel inventory: "
+            f"missing={sorted(set(expected_case_ids) - set(frozen_case_ids))}, "
+            f"extra={sorted(set(frozen_case_ids) - set(expected_case_ids))}"
+        )
+    # Extended workloads may re-reference frozen cases (shared measurement) but
+    # may not smuggle in cases the frozen suite cannot measure.
+    extended_case_ids = {
+        call.case_id
+        for model in MODEL_WORKLOADS[len(FROZEN_MODEL_WORKLOADS):]
+        for call in model.calls
+    }
+    unknown = extended_case_ids - set(frozen_case_ids)
+    if unknown and expected_case_ids is not None:
+        unknown -= set(expected_case_ids)
+    if unknown:
+        raise ValueError(
+            "extended workloads reference cases outside the measurable inventory "
+            f"(materialized-case adoption needs a suite extension first): {sorted(unknown)}"
         )
 
 
+def _extended_workloads() -> tuple[ModelWorkload, ...]:
+    """Opt-in workload expansion: AKT_EXTENDED_WORKLOADS=<spec-id>[,<spec-id>...].
+
+    Every consumer (model_eval, adapter, capability_contract, campaign, loop)
+    reads MODEL_WORKLOADS from this single module, so extending it HERE
+    propagates through the whole stack. The default (env var unset) is
+    byte-identical to the frozen contract — contract_fingerprint() unchanged.
+    Adopting extended workloads changes the fingerprint by design and therefore
+    REQUIRES `loop.py rebaseline` (the loop refuses stale fingerprints).
+
+    v1 restriction, fail-closed: an extended workload contributes only calls
+    whose case ids the FROZEN suite can measure; calls that lower to NEW
+    (materialized) cases are excluded here with an explicit stderr report —
+    adopting those into the measured objective needs a suite-contract
+    extension, tracked in akt/benchmark/workload_spec.py.
+    """
+
+    import os
+    import sys
+
+    raw = os.environ.get("AKT_EXTENDED_WORKLOADS", "")
+    names = [name.strip() for name in raw.split(",") if name.strip()]
+    if not names:
+        return ()
+    from akt.benchmark.model_specs import library
+    from akt.benchmark.workload_spec import lower
+
+    lib = library()
+    frozen_ids = {call.case_id for model in MODEL_WORKLOADS for call in model.calls}
+    extras: list[ModelWorkload] = []
+    for name in names:
+        if name in {model.model_id for model in MODEL_WORKLOADS}:
+            continue                                   # frozen three already present
+        spec = lib[name]                               # KeyError = fail closed
+        lowered = lower(spec).workload
+        kept = tuple(c for c in lowered.calls if c.case_id in frozen_ids)
+        dropped = [c.case_id for c in lowered.calls if c.case_id not in frozen_ids]
+        if not kept:
+            raise ValueError(
+                f"extended workload {name!r} has no call measurable by the frozen "
+                f"suite (all {len(dropped)} lower to non-frozen cases)"
+            )
+        if dropped:
+            print(
+                f"[model_workloads] extended workload {name!r}: keeping {len(kept)} "
+                f"frozen-measurable call(s), EXCLUDING {len(dropped)} non-frozen "
+                f"case(s) pending suite extension: {sorted(set(dropped))}",
+                file=sys.stderr,
+            )
+        extras.append(ModelWorkload(
+            model_id=lowered.model_id,
+            description=lowered.description
+            + (f" [extended; {len(dropped)} non-frozen call(s) excluded]" if dropped else " [extended]"),
+            calls=kept,
+        ))
+    return tuple(extras)
+
+
+FROZEN_MODEL_WORKLOADS = MODEL_WORKLOADS
+MODEL_WORKLOADS = MODEL_WORKLOADS + _extended_workloads()
+
+
 __all__ = [
+    "FROZEN_MODEL_WORKLOADS",
     "MODEL_CONTRACT_VERSION",
     "MODEL_WORKLOADS",
     "TARGET_BACKEND",

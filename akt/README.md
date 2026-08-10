@@ -102,6 +102,20 @@ pinned `contract_fingerprint` is untouched. New workloads join the measured obje
 only through an explicit `rebaseline`. CLI: `python akt/benchmark/model_specs.py
 --list / --describe <id> / --lower <id> / --verify-legacy`.
 
+**Expanding the measured objective** (`AKT_EXTENDED_WORKLOADS`): the loop's workload
+set is no longer fixed at the three tiny traces. Setting
+`AKT_EXTENDED_WORKLOADS=all-kernels,qwen3-tiny-testbench` (any spec-library ids)
+extends `MODEL_WORKLOADS` AT THE SOURCE — every consumer (model_eval, adapter,
+capability_contract, campaign, loop) picks the extras up automatically. The default
+(env unset) is byte-identical to the frozen contract; adoption changes
+`contract_fingerprint` by design and therefore requires `loop.py rebaseline`.
+Fail-closed v1 restriction: an extended workload contributes only calls the frozen
+suite can measure — calls lowering to new (materialized) cases are excluded with an
+explicit report until the suite contract grows a case-extension path. `all-kernels`
+(the complete inventory as one trace) is fully measurable today;
+`python akt/benchmark/model_specs.py --registry-coverage` maps every sglang-jax
+model implementation to its spec-family coverage (or names it UNCOVERED).
+
 ## One round
 
 1. `adapter.py bottleneck` reports the latest model/callsite timing and selected

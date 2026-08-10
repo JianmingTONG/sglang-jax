@@ -228,12 +228,87 @@ def moe_transformer_spec(
     )
 
 
+def all_kernels_spec() -> WorkloadSpec:
+    """EVERY frozen kernel case as one trace — the 'all kernels' starting point.
+
+    Phases and seeds are inherited from each case's frozen callsite so the
+    generated tensors are identical to the frozen measurement. Fully
+    frozen-resolvable, so it can join the measured objective directly via
+    AKT_EXTENDED_WORKLOADS=all-kernels + rebaseline.
+    """
+
+    from akt.benchmark.model_workloads import FROZEN_MODEL_WORKLOADS
+
+    ops = []
+    for workload in FROZEN_MODEL_WORKLOADS:
+        for call in workload.calls:
+            ops.append(OpSpec.make(
+                "case_ref", phase=call.phase, seed=call.seed,
+                call_id=call.case_id.replace(":", "_"),
+                case_id=call.case_id,
+            ))
+    return WorkloadSpec.make(
+        "all-kernels", "sweep",
+        [BlockSpec(block_id="inventory", ops=tuple(ops))],
+        description="complete frozen kernel inventory as one trace "
+                    f"({len(ops)} cases, phases/seeds inherited)",
+        provenance="derived from FROZEN_MODEL_WORKLOADS (all 15 frozen cases)",
+    )
+
+
+def registry_coverage() -> list[dict]:
+    """Which sglang-jax model implementations have spec coverage.
+
+    Scans python/sgl_jax/srt/models/ and maps each served model file to the
+    workload-spec family that can express it (or names it uncovered) — the
+    honest inventory of how generic the workload layer is TODAY."""
+
+    from pathlib import Path
+
+    models_dir = Path(__file__).resolve().parents[2] / "python/sgl_jax/srt/models"
+    covered = {
+        "qwen3": "dense (qwen3-8b)", "qwen2": "dense family (use dense_transformer_spec)",
+        "qwen": "dense family", "llama": "dense (llama-3.1-8b)",
+        "qwen3_moe": "moe (qwen3-30b-a3b)", "qwen2_moe": "moe family",
+        "deepseek_v3": "moe (deepseek-v3; MLA attention = coverage gap)",
+        "kimi_linear": "hybrid-linear (kimi-linear-sgl-default)",
+        "glm4_moe": "moe family", "glm5_moe": "moe family",
+        "bailing_moe": "moe family", "bailing_moe_linear": "hybrid-linear family",
+    }
+    rows = []
+    for path in sorted(models_dir.glob("*.py")):
+        stem = path.stem
+        if stem in ("registry", "__init__"):
+            continue
+        rows.append({"model_file": stem,
+                     "coverage": covered.get(stem, "UNCOVERED — no spec family yet")})
+    return rows
+
+
 # ------------------------------------------------------------- instances
 def library() -> dict[str, WorkloadSpec]:
     """Concrete architecture instances. Provenance is stated per instance."""
 
     specs = list(legacy_specs())
+    specs.append(all_kernels_spec())
 
+    specs.append(dense_transformer_spec(
+        "llama-3.1-8b",
+        hidden=4096, layers=32, heads=32, kv_heads=8, head_dim=128, inter=14336,
+        provenance="public Llama-3.1-8B HF config (hidden 4096, 32L, 32q/8kv, "
+                   "head_dim 128, intermediate 14336); served by "
+                   "python/sgl_jax/srt/models/llama.py",
+    ))
+    specs.append(moe_transformer_spec(
+        "deepseek-v3",
+        hidden=7168, layers=61, heads=128, kv_heads=128, head_dim=128,
+        experts=256, top_k=8, moe_inter=2048,
+        provenance="public DeepSeek-V3 HF config (hidden 7168, 61L, 256 experts "
+                   "top-8, moe_intermediate 2048); served by "
+                   "python/sgl_jax/srt/models/deepseek_v3.py; NOTE its MLA "
+                   "attention is expressed as the generic attention ops and "
+                   "surfaces as a coverage gap — no MLA kernel family exists",
+    ))
     specs.append(dense_transformer_spec(
         "qwen3-8b",
         hidden=4096, layers=36, heads=32, kv_heads=8, head_dim=128, inter=12288,
@@ -295,8 +370,15 @@ def main() -> None:
     parser.add_argument("--describe")
     parser.add_argument("--lower")
     parser.add_argument("--verify-legacy", action="store_true")
+    parser.add_argument("--registry-coverage", action="store_true",
+                        help="map every sglang-jax model implementation to its "
+                             "spec-family coverage (or UNCOVERED)")
     args = parser.parse_args()
     lib = library()
+
+    if args.registry_coverage:
+        for row in registry_coverage():
+            print(f"{row['model_file']:26s} {row['coverage']}")
 
     if args.verify_legacy:
         verify_legacy_roundtrip()
