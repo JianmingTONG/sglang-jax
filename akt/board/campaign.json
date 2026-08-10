@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-06 08:31:45",
+ "generated": "2026-08-09 18:51:10",
  "proxy": true,
  "classifier": "api_metrics.classify_labels",
  "levels": [
@@ -10,24 +10,24 @@
     {
      "name": "tiny-linear-serving/gla-short",
      "case": "gla:seq512_h8",
-     "latency_s": 0.0006591193377971649,
-     "latency_source": "eval legacy results (best searched)",
+     "latency_s": 7.34236091375351e-05,
+     "latency_source": "eval case_search (best measured config)",
      "flop_mass": 7989581.0,
      "byte_mass": 95565844.0,
-     "share": 0.17800633627745208,
-     "cmp_util": 0.4332240354375731,
-     "bw_util": 0.4258655985597859,
+     "share": 0.026486119295378786,
+     "cmp_util": 0.5099918970106468,
+     "bw_util": 0.5013295355639986,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages"
     },
     {
      "name": "tiny-linear-serving/gla-long",
      "case": "gla:seq2048_h8",
-     "latency_s": 0.0010207351297140121,
-     "latency_source": "eval legacy results (best searched)",
+     "latency_s": 0.00013385526835918427,
+     "latency_source": "eval case_search (best measured config)",
      "flop_mass": 28560149.0,
      "byte_mass": 347519476.0,
-     "share": 0.2756668031578767,
+     "share": 0.04828564882223815,
      "cmp_util": 1.0,
      "bw_util": 1.0,
      "verdict": "dependency-bound",
@@ -36,52 +36,52 @@
     {
      "name": "tiny-linear-serving/kda-short",
      "case": "kda:seq128_h2_d64",
-     "latency_s": 0.00045400112867355347,
-     "latency_source": "eval legacy results (best searched)",
+     "latency_s": 0.0004163086414337158,
+     "latency_source": "eval case_search (best measured config)",
      "flop_mass": 4374080.0,
      "byte_mass": 25799816.0,
-     "share": 0.12261069118545131,
-     "cmp_util": 0.344335961969702,
-     "bw_util": 0.1669143167863505,
+     "share": 0.15017513399615262,
+     "cmp_util": 0.04924320330284231,
+     "bw_util": 0.02387027944641026,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages"
     },
     {
      "name": "tiny-linear-serving/kda-long",
      "case": "kda:seq256_h4_d128",
-     "latency_s": 0.0010210759937763214,
-     "latency_source": "eval legacy results (best searched)",
+     "latency_s": 0.001205233857035637,
+     "latency_source": "eval case_search (best measured config)",
      "flop_mass": 9666566.0,
      "byte_mass": 90959080.0,
-     "share": 0.2757588592688431,
-     "cmp_util": 0.3383504416140672,
-     "bw_util": 0.2616507032400998,
+     "share": 0.4347643502034887,
+     "cmp_util": 0.037590309155472595,
+     "bw_util": 0.029069064543325984,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages"
     },
     {
      "name": "tiny-linear-serving/input-projection",
      "case": "gmm:m256_k512_n512_g4",
-     "latency_s": 0.00018629804253578186,
-     "latency_source": "eval legacy results (best searched)",
+     "latency_s": 0.0003585163503885269,
+     "latency_source": "eval case_search (best measured config)",
      "flop_mass": 787071.0,
      "byte_mass": 4457328.0,
-     "share": 0.050312940473399806,
-     "cmp_util": 0.15099348609025331,
-     "bw_util": 0.07027489653184396,
+     "share": 0.1293277044982527,
+     "cmp_util": 0.010289160561170392,
+     "bw_util": 0.004788747598049221,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages"
     },
     {
      "name": "tiny-moe-serving/router-projection",
      "case": "gmm:m512_k512_n512_g8",
-     "latency_s": 0.00036155618727207184,
-     "latency_source": "eval legacy results (best searched)",
+     "latency_s": 0.0005848165601491928,
+     "latency_source": "live time_config iters=5 (default config)",
      "flop_mass": 918715.0,
      "byte_mass": 4458136.0,
-     "share": 0.09764436963697698,
-     "cmp_util": 0.09081500311052702,
-     "bw_util": 0.036216912845094686,
+     "share": 0.21096104318448902,
+     "cmp_util": 0.007362683731586083,
+     "bw_util": 0.0029362293220242144,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages"
     }
@@ -105,7 +105,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.3300234878119441e-06
+     "latency_s": 1.5699020914546478e-06
     },
     {
      "name": "#2 jit|float32r4,float32r4,float32r4,float32r4,float32r4,float32r4",
@@ -119,7 +119,7 @@
      "bw_util": 4.88248469646203e-05,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.6626409797780979e-06
+     "latency_s": 1.962509365745052e-06
     },
     {
      "name": "#3 jit|int32r1",
@@ -133,7 +133,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#4 jit|int32r1",
@@ -147,7 +147,7 @@
      "bw_util": 0.5714285714285714,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages",
-     "latency_s": 7.103091747042548e-11
+     "latency_s": 8.384181701799419e-11
     },
     {
      "name": "#5 jit|int32r1",
@@ -161,7 +161,7 @@
      "bw_util": 0.4039408866995074,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages",
-     "latency_s": 3.295834570627742e-08
+     "latency_s": 3.89026030963493e-08
     },
     {
      "name": "#6 jit|int32r1",
@@ -175,7 +175,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 6.494255311581758e-09
+     "latency_s": 7.665537555930896e-09
     },
     {
      "name": "#7 jit|float32r4",
@@ -189,7 +189,7 @@
      "bw_util": 0.8884067657050612,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.4985504278748831e-05
+     "latency_s": 1.7688239887712976e-05
     },
     {
      "name": "#8 jit|float32r4",
@@ -203,7 +203,7 @@
      "bw_util": 0.8884067657050612,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.4985504278748831e-05
+     "latency_s": 1.7688239887712976e-05
     },
     {
      "name": "#9 jit|float32r4",
@@ -217,7 +217,7 @@
      "bw_util": 0.8884067657050612,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.4985504278748831e-05
+     "latency_s": 1.7688239887712976e-05
     },
     {
      "name": "#10 jit|float32r4",
@@ -231,7 +231,7 @@
      "bw_util": 0.8884067657050612,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.4985504278748831e-05
+     "latency_s": 1.7688239887712976e-05
     },
     {
      "name": "#11 jit|float32r3",
@@ -245,7 +245,7 @@
      "bw_util": 0.8370607028753994,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.3974825648609997e-07
+     "latency_s": 1.6495278628168798e-07
     },
     {
      "name": "#12 jit|int32r1",
@@ -259,7 +259,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#13 jit|int32r1",
@@ -273,7 +273,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 3.0441821773039494e-11
+     "latency_s": 3.5932207293426076e-11
     },
     {
      "name": "#14 jit|int32r1",
@@ -287,7 +287,7 @@
      "bw_util": 0.9523809523809523,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 2.1309275241127645e-10
+     "latency_s": 2.5152545105398253e-10
     },
     {
      "name": "#15 jit|int32r1",
@@ -301,7 +301,7 @@
      "bw_util": 0.8888888888888888,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 5.479527919147108e-10
+     "latency_s": 6.467797312816694e-10
     },
     {
      "name": "#16 jit|int32r1",
@@ -315,7 +315,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.5220910886519746e-10
+     "latency_s": 1.796610364671304e-10
     },
     {
      "name": "#17 jit|int32r1",
@@ -329,7 +329,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.5220910886519746e-10
+     "latency_s": 1.796610364671304e-10
     },
     {
      "name": "#18 jit|int32r1",
@@ -343,7 +343,7 @@
      "bw_util": 0.8148148148148148,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 5.479527919147108e-10
+     "latency_s": 6.467797312816694e-10
     },
     {
      "name": "#19 jit|int32r1",
@@ -357,7 +357,7 @@
      "bw_util": 0.8571428571428571,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.4206183494085096e-10
+     "latency_s": 1.6768363403598838e-10
     },
     {
      "name": "#20 jit|int32r1",
@@ -371,7 +371,7 @@
      "bw_util": 0.9523809523809523,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 2.1309275241127645e-10
+     "latency_s": 2.5152545105398253e-10
     },
     {
      "name": "#21 jit|int32r1",
@@ -385,7 +385,7 @@
      "bw_util": 0.8888888888888888,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 5.479527919147108e-10
+     "latency_s": 6.467797312816694e-10
     },
     {
      "name": "#22 jit|int32r1",
@@ -399,7 +399,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.5220910886519746e-10
+     "latency_s": 1.796610364671304e-10
     },
     {
      "name": "#23 jit|int32r1",
@@ -413,7 +413,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.5220910886519746e-10
+     "latency_s": 1.796610364671304e-10
     },
     {
      "name": "#24 jit|int32r1",
@@ -427,7 +427,7 @@
      "bw_util": 0.9999847428405779,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.330165549646885e-05
+     "latency_s": 1.5700697750886836e-05
     },
     {
      "name": "#25 jit|float32r3",
@@ -441,7 +441,7 @@
      "bw_util": 0.799999511719048,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.6625303744923223e-05
+     "latency_s": 1.9623788120585525e-05
     },
     {
      "name": "#26 jit|float32r3",
@@ -455,7 +455,7 @@
      "bw_util": 0.7999995930991652,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.9950362464453085e-05
+     "latency_s": 2.3548543349222147e-05
     },
     {
      "name": "#27 pallas_call|float32r3",
@@ -469,7 +469,7 @@
      "bw_util": 0.9463260745023123,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 7.453343171634431e-05
+     "latency_s": 8.797603306034661e-05
     },
     {
      "name": "#28 jit|float32r4,float32r4,float32r4,float32r4,float32r4",
@@ -483,7 +483,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.66252935976493e-06
+     "latency_s": 1.9623776143183094e-06
     },
     {
      "name": "#29 jit|float32r4",
@@ -497,7 +497,7 @@
      "bw_util": 0.7999991861987445,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 9.975186305863505e-06
+     "latency_s": 1.1774277663312288e-05
     },
     {
      "name": "#30 jit|float32r4",
@@ -511,7 +511,7 @@
      "bw_util": 0.7999991861987445,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 9.975186305863505e-06
+     "latency_s": 1.1774277663312288e-05
     },
     {
      "name": "#31 jit|float32r4",
@@ -525,7 +525,7 @@
      "bw_util": 0.7999991861987445,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 9.975186305863505e-06
+     "latency_s": 1.1774277663312288e-05
     },
     {
      "name": "#32 jit|float32r4",
@@ -539,7 +539,7 @@
      "bw_util": 0.801035458796694,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.0027140348356159e-05
+     "latency_s": 1.1835601963759737e-05
     },
     {
      "name": "#33 jit|float32r4",
@@ -553,7 +553,7 @@
      "bw_util": 0.7998958468949355,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 7.794121101290544e-08
+     "latency_s": 9.19984280736019e-08
     },
     {
      "name": "#34 jit|int32r1",
@@ -567,7 +567,7 @@
      "bw_util": 0.6666666666666666,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.2176728709215798e-10
+     "latency_s": 1.437288291737043e-10
     },
     {
      "name": "#35 jit|int32r1",
@@ -581,7 +581,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#36 jit|int32r1",
@@ -595,7 +595,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 2.0294547848692995e-11
+     "latency_s": 2.3954804862284054e-11
     },
     {
      "name": "#37 jit|int32r1",
@@ -609,7 +609,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 2.0294547848692995e-11
+     "latency_s": 2.3954804862284054e-11
     },
     {
      "name": "#38 jit|int32r1",
@@ -623,7 +623,7 @@
      "bw_util": 0.6060606060606061,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 3.3486003950343437e-10
+     "latency_s": 3.9525428022768683e-10
     },
     {
      "name": "#39 jit|int32r1",
@@ -637,7 +637,7 @@
      "bw_util": 0.6666666666666666,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.5220910886519747e-09
+     "latency_s": 1.796610364671304e-09
     },
     {
      "name": "#40 jit|int32r1",
@@ -651,7 +651,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#41 jit|int32r1",
@@ -665,7 +665,7 @@
      "bw_util": 0.5714285714285714,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages",
-     "latency_s": 1.4206183494085095e-09
+     "latency_s": 1.6768363403598835e-09
     },
     {
      "name": "#42 jit|int32r1",
@@ -679,7 +679,7 @@
      "bw_util": 0.9999934519624545,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 0.00013327131242383313
+     "latency_s": 0.00015730768217430462
     },
     {
      "name": "#43 pallas_call|float32r5,float32r5,float32r5,float32r5,float32r5,float32r5",
@@ -693,7 +693,7 @@
      "bw_util": 1.0,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.6625293597649302e-07
+     "latency_s": 1.9623776143183097e-07
     },
     {
      "name": "#44 jit|float32r2",
@@ -707,7 +707,7 @@
      "bw_util": 0.5714285714285714,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages",
-     "latency_s": 5.818852759177255e-07
+     "latency_s": 6.868321650114084e-07
     },
     {
      "name": "#45 jit|float32r2",
@@ -721,7 +721,7 @@
      "bw_util": 0.2859419827861014,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 8.14899156497279e-06
+     "latency_s": 9.618716525182088e-06
     },
     {
      "name": "#46 jit|float32r3",
@@ -735,7 +735,7 @@
      "bw_util": 0.597057140822693,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages",
-     "latency_s": 0.00011072746910069987
+     "latency_s": 0.00013069790640212145
     },
     {
      "name": "#47 jit|int32r2",
@@ -749,7 +749,7 @@
      "bw_util": 0.9997528565131022,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 0.0002236031160911839
+     "latency_s": 0.0002639314288989157
     },
     {
      "name": "#48 jit|int32r1",
@@ -763,7 +763,7 @@
      "bw_util": 0.6666666666666666,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.2176728709215798e-10
+     "latency_s": 1.437288291737043e-10
     },
     {
      "name": "#49 jit|int32r1",
@@ -777,7 +777,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#50 jit|int32r1",
@@ -791,7 +791,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 2.0294547848692995e-11
+     "latency_s": 2.3954804862284054e-11
     },
     {
      "name": "#51 jit|int32r1",
@@ -805,7 +805,7 @@
      "bw_util": 0.7272727272727273,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.1162001316781147e-10
+     "latency_s": 1.3175142674256228e-10
     },
     {
      "name": "#52 jit|int32r1",
@@ -819,7 +819,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 4.058909569738599e-11
+     "latency_s": 4.790960972456811e-11
     },
     {
      "name": "#53 jit|float32r4",
@@ -833,7 +833,7 @@
      "bw_util": 0.7999991861987445,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 9.975186305863505e-06
+     "latency_s": 1.1774277663312288e-05
     },
     {
      "name": "#54 jit|float32r4",
@@ -847,7 +847,7 @@
      "bw_util": 0.9230765619222937,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 2.5935468159606833e-05
+     "latency_s": 3.061310276076806e-05
     },
     {
      "name": "#55 jit|float32r4",
@@ -861,7 +861,7 @@
      "bw_util": 0.8888883865422078,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.7955327232735168e-05
+     "latency_s": 2.1193690212040173e-05
     },
     {
      "name": "#56 jit|float32r4",
@@ -875,7 +875,7 @@
      "bw_util": 0.8888883865422078,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.7955327232735168e-05
+     "latency_s": 2.1193690212040173e-05
     },
     {
      "name": "#57 pallas_call|float32r5,float32r4,float32r4",
@@ -889,7 +889,7 @@
      "bw_util": 0.6666666666666666,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.2176728709215798e-10
+     "latency_s": 1.437288291737043e-10
     },
     {
      "name": "#58 jit|int32r0",
@@ -903,7 +903,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#59 jit|int32r0",
@@ -917,7 +917,7 @@
      "bw_util": 0.9725579729795795,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 2.4284729932141995e-05
+     "latency_s": 2.866464288807474e-05
     },
     {
      "name": "#60 jit|float32r4",
@@ -931,7 +931,7 @@
      "bw_util": 0.7999991861987445,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 9.975186305863505e-06
+     "latency_s": 1.1774277663312288e-05
     },
     {
      "name": "#61 jit|float32r4",
@@ -945,7 +945,7 @@
      "bw_util": 0.7999983723991447,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 4.9875982265687145e-06
+     "latency_s": 5.88714482035736e-06
     },
     {
      "name": "#62 jit|float32r4",
@@ -959,7 +959,7 @@
      "bw_util": 0.7999991861987445,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 9.975186305863505e-06
+     "latency_s": 1.1774277663312288e-05
     },
     {
      "name": "#63 jit|float32r4",
@@ -973,7 +973,7 @@
      "bw_util": 0.7999991861987445,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 9.975186305863505e-06
+     "latency_s": 1.1774277663312288e-05
     },
     {
      "name": "#64 jit|int32r1",
@@ -987,7 +987,7 @@
      "bw_util": 0.6666666666666666,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.2176728709215798e-10
+     "latency_s": 1.437288291737043e-10
     },
     {
      "name": "#65 jit|int32r1",
@@ -1001,7 +1001,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#66 jit|int32r1",
@@ -1015,7 +1015,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 2.0294547848692995e-11
+     "latency_s": 2.3954804862284054e-11
     },
     {
      "name": "#67 jit|int32r1",
@@ -1029,7 +1029,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 2.0294547848692995e-11
+     "latency_s": 2.3954804862284054e-11
     },
     {
      "name": "#68 jit|int32r1",
@@ -1043,7 +1043,7 @@
      "bw_util": 0.6060606060606061,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 3.3486003950343437e-10
+     "latency_s": 3.9525428022768683e-10
     },
     {
      "name": "#69 jit|int32r1",
@@ -1057,7 +1057,7 @@
      "bw_util": 0.6666666666666666,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 1.5220910886519747e-09
+     "latency_s": 1.796610364671304e-09
     },
     {
      "name": "#70 jit|int32r1",
@@ -1071,7 +1071,7 @@
      "bw_util": 0.0,
      "verdict": "compute-bound",
      "rule": "cmp high / bw low -> overlap or offload work into the load phase",
-     "latency_s": 1.0147273924346497e-10
+     "latency_s": 1.1977402431142025e-10
     },
     {
      "name": "#71 jit|int32r1",
@@ -1085,7 +1085,7 @@
      "bw_util": 0.5714285714285714,
      "verdict": "dependency-bound",
      "rule": "both low -> pipeline / overlap the stages",
-     "latency_s": 1.4206183494085095e-09
+     "latency_s": 1.6768363403598835e-09
     },
     {
      "name": "#72 jit|int32r1",
@@ -1099,7 +1099,7 @@
      "bw_util": 0.9999945834319696,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 0.0001330097664384331
+     "latency_s": 0.00015699896462664193
     },
     {
      "name": "#73 pallas_call|float32r4",
@@ -1113,7 +1113,7 @@
      "bw_util": 0.7230379746835442,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 2.5652308480747944e-06
+     "latency_s": 3.027887334592704e-06
     },
     {
      "name": "#74 jit|float32r2",
@@ -1127,7 +1127,7 @@
      "bw_util": 0.6645432676154767,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 7.550485054366985e-07
+     "latency_s": 8.91226537498847e-07
     },
     {
      "name": "#75 jit|int32r2",
@@ -1141,7 +1141,7 @@
      "bw_util": 0.9992499345209251,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 4.265541552842244e-05
+     "latency_s": 5.0348604113828847e-05
     },
     {
      "name": "#76 jit|int32r1",
@@ -1155,7 +1155,7 @@
      "bw_util": 0.997569275644142,
      "verdict": "memory-bound",
      "rule": "bw high / cmp low -> cut bytes moved / keep data resident",
-     "latency_s": 5.343473270369471e-06
+     "latency_s": 6.3072043010199415e-06
     }
    ],
    "dominant": "#47 jit|int32r2",
@@ -1211,6 +1211,7 @@
   "kda:enable_chunk_local_cumsum_vector_variant:schedule-toggle",
   "kda:enable_kda_fwd_intra_variant:schedule-toggle",
   "kda:enable_chunk_gated_delta_rule_fwd_h_variant:schedule-toggle",
-  "kda:enable_chunk_kda_fwd_o_gk_variant:schedule-toggle"
+  "kda:enable_chunk_kda_fwd_o_gk_variant:schedule-toggle",
+  "kda:enable_resident_pipeline_stage_variant:schedule-toggle"
  ]
 }

@@ -11023,7 +11023,7 @@
    "tiny-linear-serving/kda-long": "8dfc17393c2cda620e217878367a4a92ceeef06c7d08a6e987b5b13899f80e3f"
   }
  },
- "incumbent_commit": "ec7659686459da044a5d766e4fc9701e272ae613",
+ "incumbent_commit": "9cc3e8f741fe764f22159051af36a290f8221be4",
  "expected_models": [
   "tiny-linear-serving"
  ],
