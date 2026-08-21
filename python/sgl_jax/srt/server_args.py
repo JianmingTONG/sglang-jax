@@ -1391,7 +1391,7 @@ class ServerArgs:
             help=(
                 "JSON object or path to a JSON file containing validated, shape-aware "
                 "low-level kernel controls. Supported families currently include "
-                "'kda', 'gla' and 'rpa_v3'; see sgl_jax.srt.configs.kernel_control."
+                "'kda', 'gla', 'rpa_v3' and 'gmm'; see sgl_jax.srt.configs.kernel_control."
             ),
         )
 

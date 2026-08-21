@@ -1,15 +1,94 @@
 from __future__ import annotations
 
+import dataclasses
+import functools
 from typing import Any
 
 import jax
 import jax.numpy as jnp
 
 from sgl_jax.srt.kernels.gmm.megablox_gmm_kernel.gmm import gmm as gmm_v1_kernel
+from sgl_jax.srt.kernels.gmm.megablox_gmm_kernel.gmm_v2 import calculate_tiling
 from sgl_jax.srt.kernels.gmm.megablox_gmm_kernel.gmm_v2 import gmm_v2 as gmm_v2_kernel
 from sgl_jax.srt.kernels.gmm.megablox_gmm_kernel.gmm_v2 import is_supported_by_gmm_v2
+from sgl_jax.srt.kernels.gmm.megablox_gmm_kernel.tuned_block_sizes import (
+    get_tuned_block_sizes,
+)
 from sgl_jax.srt.utils.jax_utils import is_tpu_runtime
 from sgl_jax.srt.utils.quantization.quantization_utils import quantize_tensor_simple
+
+
+def _tiling_with_tile_k(
+    m: int,
+    k: int,
+    n: int,
+    *,
+    tile_k: int,
+    num_total_groups: int,
+    num_current_groups: int,
+    lhs_dtype: str,
+    rhs_dtype: str,
+):
+    """v1 LutFn: incumbent ``(tm, _, tn)`` with the elevated ``tile_k`` swapped in.
+
+    Computes the same tuned-table/heuristic selection gmm v1 performs for
+    ``tiling=None`` and replaces only the k tile, so an elevated ``tk``
+    overrides both the tuned-table hit and the heuristic fallback while
+    leaving the m/n tiles on their incumbent values.
+    """
+    tm, _, tn = get_tuned_block_sizes(
+        m=m,
+        k=k,
+        n=n,
+        num_total_groups=num_total_groups,
+        num_current_groups=num_current_groups,
+        lhs_dtype=lhs_dtype,
+        rhs_dtype=rhs_dtype,
+        quant_block_size=k,
+    )
+    return tm, tile_k, tn
+
+
+@functools.lru_cache(maxsize=None)
+def gmm_v1_tiling_with_tile_k(
+    tile_k: int,
+    *,
+    num_total_groups: int,
+    num_current_groups: int,
+    lhs_dtype: str,
+    rhs_dtype: str,
+):
+    """Cached, hashable v1 ``tiling`` LutFn carrying an elevated k tile.
+
+    ``tiling`` is a jit-static argument of gmm v1, so the callable must be a
+    stable module-level object (never a per-call lambda): the lru_cache
+    returns the identical partial for identical bindings, keeping the jit
+    cache warm.
+    """
+    return functools.partial(
+        _tiling_with_tile_k,
+        tile_k=tile_k,
+        num_total_groups=num_total_groups,
+        num_current_groups=num_current_groups,
+        lhs_dtype=lhs_dtype,
+        rhs_dtype=rhs_dtype,
+    )
+
+
+def _tile_info_with_tile_k(lhs_dtype, rhs_dtype, dims, vmem_limit_bytes, *, tile_k: int):
+    """v2 TileFn: ``calculate_tiling`` with only ``tile_k`` replaced."""
+    tiles = calculate_tiling(lhs_dtype, rhs_dtype, dims, vmem_limit_bytes)
+    return dataclasses.replace(tiles, tile_k=tile_k)
+
+
+@functools.lru_cache(maxsize=None)
+def gmm_v2_tile_info_with_tile_k(tile_k: int):
+    """Cached, hashable v2 ``tile_info`` TileFn carrying an elevated k tile.
+
+    ``tile_info`` is a jit-static argument of gmm v2; see
+    ``gmm_v1_tiling_with_tile_k`` for why the callable must be cached.
+    """
+    return functools.partial(_tile_info_with_tile_k, tile_k=tile_k)
 
 
 def gmm(

@@ -10,8 +10,22 @@ from jax import shard_map
 from jax.sharding import Mesh
 from jax.sharding import PartitionSpec as P
 
-from sgl_jax.srt.eplb.expert_location import get_global_expert_location_metadata
-from sgl_jax.srt.kernels.gmm.megablox_gmm_backend import gmm
+from sgl_jax.srt.configs.kernel_control import (
+    KernelControlContext,
+    KernelControlPolicy,
+)
+from sgl_jax.srt.eplb.expert_location import (
+    get_global_expert_location_metadata,
+    get_global_server_args,
+)
+from sgl_jax.srt.kernels.gmm.megablox_gmm_backend import (
+    gmm,
+    gmm_v1_tiling_with_tile_k,
+    gmm_v2_tile_info_with_tile_k,
+)
+from sgl_jax.srt.layers.attention.hybrid_linear_attn_backend import (
+    get_current_device_kind,
+)
 
 # Re-export for backward compatibility: external code imports from this module.
 from sgl_jax.srt.layers.fused_moe import FusedEPMoE, FusedEPMoEV2  # noqa: F401
@@ -40,10 +54,24 @@ class EPMoE(nnx.Module):
         quantization_config=None,
         physical_to_logical_map: "jax.Array | None" = None,
         pre_gather_quant_dtype=None,
+        kernel_control=None,
     ):
         self.num_experts_per_tok = num_experts_per_tok
         self.physical_to_logical_map = physical_to_logical_map
         self.pre_gather_quant_dtype = pre_gather_quant_dtype
+
+        # Programmer-facing kernel controls ("gmm" family). Models build EPMoE
+        # without server_args in reach, so when the kwarg is not passed the
+        # policy is wired from the global server args (set by
+        # model_runner.load_model before model construction — the same seam
+        # gate.py uses for the grouped-topk kernel switch), letting
+        # --kernel-control-config reach EPMoE without threading every model.
+        # None resolves to the empty policy = incumbent tiling byte-identical.
+        if kernel_control is None:
+            kernel_control = getattr(
+                get_global_server_args(), "kernel_control_config", None
+            )
+        self.kernel_control = KernelControlPolicy.from_config(kernel_control)
 
         metadata = get_global_expert_location_metadata()
         if metadata is not None and layer_id is not None:
@@ -610,6 +638,26 @@ class EPMoE(nnx.Module):
         group_sizes = group_sizes.astype(jnp.int32)
         act_q_dtype = self.activation_quantized_dtype
 
+        # Resolve programmer-facing "gmm" kernel controls per call shape.
+        # KernelControlContext is attention-shaped; the documented mapping for
+        # the grouped matmul is sequence_length=m (tokens routed here),
+        # num_sequences=1, num_heads=num_groups (experts on this shard),
+        # head_dim=k (hidden_size), value_dim=n (intermediate_dim), both bools
+        # False. The empty policy resolves tk to None, leaving the incumbent
+        # tiling selection untouched.
+        controls = self.kernel_control.resolve_gmm(
+            KernelControlContext(
+                sequence_length=int(x.shape[0]),
+                num_sequences=1,
+                num_heads=int(w0_kernel.shape[0]),
+                head_dim=int(w0_kernel.shape[1]),
+                value_dim=int(w0_kernel.shape[2]),
+                has_initial_state=False,
+                output_final_state=False,
+                device_kind=get_current_device_kind(),
+            )
+        )
+
         gmm_kwargs = dict(
             group_sizes=group_sizes,
             preferred_element_type=self.dtype,
@@ -617,6 +665,24 @@ class EPMoE(nnx.Module):
             maybe_quantize_lhs=act_q_dtype is not None,
             acc_dtype=jnp.float32,
         )
+        if controls.tk is not None:
+            # Elevated k-tile override, forwarded through the backend seam for
+            # both gmm variants: v1 via a cached module-level LutFn that
+            # computes the incumbent (tm, _, tn) and swaps in tk; v2 via a
+            # cached TileFn wrapping calculate_tiling and replacing tile_k.
+            # Both kwargs are jit-static, hence the cached hashable callables
+            # (no per-call lambdas). The v1 lookup bindings mirror what gmm v1
+            # derives itself for tiling=None: lhs dtype after the backend's
+            # activation quantization, rhs dtype of the expert weights.
+            lhs_dtype = jnp.dtype(act_q_dtype if act_q_dtype is not None else self.dtype)
+            gmm_kwargs["tiling"] = gmm_v1_tiling_with_tile_k(
+                controls.tk,
+                num_total_groups=int(group_sizes.shape[0]),
+                num_current_groups=int(w0_kernel.shape[0]),
+                lhs_dtype=str(lhs_dtype),
+                rhs_dtype=str(jnp.dtype(w0_kernel.dtype)),
+            )
+            gmm_kwargs["v2_tile_info"] = gmm_v2_tile_info_with_tile_k(controls.tk)
 
         # === GEMM1: x @ w0 and x @ w1 ===
         layer_w0 = gmm(

@@ -63,6 +63,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "walk_impl",
     ),
     "rpa_v3": ("d_bkv_sz", "p_bkv_sz"),
+    "gmm": ("tk",),
 }
 
 
@@ -343,10 +344,36 @@ class RPAV3KernelControls:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class GMMKernelControls:
+    """Tiling controls for the megablox grouped-matmul (EPMoE) backend."""
+
+    # k-dimension tile of the grouped matmul. Kept default: None = incumbent
+    # selection (gmm v1: tuned table then heuristic; gmm v2: the
+    # calculate_tiling auto-tiler), which on the elevation campaign shape
+    # resolves to 1408 (full-k for moe_intermediate_size=1408). Certified
+    # domain for explicit values: (128, 1408). Provenance: HierEvo elevation
+    # gmm.tk, campaign_019_qwen-bs128-ctx4k-ps64 round 2, +4.35% suite
+    # improvement against limiter "paged-attn -> qk-softmax". Scope: an
+    # explicit tk reaches all three EPMoE grouped matmuls (GEMM1 w0/w1 and
+    # GEMM2 wo) on the epmoe backend only (fused/fused_v2 do not use gmm);
+    # gmm v1 may still silently coerce tk to the weight quant_block_size when
+    # neither divides the other.
+    tk: int | None = None
+
+    def validate(self, context: KernelControlContext | None = None) -> None:
+        if self.tk is not None:
+            _require_choice("gmm.tk", self.tk, (128, 1408))
+
+    def as_kernel_kwargs(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 _CONTROL_TYPES = {
     "kda": KDAKernelControls,
     "gla": GLAKernelControls,
     "rpa_v3": RPAV3KernelControls,
+    "gmm": GMMKernelControls,
 }
 _DEFAULTS = {
     family: {field.name: field.default for field in fields(control_type)}
@@ -495,7 +522,7 @@ class KernelControlPolicy:
         context: KernelControlContext | Mapping[str, Any],
         *,
         base: Mapping[str, Any] | None = None,
-    ) -> KDAKernelControls | GLAKernelControls | RPAV3KernelControls:
+    ) -> KDAKernelControls | GLAKernelControls | RPAV3KernelControls | GMMKernelControls:
         if family not in _CONTROL_TYPES:
             raise ValueError(f"unknown kernel family {family!r}")
         if not isinstance(context, KernelControlContext):
@@ -540,6 +567,14 @@ class KernelControlPolicy:
         assert isinstance(controls, RPAV3KernelControls)
         return controls
 
+    def resolve_gmm(
+        self,
+        context: KernelControlContext | Mapping[str, Any],
+    ) -> GMMKernelControls:
+        controls = self.resolve("gmm", context)
+        assert isinstance(controls, GMMKernelControls)
+        return controls
+
 
 def normalize_kernel_control_config(value: Any = None) -> dict[str, Any]:
     """Load and validate a JSON/file/mapping value for storage in ``ServerArgs``."""
@@ -549,6 +584,7 @@ def normalize_kernel_control_config(value: Any = None) -> dict[str, Any]:
 
 __all__ = [
     "GLAKernelControls",
+    "GMMKernelControls",
     "KDAKernelControls",
     "KernelControlContext",
     "KernelControlPolicy",

@@ -411,3 +411,81 @@ def test_flashattention_backend_defaults_to_incumbent_block_sizes(monkeypatch):
 
     assert captured["d_bkv_sz"] is None
     assert captured["p_bkv_sz"] is None
+
+
+def test_empty_policy_preserves_gmm_kernel_defaults():
+    controls = KernelControlPolicy().resolve_gmm(_context())
+
+    # None = the incumbent tiling selection (v1 tuned table/heuristic,
+    # v2 calculate_tiling auto-tiler).
+    assert controls.as_kernel_kwargs() == {"tk": None}
+
+
+def test_gmm_policy_rejects_values_outside_the_certified_domain():
+    with pytest.raises(ValueError, match="must be one of"):
+        KernelControlPolicy.from_config({"gmm": {"tk": 512}})
+
+
+def _epmoe_gmm_compute_call(monkeypatch, kernel_control):
+    from sgl_jax.srt.layers import moe as module
+
+    captured = {}
+
+    def fake_gmm(lhs, rhs, **kwargs):
+        captured.update(kwargs)
+        return jnp.zeros((lhs.shape[0], rhs.shape[-1]), dtype=lhs.dtype)
+
+    monkeypatch.setattr(module, "gmm", fake_gmm)
+    # EPMoE is an nnx.Module whose full construction needs a device mesh;
+    # bind the real (unbound) _gmm_compute to a namespace stand-in instead.
+    layer = SimpleNamespace(
+        kernel_control=KernelControlPolicy.from_config(kernel_control),
+        dtype=jnp.float32,
+        pre_gather_quant_dtype=None,
+        activation_quantized_dtype=None,
+        activation="silu",
+    )
+
+    tokens, hidden, inter, experts = 16, 64, 32, 4
+    inputs_2d = jnp.zeros((tokens, hidden), dtype=jnp.float32)
+    token_indices = jnp.arange(tokens, dtype=jnp.int32)
+    group_sizes = jnp.full((experts,), tokens // experts, dtype=jnp.int32)
+    w0 = jnp.zeros((experts, hidden, inter), dtype=jnp.float32)
+    w1 = jnp.zeros((experts, hidden, inter), dtype=jnp.float32)
+    wo = jnp.zeros((experts, inter, hidden), dtype=jnp.float32)
+
+    output = module.EPMoE._gmm_compute(
+        layer, inputs_2d, token_indices, group_sizes, w0, w1, wo, None
+    )
+
+    assert output.shape == (tokens, hidden)
+    return captured
+
+
+def test_epmoe_layer_forwards_programmer_controls(monkeypatch):
+    from sgl_jax.srt.kernels.gmm import megablox_gmm_backend as backend
+
+    captured = _epmoe_gmm_compute_call(monkeypatch, {"gmm": {"tk": 128}})
+
+    tiling = captured["tiling"]
+    # Stable cached callable (jit-static kwarg) with the bindings gmm v1
+    # derives itself for tiling=None.
+    assert tiling is backend.gmm_v1_tiling_with_tile_k(
+        128,
+        num_total_groups=4,
+        num_current_groups=4,
+        lhs_dtype="float32",
+        rhs_dtype="float32",
+    )
+    # The LutFn keeps the incumbent (tm, _, tn) and swaps in the elevated tk.
+    assert tiling(16, 64, 32)[1] == 128
+    assert captured["v2_tile_info"] is backend.gmm_v2_tile_info_with_tile_k(128)
+
+
+def test_epmoe_layer_defaults_to_incumbent_tiling(monkeypatch):
+    captured = _epmoe_gmm_compute_call(monkeypatch, None)
+
+    # Unset control: the backend seam must not see any tiling override, so
+    # production behavior stays byte-identical.
+    assert "tiling" not in captured
+    assert "v2_tile_info" not in captured

@@ -1,0 +1,32 @@
+{
+  "control": "sgl_gmm.tk",
+  "family": "sgl_gmm",
+  "knob": "tk",
+  "default": 1408,
+  "deployable_values": [
+    128,
+    1408
+  ],
+  "gap": "sgl_gmm:tk:existing-not-exposed",
+  "landed": {
+    "campaign": "campaign_019_qwen-bs128-ctx4k-ps64",
+    "round": 2,
+    "improvement_pct": 4.35
+  },
+  "limiter": "paged-attn -> qk-softmax",
+  "track": {
+    "name": "sglang-jax",
+    "chips": "0-3",
+    "jax": "0.10.2"
+  },
+  "run": {
+    "host": "TPU v6e-8 (single host, 8 chips)",
+    "date": "2026-08-10",
+    "duration": "8h",
+    "campaigns": 244,
+    "rounds": 2145,
+    "apis_kept": 8,
+    "board_artifact": "https://claude.ai/code/artifact/7c92db26-7e50-46d0-8320-2f81a74969fc"
+  },
+  "provenance": "Registered post-hoc from the run's board-artifact ledger (campaign table, round ledger, flexibility-graph land labels, all cross-consistent). The run VM was preempted before its local commits could be pushed; this file is the canonical GitHub registration of the kept control."
+}
