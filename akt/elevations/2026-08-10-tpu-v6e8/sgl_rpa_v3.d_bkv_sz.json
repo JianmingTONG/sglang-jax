@@ -1,0 +1,34 @@
+{
+  "control": "sgl_rpa_v3.d_bkv_sz",
+  "family": "sgl_rpa_v3",
+  "knob": "d_bkv_sz",
+  "default": 2048,
+  "deployable_values": [
+    256,
+    512,
+    1024,
+    2048
+  ],
+  "gap": "sgl_rpa_v3:d_bkv_sz:existing-not-exposed",
+  "landed": {
+    "campaign": "campaign_009_qwen-bs128-ctx4k-ps64",
+    "round": 2,
+    "improvement_pct": 3.25
+  },
+  "limiter": "paged-attn -> qk-softmax",
+  "track": {
+    "name": "sglang-jax",
+    "chips": "0-3",
+    "jax": "0.10.2"
+  },
+  "run": {
+    "host": "TPU v6e-8 (single host, 8 chips)",
+    "date": "2026-08-10",
+    "duration": "8h",
+    "campaigns": 244,
+    "rounds": 2145,
+    "apis_kept": 8,
+    "board_artifact": "https://claude.ai/code/artifact/7c92db26-7e50-46d0-8320-2f81a74969fc"
+  },
+  "provenance": "Registered post-hoc from the run's board-artifact ledger (campaign table, round ledger, flexibility-graph land labels, all cross-consistent). The run VM was preempted before its local commits could be pushed; this file is the canonical GitHub registration of the kept control."
+}

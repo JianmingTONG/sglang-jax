@@ -9,10 +9,17 @@ from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 from jax.tree_util import register_pytree_node_class
 
+from sgl_jax.srt.configs.kernel_control import (
+    KernelControlContext,
+    KernelControlPolicy,
+)
 from sgl_jax.srt.kernels.ragged_paged_attention.ragged_paged_attention_v3 import (
     ragged_paged_attention as ragged_paged_attention_v3,
 )
 from sgl_jax.srt.layers.attention.base_attn_backend import AttentionBackend
+from sgl_jax.srt.layers.attention.hybrid_linear_attn_backend import (
+    get_current_device_kind,
+)
 from sgl_jax.srt.layers.radix_attention import RadixAttention
 from sgl_jax.srt.managers.schedule_batch import ModelWorkerBatch
 from sgl_jax.srt.mem_cache.memory_pool import KVCache
@@ -95,6 +102,7 @@ class FlashAttention(AttentionBackend):
         kv_partition_axis: str = "tensor",
         attention_data_partition_axis: str = "data",
         mesh: jax.sharding.Mesh = None,
+        kernel_control=None,
     ):
         self.num_heads = num_attn_heads
         if num_kv_heads is not None:
@@ -107,6 +115,10 @@ class FlashAttention(AttentionBackend):
         self.attention_data_partition_axis = attention_data_partition_axis
         self.forward_metadata = nnx.data(FlashAttentionMetadata())
         self.mesh = mesh
+        # Programmer-facing kernel controls ("rpa_v3" family). None resolves to
+        # the empty policy, which preserves the kernel's incumbent block-size
+        # selection byte-identically.
+        self.kernel_control = KernelControlPolicy.from_config(kernel_control)
         # SWA dual-pool support: set by model_runner after pool creation.
         # Accessed on host during metadata construction.
 
@@ -472,6 +484,7 @@ class FlashAttention(AttentionBackend):
             "kv_partition_axis": self.kv_partition_axis,
             "attention_data_partition_axis": self.attention_data_partition_axis,
             "mesh": self.mesh,
+            "kernel_control": self.kernel_control,
         }
         return (children, aux_data)
 
@@ -485,6 +498,7 @@ class FlashAttention(AttentionBackend):
             kv_partition_axis=aux_data.get("kv_partition_axis", "tensor"),
             attention_data_partition_axis=aux_data.get("attention_data_partition_axis", "data"),
             mesh=aux_data.get("mesh"),
+            kernel_control=aux_data.get("kernel_control"),
         )
 
         obj.forward_metadata = children[0]
@@ -571,6 +585,24 @@ class FlashAttention(AttentionBackend):
         def _ragged_paged_attention_with_fused_kv(*args):
             queries, keys, values, kv_cache_fused = args[:4]
             other_args = args[4:]
+            kv_lens = other_args[0]
+
+            # Resolve programmer-facing "rpa_v3" kernel controls against the
+            # per-device kernel-call shapes (mirroring the kda/gla backends).
+            # The empty policy resolves every control to None, which keeps the
+            # kernel's incumbent block-size selection byte-identical.
+            controls = self.kernel_control.resolve_rpa_v3(
+                KernelControlContext(
+                    sequence_length=queries.shape[0],
+                    num_sequences=kv_lens.shape[0],
+                    num_heads=queries.shape[1],
+                    head_dim=queries.shape[2],
+                    value_dim=values.shape[2],
+                    has_initial_state=False,
+                    output_final_state=False,
+                    device_kind=get_current_device_kind(),
+                )
+            )
 
             # Call fused KV kernel with head interleaving
             result, updated_kv_cache_fused = ragged_paged_attention_v3(
@@ -588,6 +620,7 @@ class FlashAttention(AttentionBackend):
                 ),
                 softmax_dtype=layer.softmax_dtype,
                 mask_aligned_to_cu_kv=mask_aligned_to_cu_kv,
+                d_bkv_sz=controls.d_bkv_sz,
             )
 
             return result, updated_kv_cache_fused

@@ -1312,6 +1312,47 @@ def prepare_updated_kv_cache_fused(
     return kv_cache_fused[:, :, :actual_num_kv_heads_interleaved]
 
 
+def _validate_stage_block_sizes(block_sizes, prefix, page_size=None):
+    """Validate one stage's ``(bq_sz, bkv_sz, bq_csz, bkv_csz)`` tuple.
+
+    ``page_size=None`` skips the paged-cache divisibility checks (used when
+    there is no fused KV cache).
+    """
+    if block_sizes is None:
+        return
+    bq_sz, bkv_sz, bq_csz, bkv_csz = block_sizes
+    if not (bq_csz > 0 and bq_sz % bq_csz == 0):
+        raise ValueError(
+            f"{prefix} {bq_csz=} and {bq_sz=} must satisfy (0 < bq_csz and bq_sz"
+            " % bq_csz == 0)."
+        )
+    if not (bkv_csz > 0 and bkv_sz % bkv_csz == 0):
+        raise ValueError(
+            f"{prefix} {bkv_csz=} and {bkv_sz=} must satisfy (0 < bkv_csz and"
+            " bkv_sz % bkv_csz == 0)."
+        )
+    if page_size is not None:
+        if bkv_sz % page_size != 0:
+            raise ValueError(f"{prefix} {bkv_sz=} must be divisible by {page_size=}.")
+        if bkv_csz % page_size != 0:
+            raise ValueError(f"{prefix} {bkv_csz=} must be divisible by {page_size=}.")
+
+
+def _apply_bkv_sz_override(sizes, bkv_sz):
+    """Swap an elevated scalar kv block size into an incumbent stage config.
+
+    Keeps the incumbent ``bq_sz``/``bq_csz`` tiles, replaces ``bkv_sz``, and
+    fixes up ``bkv_csz = min(incumbent bkv_csz, bkv_sz)``, falling back to
+    ``bkv_csz = bkv_sz`` when the override is not divisible by the incumbent
+    compute tile. Used by the ``d_bkv_sz``/``p_bkv_sz`` scalar controls, which
+    override only the kv tile of the tuned-table/heuristic selection.
+    """
+    bkv_csz = min(sizes["bkv_csz"], bkv_sz)
+    if bkv_sz % bkv_csz != 0:
+        bkv_csz = bkv_sz
+    return {**sizes, "bkv_sz": bkv_sz, "bkv_csz": bkv_csz}
+
+
 def static_validate_inputs(
     queries,
     keys,
@@ -1404,24 +1445,11 @@ def static_validate_inputs(
         raise ValueError("Cannot skip kv mask when using causal mask.")
 
     def _validate_block_sizes(block_sizes, prefix):
-        if block_sizes is None:
-            return
-        bq_sz, bkv_sz, bq_csz, bkv_csz = block_sizes
-        if not (bq_csz > 0 and bq_sz % bq_csz == 0):
-            raise ValueError(
-                f"{prefix} {bq_csz=} and {bq_sz=} must satisfy (0 < bq_csz and bq_sz"
-                " % bq_csz == 0)."
-            )
-        if not (bkv_csz > 0 and bkv_sz % bkv_csz == 0):
-            raise ValueError(
-                f"{prefix} {bkv_csz=} and {bkv_sz=} must satisfy (0 < bkv_csz and"
-                " bkv_sz % bkv_csz == 0)."
-            )
-        if kv_cache_fused is not None:
-            if bkv_sz % page_size != 0:
-                raise ValueError(f"{prefix} {bkv_sz=} must be divisible by {page_size=}.")
-            if bkv_csz % page_size != 0:
-                raise ValueError(f"{prefix} {bkv_csz=} must be divisible by {page_size=}.")
+        _validate_stage_block_sizes(
+            block_sizes,
+            prefix,
+            page_size=page_size if kv_cache_fused is not None else None,
+        )
 
     _validate_block_sizes(d_block_sizes, "decode")
     _validate_block_sizes(p_block_sizes, "prefill")
@@ -1653,6 +1681,7 @@ def get_vmem_limit():
         "d_block_sizes",
         "p_block_sizes",
         "m_block_sizes",
+        "d_bkv_sz",
         "vmem_limit_bytes",
         "out_dtype",
         "skip_kv_mask",
@@ -1689,6 +1718,7 @@ def ragged_paged_attention(
     d_block_sizes: tuple[int, int, int, int] | None = None,
     p_block_sizes: tuple[int, int, int, int] | None = None,
     m_block_sizes: tuple[int, int, int, int] | None = None,
+    d_bkv_sz: int | None = None,
     vmem_limit_bytes: int | None = None,
     out_dtype=None,
     skip_kv_mask: bool = False,
@@ -1723,6 +1753,9 @@ def ragged_paged_attention(
       d_block_sizes: block sizes for decode (bq_sz, bkv_sz, bq_csz, bkv_csz).
       p_block_sizes: block sizes for prefill.
       m_block_sizes: block sizes for mixed.
+      d_bkv_sz: scalar override of the decode kv block size only. Mutually
+        exclusive with d_block_sizes: the incumbent decode config is resolved
+        first (tuned table / heuristic) and only its bkv tiles are replaced.
       vmem_limit_bytes: vmem limit for the pallas kernel.
       debug_mode: if true, skip DMAs and flash attention.
 
@@ -1730,6 +1763,12 @@ def ragged_paged_attention(
       (output, updated_kv_cache_fused)
     """
     q, k, v = queries, keys, values
+
+    if d_bkv_sz is not None and d_block_sizes is not None:
+        raise ValueError(
+            "d_bkv_sz and d_block_sizes are mutually exclusive; pass at most "
+            "one decode block-size control."
+        )
 
     if vmem_limit_bytes is None:
         vmem_limit_bytes = get_vmem_limit()
@@ -2010,7 +2049,7 @@ def ragged_paged_attention(
 
         return run(scalar_prefetches, q, kv, kv_cache)
 
-    def _prepare_block_sizes(block_sizes, case):
+    def _prepare_block_sizes(block_sizes, case, bkv_sz_override=None):
         if block_sizes is None:
             # The tuned table is measured on v7 (full VMEM). Restrict lookups to
             # v7 so v6e/v5 keep main's heuristic path unchanged (the v7-tuned
@@ -2032,9 +2071,14 @@ def ragged_paged_attention(
                 else None
             )
             if tuned is not None:
-                block_sizes = tuned
+                sizes = {
+                    "bq_sz": tuned[0],
+                    "bkv_sz": tuned[1],
+                    "bq_csz": tuned[2],
+                    "bkv_csz": tuned[3],
+                }
             else:
-                return get_default_block_sizes(
+                sizes = get_default_block_sizes(
                     q.dtype,
                     kv_cache_fused_processed.dtype,
                     actual_num_q_heads,
@@ -2049,6 +2093,22 @@ def ragged_paged_attention(
                     use_custom_mask=not use_causal_mask,
                     sliding_window=sliding_window,
                 )
+            if bkv_sz_override is not None:
+                # Elevated scalar control: replace only the kv tiles of the
+                # incumbent selection, then re-run the same tuple validation
+                # an explicit 4-tuple would have gone through.
+                sizes = _apply_bkv_sz_override(sizes, bkv_sz_override)
+                _validate_stage_block_sizes(
+                    (
+                        sizes["bq_sz"],
+                        sizes["bkv_sz"],
+                        sizes["bq_csz"],
+                        sizes["bkv_csz"],
+                    ),
+                    case.name.lower(),
+                    page_size=page_size,
+                )
+            return sizes
 
         return {
             "bq_sz": block_sizes[0],
@@ -2066,7 +2126,7 @@ def ragged_paged_attention(
     q, kv_cache_fused_processed = run_rpa_kernel(
         q,
         kv_cache_fused_processed,
-        **_prepare_block_sizes(d_block_sizes, RpaCase.DECODE),
+        **_prepare_block_sizes(d_block_sizes, RpaCase.DECODE, bkv_sz_override=d_bkv_sz),
         static_q_len=1,
         case=RpaCase.DECODE,
     )

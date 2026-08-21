@@ -480,6 +480,7 @@ class ModelRunner(ModelRunnerKVCacheMixin, BaseModelRunner):
             )
 
         elif backend in ("fa", "fa_mha"):
+            from sgl_jax.srt.configs.kernel_control import KernelControlPolicy
             from sgl_jax.srt.layers.attention.flashattention_backend import (
                 FlashAttention,
             )
@@ -498,6 +499,9 @@ class ModelRunner(ModelRunnerKVCacheMixin, BaseModelRunner):
                 head_dim,
                 page_size=self.page_size,
                 mesh=self.mesh,
+                kernel_control=KernelControlPolicy.from_config(
+                    self.server_args.kernel_control_config
+                ),
             )
 
         else:

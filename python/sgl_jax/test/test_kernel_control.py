@@ -239,3 +239,156 @@ def test_gla_backend_forwards_programmer_controls(monkeypatch):
     assert captured["output_value_tiles"] == 2
     assert captured["single_chunk_state_elision"] is False
     assert captured["zero_state_output_elision"] is False
+
+
+def test_empty_policy_preserves_rpa_v3_kernel_defaults():
+    controls = KernelControlPolicy().resolve_rpa_v3(_context())
+
+    # None = the kernel's incumbent tuned-table/heuristic block-size selection.
+    assert controls.as_kernel_kwargs() == {"d_bkv_sz": None}
+
+
+def test_rpa_v3_policy_rejects_values_outside_the_certified_domain():
+    with pytest.raises(ValueError, match="must be one of"):
+        KernelControlPolicy.from_config({"rpa_v3": {"d_bkv_sz": 384}})
+
+
+def test_rpa_v3_scalar_override_swaps_only_the_kv_tiles():
+    from sgl_jax.srt.kernels.ragged_paged_attention.ragged_paged_attention_v3 import (
+        _apply_bkv_sz_override,
+    )
+
+    assert _apply_bkv_sz_override(
+        {"bq_sz": 32, "bkv_sz": 4096, "bq_csz": 16, "bkv_csz": 512}, 2048
+    ) == {"bq_sz": 32, "bkv_sz": 2048, "bq_csz": 16, "bkv_csz": 512}
+    # The compute tile falls back to the override when it stops dividing it.
+    assert _apply_bkv_sz_override(
+        {"bq_sz": 1, "bkv_sz": 4096, "bq_csz": 1, "bkv_csz": 768}, 1024
+    ) == {"bq_sz": 1, "bkv_sz": 1024, "bq_csz": 1, "bkv_csz": 1024}
+    # The compute tile is clamped down to the override.
+    assert _apply_bkv_sz_override(
+        {"bq_sz": 1, "bkv_sz": 4096, "bq_csz": 1, "bkv_csz": 4096}, 256
+    ) == {"bq_sz": 1, "bkv_sz": 256, "bq_csz": 1, "bkv_csz": 256}
+
+
+def test_rpa_v3_kernel_rejects_ambiguous_decode_block_size_controls():
+    from sgl_jax.srt.kernels.ragged_paged_attention.ragged_paged_attention_v3 import (
+        ragged_paged_attention,
+    )
+
+    q = jnp.zeros((8, 4, 128), dtype=jnp.bfloat16)
+    kv = jnp.zeros((8, 2, 128), dtype=jnp.bfloat16)
+    kv_cache = jnp.zeros((4, 16, 4, 128), dtype=jnp.bfloat16)
+    kv_lens = jnp.array([8], dtype=jnp.int32)
+    page_indices = jnp.zeros((4,), dtype=jnp.int32)
+    cu = jnp.array([0, 8], dtype=jnp.int32)
+    distribution = jnp.array([0, 1, 1], dtype=jnp.int32)
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ragged_paged_attention(
+            q,
+            kv,
+            kv,
+            kv_cache,
+            kv_lens,
+            page_indices,
+            cu,
+            cu,
+            distribution,
+            None,
+            d_block_sizes=(1, 2048, 1, 2048),
+            d_bkv_sz=2048,
+        )
+
+
+def _ensure_optional_serving_deps():
+    """Stub serving-only optional deps absent from the device-free test host.
+
+    ``flashattention_backend`` transitively imports the constrained-decoding
+    and experts-capture stacks; only the two leaf third-party modules below can
+    be missing here, and nothing in these tests executes them. Real modules,
+    when installed, are always preferred.
+    """
+    import sys
+    import types
+
+    class _Unavailable:
+        pass
+
+    try:
+        import llguidance  # noqa: F401
+    except ImportError:
+        stub = types.ModuleType("llguidance")
+        stub.LLMatcher = _Unavailable
+        stub.LLTokenizer = _Unavailable
+        stub.StructTag = _Unavailable
+        stub.LLInterpreter = _Unavailable
+        stub.grammar_from = _Unavailable
+        sys.modules["llguidance"] = stub
+    try:
+        import pybase64  # noqa: F401
+    except ImportError:
+        stub = types.ModuleType("pybase64")
+        stub.b64encode = _Unavailable
+        stub.b64decode = _Unavailable
+        sys.modules["pybase64"] = stub
+
+
+def _flashattention_backend_call(monkeypatch, kernel_control):
+    _ensure_optional_serving_deps()
+    from sgl_jax.srt.layers.attention import flashattention_backend as module
+
+    captured = {}
+
+    def fake_rpa_v3(queries, keys, values, kv_cache_fused, *args, **kwargs):
+        captured.update(kwargs)
+        return jnp.zeros_like(queries), kv_cache_fused
+
+    monkeypatch.setattr(module, "ragged_paged_attention_v3", fake_rpa_v3)
+    monkeypatch.setattr(module.jax, "shard_map", lambda fn, **_kwargs: fn)
+    tokens, heads, dim = 8, 4, 128
+    backend = module.FlashAttention(
+        heads,
+        2,
+        dim,
+        page_size=16,
+        kernel_control=kernel_control,
+    )
+    backend.forward_metadata = SimpleNamespace(
+        seq_lens=jnp.array([4, 4], dtype=jnp.int32),
+        page_indices=jnp.zeros((4,), dtype=jnp.int32),
+        cu_q_lens=jnp.array([0, 4, 8], dtype=jnp.int32),
+        cu_kv_lens=jnp.array([0, 16, 32], dtype=jnp.int32),
+        distribution=jnp.array([0, 2, 2], dtype=jnp.int32),
+        custom_mask=None,
+        swa_page_indices=None,
+    )
+    layer = SimpleNamespace(
+        layer_id=0,
+        head_dim=dim,
+        scaling=1.0,
+        sliding_window_size=None,
+        logit_cap=None,
+        xai_temperature_len=0,
+        softmax_dtype=None,
+    )
+    array = jnp.zeros((tokens, heads, dim), dtype=jnp.float32)
+
+    output, _ = backend(array, array, array, layer, None, None)
+
+    assert output.shape == (tokens, heads * dim)
+    return captured
+
+
+def test_flashattention_backend_forwards_programmer_controls(monkeypatch):
+    captured = _flashattention_backend_call(
+        monkeypatch, {"rpa_v3": {"d_bkv_sz": 1024}}
+    )
+
+    assert captured["d_bkv_sz"] == 1024
+
+
+def test_flashattention_backend_defaults_to_incumbent_block_sizes(monkeypatch):
+    captured = _flashattention_backend_call(monkeypatch, None)
+
+    assert captured["d_bkv_sz"] is None

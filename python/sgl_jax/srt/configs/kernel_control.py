@@ -62,6 +62,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "chunk_impl",
         "walk_impl",
     ),
+    "rpa_v3": ("d_bkv_sz",),
 }
 
 
@@ -299,9 +300,38 @@ class GLAKernelControls:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class RPAV3KernelControls:
+    """Block-size controls for the ragged-paged-attention v3 kernel.
+
+    Every field defaults to ``None``, which preserves the kernel's incumbent
+    selection path byte-identically (explicit ``*_block_sizes`` 4-tuple if the
+    caller passed one, else the TPU-v7 tuned table, else the heuristic in
+    ``get_default_block_sizes``). Explicit values are validated against the
+    certified deployable domain from the HierEvo 2026-08-10 TPU v6e-8
+    elevation run (see ``akt/elevations/2026-08-10-tpu-v6e8/``).
+    """
+
+    # Decode-stage KV block size (element ``bkv_sz`` of ``d_block_sizes``).
+    # Kept default: None = incumbent tuned-table/heuristic selection, which on
+    # the elevation campaign shape resolves to 2048. Certified domain for
+    # explicit values: (256, 512, 1024, 2048). Provenance: HierEvo elevation
+    # rpa_v3.d_bkv_sz, campaign_009_qwen-bs128-ctx4k-ps64 round 2, +3.25%
+    # suite improvement against limiter "paged-attn -> qk-softmax".
+    d_bkv_sz: int | None = None
+
+    def validate(self, context: KernelControlContext | None = None) -> None:
+        if self.d_bkv_sz is not None:
+            _require_choice("rpa_v3.d_bkv_sz", self.d_bkv_sz, (256, 512, 1024, 2048))
+
+    def as_kernel_kwargs(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 _CONTROL_TYPES = {
     "kda": KDAKernelControls,
     "gla": GLAKernelControls,
+    "rpa_v3": RPAV3KernelControls,
 }
 _DEFAULTS = {
     family: {field.name: field.default for field in fields(control_type)}
@@ -450,7 +480,7 @@ class KernelControlPolicy:
         context: KernelControlContext | Mapping[str, Any],
         *,
         base: Mapping[str, Any] | None = None,
-    ) -> KDAKernelControls | GLAKernelControls:
+    ) -> KDAKernelControls | GLAKernelControls | RPAV3KernelControls:
         if family not in _CONTROL_TYPES:
             raise ValueError(f"unknown kernel family {family!r}")
         if not isinstance(context, KernelControlContext):
@@ -487,6 +517,14 @@ class KernelControlPolicy:
         assert isinstance(controls, GLAKernelControls)
         return controls
 
+    def resolve_rpa_v3(
+        self,
+        context: KernelControlContext | Mapping[str, Any],
+    ) -> RPAV3KernelControls:
+        controls = self.resolve("rpa_v3", context)
+        assert isinstance(controls, RPAV3KernelControls)
+        return controls
+
 
 def normalize_kernel_control_config(value: Any = None) -> dict[str, Any]:
     """Load and validate a JSON/file/mapping value for storage in ``ServerArgs``."""
@@ -500,5 +538,6 @@ __all__ = [
     "KernelControlContext",
     "KernelControlPolicy",
     "PROGRAMMER_CONTROL_REGISTRY",
+    "RPAV3KernelControls",
     "normalize_kernel_control_config",
 ]
