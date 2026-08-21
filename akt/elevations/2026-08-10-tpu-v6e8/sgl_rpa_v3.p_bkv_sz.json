@@ -1,0 +1,38 @@
+{
+  "control": "sgl_rpa_v3.p_bkv_sz",
+  "family": "sgl_rpa_v3",
+  "knob": "p_bkv_sz",
+  "default": 1024,
+  "deployable_values": [
+    1024,
+    256
+  ],
+  "gap": "sgl_rpa_v3:p_bkv_sz:existing-not-exposed",
+  "landed": {
+    "campaign": "campaign_088_moe-mixed-ps128",
+    "round": 4,
+    "improvement_pct": 2.36,
+    "time": "2026-08-10 18:26:32"
+  },
+  "limiter": "qwen-prefill-2048-ps128-moe -> qkv-proj -> int8-matmul -> dependency-bound",
+  "minimized_domain": [
+    1024,
+    256
+  ],
+  "note": "api_deduplication minimized the kept domain to [1024, 256]",
+  "track": {
+    "name": "sglang-jax",
+    "chips": "0-3",
+    "jax": "0.10.2"
+  },
+  "run": {
+    "host": "TPU v6e-8 (single host, 8 chips)",
+    "date": "2026-08-10",
+    "duration": "8h",
+    "campaigns": 244,
+    "rounds": 2145,
+    "apis_kept": 8,
+    "board_artifact": "https://claude.ai/code/artifact/7c92db26-7e50-46d0-8320-2f81a74969fc"
+  },
+  "provenance": "Registered post-hoc from the run's board-artifact ledger (campaign table, round ledger, flexibility-graph land labels, all cross-consistent). The run VM was preempted before its local commits could be pushed; this file is the canonical GitHub registration of the kept control."
+}

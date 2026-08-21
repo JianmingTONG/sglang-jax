@@ -62,7 +62,7 @@ PROGRAMMER_CONTROL_REGISTRY = {
         "chunk_impl",
         "walk_impl",
     ),
-    "rpa_v3": ("d_bkv_sz",),
+    "rpa_v3": ("d_bkv_sz", "p_bkv_sz"),
 }
 
 
@@ -319,10 +319,25 @@ class RPAV3KernelControls:
     # rpa_v3.d_bkv_sz, campaign_009_qwen-bs128-ctx4k-ps64 round 2, +3.25%
     # suite improvement against limiter "paged-attn -> qk-softmax".
     d_bkv_sz: int | None = None
+    # Prefill-stage KV block size (element ``bkv_sz`` of ``p_block_sizes``).
+    # Kept default: None = incumbent tuned-table/heuristic selection, which on
+    # the elevation campaign shape resolves to 1024. Certified domain for
+    # explicit values: (256, 1024) (api_deduplication minimized the kept
+    # domain). Provenance: HierEvo elevation rpa_v3.p_bkv_sz,
+    # campaign_088_moe-mixed-ps128 round 4, +2.36% suite improvement against
+    # limiter "qwen-prefill-2048-ps128-moe -> qkv-proj -> int8-matmul ->
+    # dependency-bound". Liveness: the kernel's PREFILL pallas stage only
+    # executes when the caller passes a non-None chunk_prefill_size; the
+    # production FlashAttention call does not today, so prefill sequences are
+    # remapped into the MIXED stage and this control is dormant until chunk
+    # prefill is enabled.
+    p_bkv_sz: int | None = None
 
     def validate(self, context: KernelControlContext | None = None) -> None:
         if self.d_bkv_sz is not None:
             _require_choice("rpa_v3.d_bkv_sz", self.d_bkv_sz, (256, 512, 1024, 2048))
+        if self.p_bkv_sz is not None:
+            _require_choice("rpa_v3.p_bkv_sz", self.p_bkv_sz, (256, 1024))
 
     def as_kernel_kwargs(self) -> dict[str, Any]:
         return asdict(self)

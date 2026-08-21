@@ -1682,6 +1682,7 @@ def get_vmem_limit():
         "p_block_sizes",
         "m_block_sizes",
         "d_bkv_sz",
+        "p_bkv_sz",
         "vmem_limit_bytes",
         "out_dtype",
         "skip_kv_mask",
@@ -1719,6 +1720,7 @@ def ragged_paged_attention(
     p_block_sizes: tuple[int, int, int, int] | None = None,
     m_block_sizes: tuple[int, int, int, int] | None = None,
     d_bkv_sz: int | None = None,
+    p_bkv_sz: int | None = None,
     vmem_limit_bytes: int | None = None,
     out_dtype=None,
     skip_kv_mask: bool = False,
@@ -1756,6 +1758,11 @@ def ragged_paged_attention(
       d_bkv_sz: scalar override of the decode kv block size only. Mutually
         exclusive with d_block_sizes: the incumbent decode config is resolved
         first (tuned table / heuristic) and only its bkv tiles are replaced.
+      p_bkv_sz: scalar override of the prefill kv block size only. Mutually
+        exclusive with p_block_sizes; same override semantics as d_bkv_sz.
+        Only reaches a pallas call when chunk_prefill_size is not None
+        (otherwise the PREFILL stage is skipped and prefill sequences run
+        under m_block_sizes).
       vmem_limit_bytes: vmem limit for the pallas kernel.
       debug_mode: if true, skip DMAs and flash attention.
 
@@ -1768,6 +1775,11 @@ def ragged_paged_attention(
         raise ValueError(
             "d_bkv_sz and d_block_sizes are mutually exclusive; pass at most "
             "one decode block-size control."
+        )
+    if p_bkv_sz is not None and p_block_sizes is not None:
+        raise ValueError(
+            "p_bkv_sz and p_block_sizes are mutually exclusive; pass at most "
+            "one prefill block-size control."
         )
 
     if vmem_limit_bytes is None:
@@ -2136,7 +2148,7 @@ def ragged_paged_attention(
         q, kv_cache_fused_processed = run_rpa_kernel(
             q,
             kv_cache_fused_processed,
-            **_prepare_block_sizes(p_block_sizes, RpaCase.PREFILL),
+            **_prepare_block_sizes(p_block_sizes, RpaCase.PREFILL, bkv_sz_override=p_bkv_sz),
             static_q_len=chunk_prefill_size,
             case=RpaCase.PREFILL,
         )

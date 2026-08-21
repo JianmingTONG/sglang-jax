@@ -245,12 +245,14 @@ def test_empty_policy_preserves_rpa_v3_kernel_defaults():
     controls = KernelControlPolicy().resolve_rpa_v3(_context())
 
     # None = the kernel's incumbent tuned-table/heuristic block-size selection.
-    assert controls.as_kernel_kwargs() == {"d_bkv_sz": None}
+    assert controls.as_kernel_kwargs() == {"d_bkv_sz": None, "p_bkv_sz": None}
 
 
 def test_rpa_v3_policy_rejects_values_outside_the_certified_domain():
     with pytest.raises(ValueError, match="must be one of"):
         KernelControlPolicy.from_config({"rpa_v3": {"d_bkv_sz": 384}})
+    with pytest.raises(ValueError, match="must be one of"):
+        KernelControlPolicy.from_config({"rpa_v3": {"p_bkv_sz": 2048}})
 
 
 def test_rpa_v3_scalar_override_swaps_only_the_kv_tiles():
@@ -298,6 +300,21 @@ def test_rpa_v3_kernel_rejects_ambiguous_decode_block_size_controls():
             None,
             d_block_sizes=(1, 2048, 1, 2048),
             d_bkv_sz=2048,
+        )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ragged_paged_attention(
+            q,
+            kv,
+            kv,
+            kv_cache,
+            kv_lens,
+            page_indices,
+            cu,
+            cu,
+            distribution,
+            None,
+            p_block_sizes=(32, 1024, 32, 1024),
+            p_bkv_sz=1024,
         )
 
 
@@ -382,13 +399,15 @@ def _flashattention_backend_call(monkeypatch, kernel_control):
 
 def test_flashattention_backend_forwards_programmer_controls(monkeypatch):
     captured = _flashattention_backend_call(
-        monkeypatch, {"rpa_v3": {"d_bkv_sz": 1024}}
+        monkeypatch, {"rpa_v3": {"d_bkv_sz": 1024, "p_bkv_sz": 256}}
     )
 
     assert captured["d_bkv_sz"] == 1024
+    assert captured["p_bkv_sz"] == 256
 
 
 def test_flashattention_backend_defaults_to_incumbent_block_sizes(monkeypatch):
     captured = _flashattention_backend_call(monkeypatch, None)
 
     assert captured["d_bkv_sz"] is None
+    assert captured["p_bkv_sz"] is None

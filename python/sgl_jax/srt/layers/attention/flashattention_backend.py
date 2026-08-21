@@ -621,6 +621,7 @@ class FlashAttention(AttentionBackend):
                 softmax_dtype=layer.softmax_dtype,
                 mask_aligned_to_cu_kv=mask_aligned_to_cu_kv,
                 d_bkv_sz=controls.d_bkv_sz,
+                p_bkv_sz=controls.p_bkv_sz,
             )
 
             return result, updated_kv_cache_fused
