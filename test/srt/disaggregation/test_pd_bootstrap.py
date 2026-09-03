@@ -26,6 +26,7 @@ from sgl_jax.srt.disaggregation.bootstrap import (
     BootstrapServer,
     PrefillInfo,
     _Registry,
+    check_prefill_compat,
 )
 from sgl_jax.srt.disaggregation.host_ip import resolve_host_ip
 from sgl_jax.srt.managers.io_struct import GenerateReqInput, TokenizedGenerateReqInput
@@ -77,6 +78,21 @@ def test_registry_register_list_get(server_and_client):
     assert info["bootstrap_key"] == "p0"
 
 
+def test_bootstrap_advertises_transfer_metadata_capability(server_and_client):
+    _, client = server_and_client
+    client.require_capability("transfer_metadata")
+
+
+def test_bootstrap_rejects_missing_required_capability():
+    client = BootstrapClient("http://old-bootstrap")
+    response = mock.MagicMock()
+    response.json.return_value = {"status": "ok"}
+    client._client.get = mock.MagicMock(return_value=response)
+
+    with pytest.raises(RuntimeError, match="upgrade the bootstrap"):
+        client.require_capability("transfer_metadata")
+
+
 def test_register_multiple_room_hashing(server_and_client):
     _, client = server_and_client
     for i in range(3):
@@ -92,6 +108,23 @@ def test_register_multiple_room_hashing(server_and_client):
         seen.append(info["bootstrap_key"])
     # All three peers must be reached.
     assert set(seen) == {"p0", "p1", "p2"}
+
+
+def test_prefill_selection_isolated_by_dp_rank(server_and_client):
+    _, client = server_and_client
+    for dp_rank in range(4):
+        client.register_prefill(
+            bootstrap_key=f"p-dp-{dp_rank}",
+            host="10.0.0.1",
+            transfer_port=30001 + dp_rank,
+            side_channel_port=9600,
+            system_dp_rank=dp_rank,
+        )
+
+    for dp_rank in range(4):
+        info = client.get_prefill_info(bootstrap_room=17, dp_rank=dp_rank)
+        assert info["bootstrap_key"] == f"p-dp-{dp_rank}"
+        assert info["system_dp_rank"] == dp_rank
 
 
 def test_re_register_overwrites_and_refreshes(server_and_client):
@@ -276,11 +309,28 @@ def test_heartbeat_daemon_survives_transient_server_errors():
     daemon.start()
     try:
         time.sleep(0.1)
-        assert call_count["n"] >= 3, (
-            f"daemon should have kept beating after raises, " f"saw n={call_count['n']}"
-        )
+        assert (
+            call_count["n"] >= 3
+        ), f"daemon should have kept beating after raises, saw n={call_count['n']}"
     finally:
         daemon.stop()
+
+
+def test_heartbeat_daemon_attempts_every_dp_rank_after_one_failure():
+    from sgl_jax.srt.disaggregation.bootstrap import HeartbeatDaemon
+
+    client = mock.MagicMock()
+
+    def _heartbeat(key):
+        if key == "rank-0":
+            raise RuntimeError("rank-0 transient")
+
+    client.heartbeat.side_effect = _heartbeat
+    daemon = HeartbeatDaemon(client, ["rank-0", "rank-1"])
+
+    daemon._heartbeat_once()
+
+    assert client.heartbeat.call_args_list == [mock.call("rank-0"), mock.call("rank-1")]
 
 
 # --- Protocol version skew tests ---
@@ -347,6 +397,234 @@ def test_registry_stores_protocol_version():
     )
     rows = reg.list_all()
     assert rows[0].protocol_version == PROTOCOL_VERSION
+
+
+def test_transfer_metadata_is_reusable_per_process_and_ttl_bounded():
+    clock = _ManualClock(100.0)
+    registry = _Registry(clock=clock, transfer_ttl_seconds=5.0)
+    registry.register_transfer(
+        {
+            "bootstrap_room": 7,
+            "transfer_id": "first",
+            "remote_block_ids": [1, 2],
+        }
+    )
+    first = registry.get_transfer(7)
+    assert first["base_transfer_id"] == "first"
+    assert first["chunks"][0]["transfer_id"] == "first"
+
+    registry.register_transfer(
+        {
+            "bootstrap_room": 7,
+            "transfer_id": "second",
+            "jax_process_index": 0,
+            "transport_metadata": {"remote_block_ids": [9]},
+        }
+    )
+    registry.register_transfer(
+        {
+            "bootstrap_room": 7,
+            "transfer_id": "peer",
+            "jax_process_index": 1,
+            "transport_metadata": {"remote_block_ids": [11]},
+        }
+    )
+    assert registry.get_transfer(7, 0)["chunks"][0]["transfer_id"] == "second"
+    assert registry.get_transfer(7, 1)["chunks"][0]["transfer_id"] == "peer"
+    registry.pop_room(7, 0)
+    assert registry.get_transfer(7, 0) is None
+    assert registry.get_transfer(7, 1)["chunks"][0]["transfer_id"] == "peer"
+    clock.t += 6.0
+    assert registry.get_transfer(7, 1) is None
+
+
+def test_stale_generation_cleanup_does_not_pop_replacement_metadata():
+    registry = _Registry()
+    for transfer_id in ("wire#r0", "wire#r1"):
+        registry.register_transfer(
+            {
+                "bootstrap_room": 8,
+                "transfer_id": transfer_id,
+                "transport_metadata": {"remote_block_ids": [1]},
+            }
+        )
+
+    assert registry.pop_room(8, expected_transfer_id="wire#r0") is False
+    assert registry.get_transfer(8)["base_transfer_id"] == "wire#r1"
+    assert registry.pop_room(8, expected_transfer_id="wire#r1") is True
+    assert registry.get_transfer(8) is None
+
+
+def test_transfer_metadata_namespaces_same_page_ids_by_prefill_dp_rank():
+    registry = _Registry()
+    for prefill_dp_rank in range(4):
+        registry.register_transfer(
+            {
+                "bootstrap_room": 9,
+                "transfer_id": f"rank-{prefill_dp_rank}",
+                "jax_process_index": 0,
+                "prefill_dp_rank": prefill_dp_rank,
+                "transport_metadata": {"remote_block_ids": [1, 2]},
+            }
+        )
+
+    assert [registry.get_transfer(9, 0, rank)["chunks"][0]["transfer_id"] for rank in range(4)] == [
+        "rank-0",
+        "rank-1",
+        "rank-2",
+        "rank-3",
+    ]
+    registry.pop_room(9, 0, 2)
+    assert registry.get_transfer(9, 0, 2) is None
+    assert registry.get_transfer(9, 0, 1)["chunks"][0]["transfer_id"] == "rank-1"
+
+
+def _chunk_transfer_info(
+    base_transfer_id: str,
+    chunk_index: int,
+    *,
+    num_chunks: int = 0,
+    chunk_page_offset: int | None = None,
+) -> dict[str, object]:
+    return {
+        "bootstrap_room": 17,
+        "transfer_id": f"{base_transfer_id}#c{chunk_index}",
+        "base_transfer_id": base_transfer_id,
+        "jax_process_index": 2,
+        "prefill_dp_rank": 3,
+        "chunk_index": chunk_index,
+        "num_chunks": num_chunks,
+        "chunk_page_offset": (chunk_index * 2 if chunk_page_offset is None else chunk_page_offset),
+        "expected_total_pages": 3,
+        "transport_metadata": {"remote_block_ids": [10 + chunk_index]},
+    }
+
+
+def test_chunk_transfer_registry_accumulates_and_finalizes_after_chunk_zero():
+    registry = _Registry()
+    final = _chunk_transfer_info("wire", 2, num_chunks=3)
+    first = _chunk_transfer_info("wire", 0)
+    middle = _chunk_transfer_info("wire", 1)
+
+    registry.register_transfer(first)
+    registry.register_transfer(final)
+    registry.register_transfer(middle)
+
+    bundle = registry.get_transfer(17, 2, 3)
+    assert bundle["base_transfer_id"] == "wire"
+    assert bundle["num_chunks"] == 3
+    assert bundle["expected_total_pages"] == 3
+    assert sorted(bundle["chunks"]) == [0, 1, 2]
+    assert bundle["chunks"][2]["chunk_page_offset"] == 4
+
+
+def test_chunk_transfer_registry_is_idempotent_and_rejects_conflicts():
+    registry = _Registry()
+    chunk = _chunk_transfer_info("wire", 0)
+    registry.register_transfer(chunk)
+    registry.register_transfer(dict(chunk))
+
+    conflicting = _chunk_transfer_info("wire", 0, chunk_page_offset=1)
+    with pytest.raises(ValueError, match="conflicting transfer metadata"):
+        registry.register_transfer(conflicting)
+
+    bad_final = _chunk_transfer_info("wire", 1, num_chunks=3)
+    with pytest.raises(ValueError, match="final chunk"):
+        registry.register_transfer(bad_final)
+
+
+def test_chunk_zero_replaces_stale_room_but_later_chunk_cannot():
+    registry = _Registry()
+    registry.register_transfer(_chunk_transfer_info("old", 0))
+
+    with pytest.raises(ValueError, match="only from chunk zero"):
+        registry.register_transfer(_chunk_transfer_info("new", 1))
+
+    registry.register_transfer(_chunk_transfer_info("new", 0))
+    bundle = registry.get_transfer(17, 2, 3)
+    assert bundle["base_transfer_id"] == "new"
+    assert bundle["chunks"][0]["transfer_id"] == "new#c0"
+
+
+def test_chunk_registry_rejects_orphan_nonzero_chunk():
+    registry = _Registry()
+
+    with pytest.raises(ValueError, match="created from chunk zero"):
+        registry.register_transfer(_chunk_transfer_info("wire", 1))
+
+
+def test_chunk_registry_rejects_conflicting_expected_total_pages():
+    registry = _Registry()
+    registry.register_transfer(_chunk_transfer_info("wire", 0))
+    second = _chunk_transfer_info("wire", 1)
+    second["expected_total_pages"] = 4
+
+    with pytest.raises(ValueError, match="conflicting expected_total_pages"):
+        registry.register_transfer(second)
+
+
+def test_prefill_decode_transfer_engines_must_match():
+    info = {
+        "protocol_version": 3,
+        "page_size": 128,
+        "kv_dtype": "bfloat16",
+        "transport_metadata": {"engine": "raiden"},
+    }
+    check_prefill_compat(
+        info,
+        local_page_size=128,
+        local_kv_dtype="bfloat16",
+        expected_transfer_engine="raiden",
+    )
+    with pytest.raises(ValueError, match="engine mismatch"):
+        check_prefill_compat(
+            info,
+            local_page_size=128,
+            local_kv_dtype="bfloat16",
+            expected_transfer_engine="jax",
+        )
+
+
+def test_prefill_decode_dp_topology_must_match():
+    info = {
+        "system_dp_rank": 2,
+        "transport_metadata": {"engine": "raiden", "dp_size": 4},
+    }
+    check_prefill_compat(
+        info,
+        local_page_size=128,
+        local_kv_dtype="bfloat16",
+        expected_transfer_engine="raiden",
+        expected_dp_rank=2,
+        expected_dp_size=4,
+    )
+    with pytest.raises(ValueError, match="Prefill rank mismatch"):
+        check_prefill_compat(
+            info,
+            local_page_size=128,
+            local_kv_dtype="bfloat16",
+            expected_dp_rank=1,
+        )
+    with pytest.raises(ValueError, match="topology mismatch"):
+        check_prefill_compat(
+            info,
+            local_page_size=128,
+            local_kv_dtype="bfloat16",
+            expected_dp_size=2,
+        )
+
+
+@pytest.mark.parametrize(("prefill_enabled", "decode_enabled"), [(True, False), (False, True)])
+def test_prefill_decode_chunk_transfer_flag_must_match(prefill_enabled, decode_enabled):
+    info = {"chunk_prefill_transfer": prefill_enabled}
+
+    with pytest.raises(ValueError, match="chunk prefill transfer mismatch"):
+        check_prefill_compat(
+            info,
+            local_page_size=128,
+            local_kv_dtype="bfloat16",
+            expected_chunk_prefill_transfer=decode_enabled,
+        )
 
 
 # ---- register retry (ref: upstream test_register_to_bootstrap.py) -----------
@@ -530,11 +808,15 @@ def test_generate_req_input_carries_bootstrap_fields():
         bootstrap_host="10.0.0.1",
         bootstrap_port=8998,
         bootstrap_room=42,
+        dp_rank=3,
+        disagg_prefill_dp_rank=1,
         disagg_transfer_id="wire-1",
     )
     assert obj.bootstrap_host == "10.0.0.1"
     assert obj.bootstrap_port == 8998
     assert obj.bootstrap_room == 42
+    assert obj.dp_rank == 3
+    assert obj.disagg_prefill_dp_rank == 1
     assert obj.disagg_transfer_id == "wire-1"
 
 
@@ -543,19 +825,24 @@ def test_tokenized_generate_req_input_has_bootstrap_fields():
     assert tokenized.bootstrap_host is None
     assert tokenized.bootstrap_port is None
     assert tokenized.bootstrap_room is None
+    assert tokenized.disagg_prefill_dp_rank is None
     assert tokenized.disagg_transfer_id is None
 
     tokenized.bootstrap_host = "10.0.0.1"
     tokenized.bootstrap_port = 8998
     tokenized.bootstrap_room = 42
+    tokenized.dp_rank = 3
+    tokenized.disagg_prefill_dp_rank = 1
     tokenized.disagg_transfer_id = "wire-1"
     assert tokenized.bootstrap_host == "10.0.0.1"
     assert tokenized.bootstrap_port == 8998
     assert tokenized.bootstrap_room == 42
+    assert tokenized.dp_rank == 3
+    assert tokenized.disagg_prefill_dp_rank == 1
     assert tokenized.disagg_transfer_id == "wire-1"
 
 
-def _make_fake_tokenizer_manager(disaggregation_mode: str):
+def _make_fake_tokenizer_manager(disaggregation_mode: str, dp_size: int = 1):
     """Build a stripped-down TokenizerManager-ish object with just
     enough surface for ``_create_tokenized_object`` to run.
     """
@@ -570,6 +857,7 @@ def _make_fake_tokenizer_manager(disaggregation_mode: str):
     )
     tm.server_args = SimpleNamespace(
         disaggregation_mode=disaggregation_mode,
+        dp_size=dp_size,
     )
     return tm
 
@@ -597,6 +885,49 @@ def test_tokenizer_passes_bootstrap_fields_through_in_decode_mode():
     assert tokenized.bootstrap_port == 8998
     assert tokenized.bootstrap_room == 42
     assert tokenized.disagg_transfer_id == "wire-r1"
+    assert tokenized.dp_rank == 0
+    assert tokenized.disagg_prefill_dp_rank == 0
+
+
+def test_tokenizer_requires_explicit_source_and_destination_rank_for_dp():
+    tm = _make_fake_tokenizer_manager("decode", dp_size=4)
+    base = {
+        "rid": "r1",
+        "text": "hi",
+        "sampling_params": {"max_new_tokens": 4},
+        "bootstrap_host": "10.0.0.1",
+        "bootstrap_port": 8998,
+        "bootstrap_room": 42,
+    }
+    with (
+        mock.patch.object(SamplingParams, "normalize", lambda self, t: None),
+        mock.patch.object(SamplingParams, "verify", lambda self, v: None),
+        pytest.raises(ValueError, match="explicit dp_rank"),
+    ):
+        tm._create_tokenized_object(GenerateReqInput(**base), input_text="hi", input_ids=[1, 2, 3])
+
+    with (
+        mock.patch.object(SamplingParams, "normalize", lambda self, t: None),
+        mock.patch.object(SamplingParams, "verify", lambda self, v: None),
+        pytest.raises(ValueError, match="explicit disagg_prefill_dp_rank"),
+    ):
+        tm._create_tokenized_object(
+            GenerateReqInput(**base, dp_rank=2),
+            input_text="hi",
+            input_ids=[1, 2, 3],
+        )
+
+    with (
+        mock.patch.object(SamplingParams, "normalize", lambda self, t: None),
+        mock.patch.object(SamplingParams, "verify", lambda self, v: None),
+    ):
+        tokenized = tm._create_tokenized_object(
+            GenerateReqInput(**base, dp_rank=3, disagg_prefill_dp_rank=1),
+            input_text="hi",
+            input_ids=[1, 2, 3],
+        )
+    assert tokenized.dp_rank == 3
+    assert tokenized.disagg_prefill_dp_rank == 1
 
 
 def test_tokenizer_rejects_missing_fields_in_decode_mode():

@@ -1017,7 +1017,18 @@ class WeightLoader:
             weight.shape[1],
             n_out,
         )
-        return expand_block_scale(weight, n_out, block_size_out)
+        expanded = expand_block_scale(weight, n_out, block_size_out)
+        # The expansion inherits the compact 2D scale's (effectively replicated)
+        # layout, but the model placeholder declares the kernel-boundary sharding
+        # (e.g. P(None, None, "tensor")). jax 0.8.x shard_map silently reshards on
+        # this textual mismatch; jax 0.10.x checks strictly and raises. Same class
+        # of fix as the MoE/MLA boundaries in #1493.
+        target_sharding = getattr(model_param.value, "sharding", None)
+        if target_sharding is not None and expanded.ndim == len(
+            getattr(target_sharding, "spec", ())
+        ):
+            expanded = jax.sharding.reshard(expanded, target_sharding)
+        return expanded
 
     def _scan_weight_info(self) -> dict[str, list[dict]]:
         """
@@ -1454,8 +1465,7 @@ class WeightLoader:
         if do_transpose and len(single_expert_shape) >= 2 and weight_dims_unsharded:
             defer_transpose = True
             logger.info(
-                "MoE defer_transpose=True: will load in HF layout and "
-                "transpose on TPU (shape=%s)",
+                "MoE defer_transpose=True: will load in HF layout and transpose on TPU (shape=%s)",
                 single_expert_shape,
             )
 
@@ -1855,6 +1865,8 @@ class WeightLoader:
         t2 = time.monotonic()
         if defer_transpose and result.ndim >= 3:
             result = jnp.transpose(result, (0, 2, 1))
+            assert target_sharding is not None
+            result = jax.sharding.reshard(result, target_sharding)
         t_defer = time.monotonic() - t2
         if _callback_times:
             defer_msg = f" defer_transpose={t_defer:.3f}s" if defer_transpose else ""
@@ -1875,13 +1887,40 @@ class WeightLoader:
             )
         return result
 
+    def _validate_checkpoint_coverage(
+        self,
+        weight_info: Mapping[str, list[dict]],
+        regular_mappings: Mapping[str, WeightMappingSpec],
+        moe_mappings: Mapping[str, WeightMappingSpec],
+    ) -> None:
+        covered = set(regular_mappings).intersection(weight_info)
+        for mapping in moe_mappings.values():
+            if not isinstance(mapping, WeightMapping) or not isinstance(mapping.target_path, list):
+                raise TypeError("MoE mappings must use WeightMapping with a list target_path")
+            covered.update(key for key in mapping.target_path[1:] if key in weight_info)
+
+        excluded = {key for key in weight_info if self._is_excluded_layer_weight(key)}
+        unmapped = sorted(set(weight_info) - covered - excluded)
+        if unmapped:
+            sample = unmapped[:10]
+            raise RuntimeError(
+                f"Checkpoint coverage validation found {len(unmapped)} tensor(s) "
+                f"without a mapping. First {len(sample)}: {sample}"
+            )
+
     def load_weights_from_safetensors(
         self,
         weight_mappings: Mapping[str, WeightMappingSpec],
         safetensors_partition=1,
         dummy=False,
+        validate_checkpoint_coverage=False,
     ):
-        """Load weights using JAX lazy evaluation and parallel I/O."""
+        """Load weights using JAX lazy evaluation and parallel I/O.
+
+        When ``validate_checkpoint_coverage`` is true, every checkpoint tensor
+        must be covered by a regular mapping, an MoE expert group, or an
+        excluded layer.
+        """
         params = nnx.state(self.model)
 
         if dummy or self.dummy_mode:
@@ -1939,6 +1978,9 @@ class WeightLoader:
                             moe_mappings[weight_info_key] = replaced_mapping
                         else:
                             regular_mappings[weight_info_key] = replaced_mapping
+
+        if validate_checkpoint_coverage:
+            self._validate_checkpoint_coverage(weight_info, regular_mappings, moe_mappings)
 
         logger.info("Starting parallel weight loading via JAX Lazy Loader...")
         quant_cfg = getattr(self.model_config, "quantization_config", None)
@@ -2361,7 +2403,6 @@ class WeightLoader:
                 regular_mappings[hf_key] = mapping
 
         for hf_key, mapping in regular_mappings.items():
-
             if isinstance(mapping, str | list):
                 mapping = WeightMapping(target_path=mapping)
             elif not isinstance(mapping, WeightMapping):

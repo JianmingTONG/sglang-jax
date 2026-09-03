@@ -279,7 +279,7 @@ def attn_backend_wrapper(
         getattr(getattr(runner, "server_args", None), "kernel_control_config", None)
     )
 
-    if runner.kimi_linear_config is not None:
+    if runner.kimi_linear_config is not None or getattr(cfg, "use_kda", False):
         from sgl_jax.srt.layers.attention.linear.kda_backend import KDAAttnBackend
 
         linear_attn_backend = KDAAttnBackend(
@@ -297,6 +297,8 @@ def attn_backend_wrapper(
             head_v_dim=text_cfg.linear_value_head_dim,
             conv_kernel_size=text_cfg.linear_conv_kernel_dim,
             mesh=runner.mesh,
+            dtype=runner.model_config.dtype,
+            prefill_impl=runner.server_args.gdn_prefill_impl,
         )
     elif runner.lightning_config is not None:
         from sgl_jax.srt.layers.attention.linear.lightning_backend import (

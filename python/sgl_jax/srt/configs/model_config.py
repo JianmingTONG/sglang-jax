@@ -50,6 +50,7 @@ _FUSED_MOE_V2_SUPPORTED_ARCHITECTURES = frozenset(
         "BailingMoeV2_5ForCausalLM",
         "MiMoV2ForCausalLM",
         "MiMoV2FlashForCausalLM",
+        "GlmMoeDsaForCausalLM",
     }
 )
 
@@ -62,7 +63,7 @@ def _assert_fused_moe_v2_supported(moe_backend: MoEBackend, architectures: list[
         return
 
     assert any(arch in _FUSED_MOE_V2_SUPPORTED_ARCHITECTURES for arch in architectures), (
-        "moe_backend='fused_v2' only supports Bailing/MiMo model architectures for now; "
+        "moe_backend='fused_v2' only supports Bailing/MiMo/GLM model architectures for now; "
         f"got architectures={architectures}"
     )
 
@@ -223,7 +224,9 @@ class ModelConfig:
                 self.quantization_config.ignored_layers = ignored
         # Check model type
         self.is_generation = is_generation_model(self.hf_config.architectures, is_embedding)
-        self.is_multimodal = False
+        self.is_multimodal = any(
+            architecture in multimodal_model_archs for architecture in self.hf_config.architectures
+        )
         self.dtype = _get_and_verify_dtype(self.hf_text_config, dtype)
 
         if not isinstance(dtype_config, DtypeConfig):
@@ -534,11 +537,13 @@ class ModelConfig:
         Import is lazy because model modules import ModelConfig back.
         """
         from sgl_jax.srt.models.registry import ModelRegistry
+        from sgl_jax.srt.multimodal.in_model.interface import InModelMultimodalContract
 
         try:
             model_cls, _ = ModelRegistry.resolve_model_cls(self.hf_config.architectures)
         except ValueError:
             return
+        self.is_multimodal |= issubclass(model_cls, InModelMultimodalContract)
         patch = getattr(model_cls, "patch_model_config", None)
         if patch is not None:
             patch(self)

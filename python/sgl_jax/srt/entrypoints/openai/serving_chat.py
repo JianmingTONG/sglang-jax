@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from typing import Any
 
 import orjson
@@ -98,9 +98,11 @@ class OpenAIServingChat(OpenAIServingBase):
             stream=request.stream,
             extra_key=request.extra_key,
             rid=request.rid,
+            dp_rank=request.dp_rank,
             bootstrap_host=request.bootstrap_host,
             bootstrap_port=request.bootstrap_port,
             bootstrap_room=request.bootstrap_room,
+            disagg_prefill_dp_rank=request.disagg_prefill_dp_rank,
             disagg_transfer_id=request.disagg_transfer_id,
         )
 
@@ -157,6 +159,7 @@ class OpenAIServingChat(OpenAIServingBase):
         """Apply Jinja chat template"""
         prompt = ""
         prompt_ids = []
+        prompt_from_mm_template = False
         openai_compatible_messages = []
         image_data = []
         video_data = []
@@ -235,7 +238,10 @@ Assistant: {% endif %}"""
                     tools=tools,
                     **chat_template_kwargs,
                 )
-                prompt_ids = self.tokenizer_manager.tokenizer.encode(prompt)
+                # The multimodal processor consumes this string and tokenizes it
+                # together with the image inputs later. Avoid encoding it here
+                # only to immediately decode it below.
+                prompt_from_mm_template = True
             else:
                 prompt_ids = self.tokenizer_manager.tokenizer.apply_chat_template(
                     openai_compatible_messages,
@@ -257,16 +263,23 @@ Assistant: {% endif %}"""
                 **chat_template_kwargs,
             )
 
-        if isinstance(prompt_ids, dict) and "input_ids" in prompt_ids:
+        # BatchEncoding (returned by e.g. MiniMax-M2's apply_chat_template on
+        # transformers>=5) inherits UserDict, not dict — use Mapping to cover both.
+        if isinstance(prompt_ids, Mapping) and "input_ids" in prompt_ids:
             prompt_ids = prompt_ids["input_ids"]
 
         if assistant_prefix:
+            # Preserve the existing token-level concatenation semantics for the
+            # uncommon continue_final_message path.
+            if prompt_from_mm_template:
+                prompt_ids = self.tokenizer_manager.tokenizer.encode(prompt)
+                prompt_from_mm_template = False
             encoded = self.tokenizer_manager.tokenizer.encode(assistant_prefix)
             if encoded and encoded[0] == self.tokenizer_manager.tokenizer.bos_token_id:
                 encoded = encoded[1:]
             prompt_ids += encoded
 
-        if is_multimodal:
+        if is_multimodal and not prompt_from_mm_template:
             prompt = self.tokenizer_manager.tokenizer.decode(prompt_ids)
 
         stop = request.stop
@@ -885,7 +898,7 @@ Assistant: {% endif %}"""
         if not parser:
             return False
         kwargs = request.chat_template_kwargs or {}
-        if parser == "qwen3":
+        if parser in ("qwen3", "ling3"):
             return kwargs.get("enable_thinking") is not False
         if parser == "mimo":
             return kwargs.get("enable_thinking") is True

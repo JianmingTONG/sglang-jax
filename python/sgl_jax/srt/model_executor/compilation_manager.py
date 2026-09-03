@@ -34,19 +34,27 @@ class CompilationManager:
         page_size: int,
         max_req_len: int,
         vocab_size: int,
-        multimodal: bool = False,
+        max_total_num_tokens: int = 0,
+        precompile_in_model_multimodal: bool = False,
+        capture_hidden_states: bool = False,
         has_recurrent_state: bool = False,
+        supports_recurrent_cow: bool = False,
+        supports_recurrent_track: bool = False,
         moe_backend: str | None = None,
     ):
         self.dp_size = dp_size
         self.tp_size = tp_size
         self.page_size = page_size
         self.max_req_len = max_req_len
+        self.max_total_num_tokens = max_total_num_tokens
         self.max_padded_batch_size = max_padded_batch_size
         self.max_padded_num_tokens = max_padded_num_tokens
         self.vocab_size = vocab_size
-        self.multimodal = multimodal
+        self.precompile_in_model_multimodal = precompile_in_model_multimodal
+        self.capture_hidden_states = capture_hidden_states
         self.has_recurrent_state = has_recurrent_state
+        self.supports_recurrent_cow = supports_recurrent_cow
+        self.supports_recurrent_track = supports_recurrent_track
         # Callers pass the *effective* backend (ModelConfig.moe_backend), which
         # resolves architectures that hard-code FusedEPMoE (e.g. Qwen3.5) to
         # "fused" so the bs-bucket filter below applies. Fall back to the raw
@@ -57,8 +65,8 @@ class CompilationManager:
         self.token_buckets = self._compute_token_buckets(server_args.precompile_token_paddings)
         self.bs_buckets = self._compute_bs_buckets(server_args.precompile_bs_paddings)
         self.cache_loc_buckets = self._compute_cache_loc_buckets()
-
         self._compiled_variants: set[tuple] = set()
+        self._compiled_multimodal_extend_shapes: set[tuple[int, int]] = set()
 
     def _compute_token_buckets(self, user_paddings: list[int] | None) -> list[int]:
         dp_size = self.dp_size
@@ -84,11 +92,20 @@ class CompilationManager:
 
     def _compute_bs_buckets(self, user_paddings: list[int] | None) -> list[int]:
         bs_list = user_paddings if user_paddings is not None else PRECOMPILE_DEFAULT_BS_PADDINGS
+        is_fused_moe = self.moe_backend in ("fused", "fused_v2")
+        min_fused_bs = self.tp_size * 2
+        if is_fused_moe and self.max_padded_batch_size < min_fused_bs:
+            raise ValueError(
+                f"max_padded_batch_size={self.max_padded_batch_size} is below the fused-MoE "
+                f"minimum 2 * mesh_ep_size={min_fused_bs}. Increase --max-running-requests "
+                "or reduce the EP group size."
+            )
+
         buckets = []
         for bs in bs_list:
             if (
                 bs <= self.max_padded_batch_size
-                and (self.moe_backend not in ("fused", "fused_v2") or bs >= self.tp_size * 2)
+                and (not is_fused_moe or bs >= min_fused_bs)
                 and bs >= self.dp_size
             ):
                 buckets.append(bs)
@@ -98,8 +115,19 @@ class CompilationManager:
         return buckets
 
     def _compute_cache_loc_buckets(self) -> list[int]:
+        # bs reqs together can never exceed max_total_num_tokens, so cap the
+        # per-bs bucket at the pool size (helps Pathways gRPC H2D; see tp_worker
+        # for why the cap is proxy-only).
         pages_per_req = (self.max_req_len + self.page_size - 1) // self.page_size * self.page_size
-        return [bs * pages_per_req for bs in self.bs_buckets]
+        pool_aligned = (
+            (self.max_total_num_tokens + self.page_size - 1) // self.page_size * self.page_size
+            if self.max_total_num_tokens
+            else None
+        )
+        return [
+            min(bs * pages_per_req, pool_aligned) if pool_aligned else bs * pages_per_req
+            for bs in self.bs_buckets
+        ]
 
     # ---- Pre-compilation ----
 
@@ -114,6 +142,12 @@ class CompilationManager:
         self._precompile_extend(
             forward_fn, model_runner, mesh, prepare_lora_fn, future_token_ids_map
         )
+        if self.precompile_in_model_multimodal:
+            from sgl_jax.srt.multimodal.in_model.host_orchestration import (
+                precompile_multimodal_components,
+            )
+
+            precompile_multimodal_components(model_runner.model, model_runner.embedding_pool)
         self._precompile_decode(
             forward_fn, model_runner, mesh, prepare_lora_fn, future_token_ids_map
         )
@@ -132,17 +166,19 @@ class CompilationManager:
 
         start_time = time.perf_counter()
         bs = self.max_padded_batch_size
+        multimodal_options = (False, True) if self.precompile_in_model_multimodal else (False,)
         logger.info(
-            "[EXTEND] Begin to precompile bs_paddings=%s token_paddings=%s",
+            "[EXTEND] Begin to precompile bs_paddings=%s token_paddings=%s multimodal=%s",
             [bs],
             self.token_buckets,
+            self.precompile_in_model_multimodal,
         )
 
-        pairs = list(itertools.product([bs], self.token_buckets))
+        pairs = list(itertools.product(multimodal_options, [bs], self.token_buckets))
         with tqdm(pairs, desc="[EXTEND] PRECOMPILE", leave=False) as pbar:
             for pair in pbar:
-                bs_val, num_tokens = pair
-                pbar.set_postfix(bs=bs_val, tokens=num_tokens)
+                use_multimodal_input, bs_val, num_tokens = pair
+                pbar.set_postfix(multimodal=use_multimodal_input, bs=bs_val, tokens=num_tokens)
                 if bs_val > num_tokens:
                     logger.warning("bs=%s > num_tokens=%s, skip this pair", bs_val, num_tokens)
                     continue
@@ -160,6 +196,19 @@ class CompilationManager:
                     batch, 0, mesh, self.vocab_size
                 )
                 batch.forward_batch = ForwardBatch.init_new(batch, model_runner)
+                if use_multimodal_input:
+                    from sgl_jax.srt.multimodal.in_model.host_orchestration import (
+                        precompile_multimodal_inputs,
+                    )
+
+                    input_embedding, deepstack = precompile_multimodal_inputs(
+                        batch.forward_batch.input_ids,
+                        model_runner.model,
+                        model_runner.embedding_pool,
+                    )
+                    batch.forward_batch.input_embedding = input_embedding
+                    batch.forward_batch.deepstack_visual_embedding = deepstack
+                    batch.forward_batch.apply_for_deepstack = deepstack is not None
                 if future_token_ids_map is not None:
                     from sgl_jax.srt.managers.utils import resolve_future_token_ids
 
@@ -169,10 +218,13 @@ class CompilationManager:
                 forward_fn(
                     batch,
                     launch_done=None,
-                    skip_sample=False,
+                    skip_sample=use_multimodal_input,
                     sampling_metadata=sampling_metadata,
                 )
-                self._compiled_variants.add((ForwardMode.EXTEND, num_tokens, bs_val, False))
+                if use_multimodal_input:
+                    self._compiled_multimodal_extend_shapes.add((num_tokens, bs_val))
+                else:
+                    self._compiled_variants.add((ForwardMode.EXTEND, num_tokens, bs_val, False))
 
         end_time = time.perf_counter()
         logger.info("[EXTEND] Precompile finished in %.0f secs", end_time - start_time)
@@ -235,7 +287,14 @@ class CompilationManager:
                 )
                 if future_token_ids_map is not None:
                     _, next_token_ids, _ = result
-                    set_future_token_ids(future_token_ids_map, 0, next_token_ids, mesh)
+                    from sgl_jax.srt.managers.utils import future_slot_indices
+
+                    slots = future_slot_indices(
+                        np.asarray(batch.seq_lens),
+                        np.asarray(batch.req_pool_indices),
+                        future_token_ids_map.shape[0],
+                    )
+                    set_future_token_ids(future_token_ids_map, slots, next_token_ids, mesh)
                 self._compiled_variants.add((ForwardMode.DECODE, bs_val, bs_val, False))
 
         end_time = time.perf_counter()
@@ -322,7 +381,7 @@ class CompilationManager:
             logits_indices=logits_indices,
             input_logprob_indices=None,
             capture_hidden_mode=(
-                CaptureHiddenMode.FULL if self.multimodal else CaptureHiddenMode.NULL
+                CaptureHiddenMode.FULL if self.capture_hidden_states else CaptureHiddenMode.NULL
             ),
             spec_algorithm=spec_algorithm_value,
             lora_ids=lora_ids,
@@ -336,6 +395,17 @@ class CompilationManager:
             # non-recurrent backends are unaffected.
             recurrent_indices=(np.zeros(bs, dtype=np.int32) if self.has_recurrent_state else None),
             has_initial_state=(np.zeros(bs, dtype=np.bool_) if self.has_recurrent_state else None),
+            recurrent_cow_src_indices=(
+                np.zeros(bs, dtype=np.int32)
+                if self.supports_recurrent_cow and mode == ForwardMode.EXTEND
+                else None
+            ),
+            recurrent_track_indices=(
+                np.zeros(bs, dtype=np.int32) if self.supports_recurrent_track else None
+            ),
+            recurrent_track_mask=(
+                np.zeros(bs, dtype=np.int32) if self.supports_recurrent_track else None
+            ),
         )
 
     # ---- Lazy compilation tracking ----

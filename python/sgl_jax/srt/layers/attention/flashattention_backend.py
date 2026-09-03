@@ -16,6 +16,9 @@ from sgl_jax.srt.configs.kernel_control import (
 from sgl_jax.srt.kernels.ragged_paged_attention.ragged_paged_attention_v3 import (
     ragged_paged_attention as ragged_paged_attention_v3,
 )
+from sgl_jax.srt.kernels.ragged_paged_attention.tuned_block_sizes_v3 import (
+    get_tuned_block_sizes_v3,
+)
 from sgl_jax.srt.layers.attention.base_attn_backend import AttentionBackend
 from sgl_jax.srt.layers.attention.hybrid_linear_attn_backend import (
     get_current_device_kind,
@@ -24,7 +27,7 @@ from sgl_jax.srt.layers.radix_attention import RadixAttention
 from sgl_jax.srt.managers.schedule_batch import ModelWorkerBatch
 from sgl_jax.srt.mem_cache.memory_pool import KVCache
 from sgl_jax.srt.model_executor.forward_batch_info import ForwardBatch, ForwardMode
-from sgl_jax.srt.speculative.eagle_util import EagleDraftInput
+from sgl_jax.srt.speculative.eagle_info import EagleDraftInput
 from sgl_jax.srt.utils import cdiv
 from sgl_jax.srt.utils.jax_utils import device_array
 from sgl_jax.srt.utils.profiling_utils import named_scope
@@ -41,6 +44,36 @@ def _per_dp_cumsum(lens, dp_size: int, per_dp_bs: int) -> np.ndarray:
     cu = np.zeros((dp_size, per_dp_bs + 1), dtype=np.int32)
     cu[:, 1:] = np.cumsum(np.asarray(lens, dtype=np.int32).reshape(dp_size, per_dp_bs), axis=1)
     return cu.ravel()
+
+
+def _pad_page_indices(
+    page_indices: np.ndarray,
+    max_num_seqs: int,
+    fixed_capacity: int | None = None,
+) -> np.ndarray:
+    """Pad page indices to either a fixed capacity or a per-sequence bucket."""
+    page_indices = np.asarray(page_indices, dtype=np.int32)
+    if fixed_capacity is not None:
+        target_len = int(fixed_capacity)
+        if target_len < len(page_indices):
+            raise ValueError(
+                "page_indices exceed fixed capacity: "
+                f"required={len(page_indices)}, capacity={target_len}"
+            )
+    elif max_num_seqs > 0 and len(page_indices) > 0:
+        current_pps = cdiv(len(page_indices), max_num_seqs)
+        bucketed_pps = max(16, 1 << max(0, (current_pps - 1)).bit_length())
+        target_len = max_num_seqs * bucketed_pps
+    else:
+        return page_indices
+
+    if len(page_indices) < target_len:
+        page_indices = np.pad(
+            page_indices,
+            (0, target_len - len(page_indices)),
+            constant_values=0,
+        )
+    return page_indices
 
 
 @register_pytree_node_class
@@ -215,13 +248,58 @@ class FlashAttention(AttentionBackend):
         )
         return metadata
 
-    def get_eagle_forward_metadata(self, batch: ModelWorkerBatch):
+    # TODO: Make this a common speculative metadata builder in the next PR;
+    # DFlash and EAGLE already share this path.
+    def get_eagle_base_metadata(self, batch: ModelWorkerBatch):
+        """Upload only allocated page ids; fused JITs rebuild dynamic metadata."""
+        metadata = FlashAttentionMetadata()
+        page_indices = (
+            np.asarray(batch.cache_loc[:: self.page_size], dtype=np.int32) // self.page_size
+        )
+        max_num_seqs = batch.dp_size * batch.per_dp_bs_size
+        page_indices = _pad_page_indices(page_indices, max_num_seqs)
+        data_sharding = NamedSharding(self.mesh, P("data"))
+        metadata.page_indices = device_array(page_indices, sharding=data_sharding)
+
+        if batch.forward_mode == ForwardMode.TARGET_VERIFY:
+            metadata.custom_mask = batch.spec_info_padded.custom_mask
+
+        swa_mapping = getattr(self, "swa_index_mapping", None)
+        if swa_mapping is not None:
+            full_loc = (page_indices.astype(np.int64) * self.page_size).astype(np.int32)
+            if isinstance(swa_mapping, list):
+                full_2d = full_loc.reshape(batch.dp_size, -1)
+                swa_2d = np.empty_like(full_2d)
+                for r in range(batch.dp_size):
+                    swa_2d[r] = np.asarray(swa_mapping[r])[full_2d[r]]
+                swa_loc = swa_2d.ravel()
+            else:
+                swa_loc = np.asarray(swa_mapping)[full_loc]
+            metadata.swa_page_indices = device_array(
+                (swa_loc // self.page_size).astype(np.int32),
+                sharding=data_sharding,
+            )
+        return metadata
+
+    def get_eagle_forward_metadata(
+        self,
+        batch: ModelWorkerBatch,
+        *,
+        page_indices: np.ndarray | None = None,
+        page_indices_capacity: int | None = None,
+        extend_seq_lens: np.ndarray | None = None,
+        cu_q_lens: jax.Array | None = None,
+        distribution: jax.Array | None = None,
+    ):
         """Return the metadata for a forward pass."""
         # below code is for verify and draft extend phase
         metadata = FlashAttentionMetadata()
-        indices = np.arange(0, len(batch.cache_loc), self.page_size)
-        selected_cache_locs = batch.cache_loc[indices]
-        page_indices = (selected_cache_locs // self.page_size).astype(np.int32)
+        if page_indices is None:
+            indices = np.arange(0, len(batch.cache_loc), self.page_size)
+            selected_cache_locs = batch.cache_loc[indices]
+            page_indices = (selected_cache_locs // self.page_size).astype(np.int32)
+        else:
+            page_indices = np.asarray(page_indices, dtype=np.int32)
 
         if batch.forward_mode == ForwardMode.TARGET_VERIFY:
             metadata.custom_mask = batch.spec_info_padded.custom_mask
@@ -235,12 +313,20 @@ class FlashAttention(AttentionBackend):
         dp_size = batch.dp_size
         per_dp_bs = batch.per_dp_bs_size if dp_size > 1 else len(batch.seq_lens)
         if batch.forward_mode.is_target_verify():
-            padded_batch_size = len(batch.seq_lens)
-            extend_seq_lens = np.zeros(padded_batch_size, dtype=np.int32)
-            extend_seq_lens[batch.logits_indices_selector] = batch.spec_info_padded.draft_token_num
+            if extend_seq_lens is None:
+                padded_batch_size = len(batch.seq_lens)
+                extend_seq_lens = np.zeros(padded_batch_size, dtype=np.int32)
+                extend_seq_lens[batch.logits_indices_selector] = (
+                    batch.spec_info_padded.draft_token_num
+                )
         else:
             extend_seq_lens = batch.extend_seq_lens
-        cu_q_lens = _per_dp_cumsum(extend_seq_lens, dp_size, per_dp_bs)
+        if cu_q_lens is None:
+            cu_q_lens = _per_dp_cumsum(extend_seq_lens, dp_size, per_dp_bs)
+            cu_q_lens = device_array(
+                cu_q_lens,
+                sharding=NamedSharding(self.mesh, P("data")),
+            )
 
         seq_lens = np.copy(batch.seq_lens)
 
@@ -291,6 +377,7 @@ class FlashAttention(AttentionBackend):
                     packed,
                     sharding=NamedSharding(self.mesh, P("data")),
                 )
+
         else:
             aligned_seq_lens = (
                 (batch.seq_lens + self.page_size - 1) // self.page_size
@@ -331,21 +418,44 @@ class FlashAttention(AttentionBackend):
                 dst_off[r] += n
             page_indices = new_pi
 
-        seq_2d = np.asarray(batch.seq_lens).reshape(dp_size, per_dp_bs)
-        local_n = np.sum(seq_2d > 0, axis=1, dtype=np.int32)
-        distribution = np.column_stack([np.zeros_like(local_n), local_n, local_n]).ravel()
+        if distribution is None:
+            seq_2d = np.asarray(batch.seq_lens).reshape(dp_size, per_dp_bs)
+            local_n = np.sum(seq_2d > 0, axis=1, dtype=np.int32)
+            distribution = np.column_stack([np.zeros_like(local_n), local_n, local_n]).ravel()
         page_indices = np.array(page_indices)
-        seq_lens = np.array(seq_lens)
-        (
-            metadata.cu_q_lens,
-            metadata.cu_kv_lens,
-            metadata.page_indices,
-            metadata.seq_lens,
-            metadata.distribution,
-        ) = device_array(
-            (cu_q_lens, cu_kv_lens, page_indices, seq_lens, distribution),
-            sharding=(NamedSharding(self.mesh, P("data"))),
+
+        # DFlash can provide one pool-sized capacity for every prefix length,
+        # removing pages-per-sequence from the JIT cache key. Other speculative
+        # paths retain the smaller per-sequence power-of-two buckets.
+        max_num_seqs = dp_size * per_dp_bs
+        page_indices = _pad_page_indices(
+            page_indices,
+            max_num_seqs,
+            fixed_capacity=page_indices_capacity,
         )
+
+        seq_lens = np.array(seq_lens)
+        metadata.cu_q_lens = cu_q_lens
+        if isinstance(distribution, jax.Array):
+            metadata.distribution = distribution
+            (
+                metadata.cu_kv_lens,
+                metadata.page_indices,
+                metadata.seq_lens,
+            ) = device_array(
+                (cu_kv_lens, page_indices, seq_lens),
+                sharding=(NamedSharding(self.mesh, P("data"))),
+            )
+        else:
+            (
+                metadata.cu_kv_lens,
+                metadata.page_indices,
+                metadata.seq_lens,
+                metadata.distribution,
+            ) = device_array(
+                (cu_kv_lens, page_indices, seq_lens, distribution),
+                sharding=(NamedSharding(self.mesh, P("data"))),
+            )
         # Hybrid SWA targets need swa_page_indices for TARGET_VERIFY too,
         # otherwise SWA layers index the swa sub-pool with full-pool page ids.
         swa_mapping = getattr(self, "swa_index_mapping", None)
@@ -366,7 +476,6 @@ class FlashAttention(AttentionBackend):
         return metadata
 
     def get_eagle_multi_step_metadata(self, batch: ModelWorkerBatch):
-
         indices = np.arange(0, len(batch.cache_loc), self.page_size)
         # NOTE: Use original_selected_cache_locs as the source of truth for all steps
         # to avoid the bug where selected_cache_locs is overwritten by truncated data in loops.
@@ -538,6 +647,9 @@ class FlashAttention(AttentionBackend):
             else layer.scaling
         )
 
+        attn_type = getattr(layer, "attn_type", None)
+        if getattr(attn_type, "value", attn_type) == "encoder_only":
+            causal = 0
         if self.forward_metadata.custom_mask is not None:
             causal = 0
         # Select page indices and remap to SWA pool if KV cache supports it
@@ -577,9 +689,17 @@ class FlashAttention(AttentionBackend):
             ),  # updated kv_cache_fused (head interleaved) - 3D: [total_tokens, num_kv_heads*2, head_dim]
         )
 
-        mask_aligned_to_cu_kv = (
-            self.forward_metadata.custom_mask is not None
+        is_target_verify = (
+            forward_batch is not None
             and forward_batch.forward_mode.is_target_verify()
+        )
+        mask_aligned_to_cu_kv = (
+            self.forward_metadata.custom_mask is not None and is_target_verify
+        )
+        target_verify_tokens_per_seq = (
+            getattr(getattr(forward_batch, "spec_info", None), "draft_token_num", None)
+            if is_target_verify
+            else None
         )
 
         def _ragged_paged_attention_with_fused_kv(*args):
@@ -604,6 +724,29 @@ class FlashAttention(AttentionBackend):
                 )
             )
 
+            # Target verify is semantically many short decode-like query
+            # segments over long prefixes, although it must execute in the
+            # MIXED kernel for q_len > 1. Keep its tuning namespace separate
+            # from ordinary mixed/prefill. The current table is for causal
+            # chain verification; custom tree masks retain the generic path.
+            target_verify_m_block_sizes = (
+                get_tuned_block_sizes_v3(
+                    "v",
+                    queries.dtype,
+                    kv_cache_fused.dtype,
+                    queries.shape[1],
+                    keys.shape[1],
+                    queries.shape[2],
+                    kv_cache_fused.shape[1],
+                    queries.shape[0],
+                    sliding_window=layer.sliding_window_size,
+                    tokens_per_seq=target_verify_tokens_per_seq,
+                )
+                if target_verify_tokens_per_seq is not None
+                and self.forward_metadata.custom_mask is None
+                else None
+            )
+
             # Call fused KV kernel with head interleaving
             result, updated_kv_cache_fused = ragged_paged_attention_v3(
                 queries,
@@ -620,6 +763,7 @@ class FlashAttention(AttentionBackend):
                 ),
                 softmax_dtype=layer.softmax_dtype,
                 mask_aligned_to_cu_kv=mask_aligned_to_cu_kv,
+                m_block_sizes=target_verify_m_block_sizes,
                 d_bkv_sz=controls.d_bkv_sz,
                 p_bkv_sz=controls.p_bkv_sz,
             )

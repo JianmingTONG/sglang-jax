@@ -32,7 +32,7 @@ grep -n 'add_argument' python/sgl_jax/srt/server_args.py
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--tensor-parallel-size` / `--tp-size` | `1` | Total JAX devices across all nodes. See [`tpu-topology-reference.md`](/base/tpu-topology-reference) for the v7x 2-devices-per-chip rule. |
+| `--tensor-parallel-size` / `--tp-size` | `1` | Total JAX devices across all nodes. See [`tpu-topology-reference.md`](../base/tpu-topology-reference.md) for the v7x 2-devices-per-chip rule. |
 | `--data-parallel-size` / `--dp-size` | `1` | DP factor for the **attention** path only. Attention TP becomes `tp_size / dp_size`. MoE layers still run with full `ep_size`. |
 | `--dp-schedule-policy` | auto | DP rank assignment policy. If unset, radix-cache serving uses `cache_aware`; `--disable-radix-cache` and Pathways PD use `min_running_queue`. Explicit choices are `cache_aware`, `shape_aware`, `min_running_queue`, and `round_robin`; use non-default choices as workload-specific tuning overrides. |
 | `--ep-size` | `1` | Expert parallelism. Typically `--ep-size == --tp-size` for MoE models. |
@@ -62,8 +62,8 @@ grep -n 'add_argument' python/sgl_jax/srt/server_args.py
 | Flag | Default | Choices | Notes |
 |---|---|---|---|
 | `--attention-backend` | `fa` | `native` / `fa` / `fa_mha` | `fa` = FlashAttention on Pallas (MHA / MLA). `fa_mha` forces MHA path for MLA models. |
-| `--moe-backend` | `epmoe` | `epmoe` / `fused` / `auto` | Scale-dependent. At EP≤8 (single host v7x-8) `epmoe` wins on MiMo-V2-Flash; at EP≥16 (multi-node) `fused` wins. See [MiMo-V2-Flash recipe](/autoregressive/Xiaomi/MiMo-V2-Flash) for measured numbers. |
-| `--kernel-control-config` | `None` | JSON object or JSON-file path | Validated, shape-aware low-level controls for supported recurrent kernel families (`kda` and `gla`). Unknown controls fail during startup. |
+| `--moe-backend` | `epmoe` | `epmoe` / `fused` / `auto` | Scale-dependent. At EP≤8 (single host v7x-8) `epmoe` wins on MiMo-V2-Flash; at EP≥16 (multi-node) `fused` wins. See [MiMo-V2-Flash recipe](../autoregressive/Xiaomi/MiMo-V2-Flash.md) for measured numbers. |
+| `--kernel-control-config` | `None` | JSON object or JSON-file path | Validated, shape-aware low-level controls for supported kernel families (`kda`, `gla`, `rpa_v3`, and `gmm`). Unknown controls fail during startup. |
 
 `--kernel-control-config` exposes scheduling and layout choices without tying policy to a
 checkpoint name. Defaults apply to a kernel family; ordered `rules` may override them for
@@ -116,13 +116,13 @@ The source of truth for supported controls and validation is
 
 | Parser | Cookbook recipes |
 |---|---|
-| `mimo` (reasoning + tool) | [`mimo-v2.5-pro.md`](/autoregressive/Xiaomi/MiMo-V2.5-Pro) · [`mimo-v2-flash.md`](/autoregressive/Xiaomi/MiMo-V2-Flash) · [`mimo-7b.md`](/autoregressive/Xiaomi/MiMo-7B) |
-| `deepseek-r1` (reasoning) | [`deepseek-v3.md`](/autoregressive/DeepSeek/DeepSeek-V3) (R1 / V3.2-Speciale) |
-| `glm45` (reasoning + tool) | [`glm4-moe.md`](/autoregressive/GLM/GLM-4.5) (GLM-4.5 / 4.6) |
+| `mimo` (reasoning + tool) | [`mimo-v2.5-pro.md`](../autoregressive/Xiaomi/MiMo-V2.5-Pro.md) · [`mimo-v2-flash.md`](../autoregressive/Xiaomi/MiMo-V2-Flash.md) · [`mimo-7b.md`](../autoregressive/Xiaomi/MiMo-7B.md) |
+| `deepseek-r1` (reasoning) | [`deepseek-v3.md`](../autoregressive/DeepSeek/DeepSeek-V3.md) (R1 / V3.2-Speciale) |
+| `glm45` (reasoning + tool) | [`glm4-moe.md`](../autoregressive/GLM/GLM-4.5.md) (GLM-4.5 / 4.6) |
 | `qwen3` (reasoning), `qwen25` / `qwen3_coder` (tool) | _no Qwen recipe currently sets these — pick by model card on a per-checkpoint basis_ |
 | `kimi` (reasoning) | _no Kimi recipe currently sets this_ |
 
-For complete request/response examples see [`mimo-v2.5-pro.md` §3.2](/autoregressive/Xiaomi/MiMo-V2.5-Pro#3-2-reasoning-thinking-on-default-thinking-off-optional) (reasoning streaming) and [§3.3](/autoregressive/Xiaomi/MiMo-V2.5-Pro#3-3-tool-calling) (tool calling).
+For complete request/response examples see [`mimo-v2.5-pro.md` §3.2](../autoregressive/Xiaomi/MiMo-V2.5-Pro.md#reasoning-modes) (reasoning streaming) and [§3.3](../autoregressive/Xiaomi/MiMo-V2.5-Pro.md#tool-calling) (tool calling).
 
 ## 9. Compilation cache (environment, not a flag)
 

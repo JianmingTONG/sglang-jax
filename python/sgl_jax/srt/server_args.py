@@ -31,11 +31,36 @@ GRAMMAR_BACKEND_CHOICES = ["llguidance", "none"]
 _REJECTED_PD_HOST_ALIASES = frozenset({"localhost"})
 
 
+def apply_multimodal_model_defaults(server_args, model_config) -> None:
+    if not model_config.is_multimodal:
+        return
+
+    from sgl_jax.srt.models.registry import ModelRegistry
+
+    hf_config = getattr(model_config, "hf_config", None)
+    architectures = list(getattr(hf_config, "architectures", None) or [])
+    in_model = ModelRegistry.is_in_model_multimodal(architectures)
+
+    if not in_model and not server_args.disable_radix_cache:
+        logger.info("Multimodal model detected, disabling radix cache")
+        server_args.disable_radix_cache = True
+
+    if not in_model and (
+        server_args.chunked_prefill_size is None or server_args.chunked_prefill_size > 0
+    ):
+        logger.info("Multimodal model detected, disabling chunked prefill")
+        server_args.chunked_prefill_size = -1
+    if server_args.enable_mixed_chunk and not in_model:
+        logger.info("Multimodal model does not support mixed chunk; disabling it")
+        server_args.enable_mixed_chunk = False
+    if server_args.limit_mm_data_per_request is None:
+        server_args.limit_mm_data_per_request = {"image": 16}
+
+
 def _validate_disaggregation_host_ip(host_ip: str) -> str:
     if host_ip in _REJECTED_PD_HOST_ALIASES:
         raise ValueError(
-            "--disaggregation-host-ip must be a routable address; "
-            f"got loopback alias {host_ip!r}"
+            f"--disaggregation-host-ip must be a routable address; got loopback alias {host_ip!r}"
         )
     try:
         addr = ipaddress.ip_address(host_ip)
@@ -44,8 +69,7 @@ def _validate_disaggregation_host_ip(host_ip: str) -> str:
     if addr.is_loopback or addr.is_unspecified:
         kind = "loopback" if addr.is_loopback else "bind/unspecified"
         raise ValueError(
-            "--disaggregation-host-ip must be a routable address; "
-            f"got {kind} address {host_ip!r}"
+            f"--disaggregation-host-ip must be a routable address; got {kind} address {host_ip!r}"
         )
     return host_ip
 
@@ -106,6 +130,9 @@ class ServerArgs:
     pd_prefill_max_tokens: int = 20480
     pd_decode_max_tokens: int = 25600
     pd_num_prefill: int = 1
+    pd_num_decode: int = 1
+    pd_prefill_tp_size: int = 0
+    pd_prefill_ep_size: int = 0
     tp_size: int = 1
     ep_size: int = 1
     ep_num_redundant_experts: int = 0
@@ -179,10 +206,12 @@ class ServerArgs:
 
     # Kernel backend
     attention_backend: str | None = "fa"
+    gdn_prefill_impl: str = "fused_chunk_parallel"
+    dsa_use_pallas: bool = True  # deprecated no-op; jnp-ref e2e path removed
     moe_backend: str = "epmoe"
     kernel_control_config: str | dict | None = None
     disable_jax_allreduce_metadata: bool = False
-    enable_grouped_topk_kernel: bool = False
+    enable_topk_kernel: bool = True
 
     grammar_backend: str | None = None
 
@@ -190,6 +219,11 @@ class ServerArgs:
 
     precompile_token_paddings: list[int] | None = None
     precompile_bs_paddings: list[int] | None = None
+    precompile_vision_patch_paddings: list[int] | None = None
+
+    # "dp" load-balances images over all mesh devices; "tp" shards ViT weights
+    # over the tensor axis and load-balances images over data-parallel groups.
+    vision_encoder_parallel: str = "dp"
 
     disable_precompile: bool = False
 
@@ -227,6 +261,9 @@ class ServerArgs:
 
     # Multimodal
     multimodal: bool = False
+    limit_mm_data_per_request: dict[str, int] | None = None
+    mm_io_worker_num: int = 0
+    mm_processor_worker_num: int = 0
 
     enable_return_routed_experts: bool = False
     enable_expert_balance_debug: bool = False
@@ -247,12 +284,13 @@ class ServerArgs:
     # a host pool would fail every prefill request with
     # ``RuntimeError("use_d2h_staging=True requires a host_pool")``.
     disaggregation_enable_d2h: bool = False
+    disaggregation_use_raiden: bool = False
+    # Stream each completed prefill chunk through Raiden instead of waiting
+    # for the whole prompt. Opt-in while the v5 protocol is validated.
+    disaggregation_enable_chunk_prefill_transfer: bool = False
     disaggregation_side_channel_port: int = 9600
     disaggregation_d2h_pool_size: int = 64
     disaggregation_d2h_max_tokens: int | None = None
-    # Parallel ``jax_transfer`` channels per (P, D) pair. Four is the
-    # current validated default on v6e; set to 0/None to keep the
-    # wrapper's own default.
     disaggregation_channel_number: int = 4
     # Per-host IP this process publishes to the bootstrap server. If
     # None, resolve it during startup from HOSTNAME with a
@@ -334,6 +372,24 @@ class ServerArgs:
         # Set chunked prefill size
         if self.chunked_prefill_size is None:
             self.chunked_prefill_size = 4096
+
+        if 0 < self.max_prefill_tokens < self.chunked_prefill_size:
+            clamped_size = self.max_prefill_tokens // self.page_size * self.page_size
+
+            if clamped_size <= 0:
+                raise ValueError(
+                    f"max_prefill_tokens ({self.max_prefill_tokens}) must be at least "
+                    f"page_size ({self.page_size}) when chunked prefill is enabled."
+                )
+
+            logger.warning(
+                "chunked_prefill_size (%d) > max_prefill_tokens (%d); clamping "
+                "chunked_prefill_size to %d to fit the prefill limit and page size.",
+                self.chunked_prefill_size,
+                self.max_prefill_tokens,
+                clamped_size,
+            )
+            self.chunked_prefill_size = clamped_size
 
         # GGUF
         if (self.load_format == "auto" or self.load_format == "gguf") and check_gguf_file(
@@ -500,6 +556,12 @@ class ServerArgs:
             self.device_indexes = None
         if self.multimodal:
             self.model_path = download_from_hf(self.model_path, allow_patterns=None)
+            if self.limit_mm_data_per_request is None:
+                self.limit_mm_data_per_request = {"image": 16}
+        if self.mm_io_worker_num < 0:
+            raise ValueError("--mm-io-worker-num must be non-negative")
+        if self.mm_processor_worker_num < 0:
+            raise ValueError("--mm-processor-worker-num must be non-negative")
 
         if self.ep_num_redundant_experts < 0:
             raise ValueError("ep_num_redundant_experts must be non-negative")
@@ -559,6 +621,27 @@ class ServerArgs:
                     self.disaggregation_mode,
                 )
                 self.skip_server_warmup = True
+            if self.disaggregation_enable_chunk_prefill_transfer:
+                if not self.disaggregation_use_raiden:
+                    raise ValueError(
+                        "--disaggregation-enable-chunk-prefill-transfer requires "
+                        "--disaggregation-use-raiden"
+                    )
+                if not self.disable_radix_cache:
+                    raise ValueError(
+                        "--disaggregation-enable-chunk-prefill-transfer requires "
+                        "--disable-radix-cache"
+                    )
+                if self.chunked_prefill_size is None or self.chunked_prefill_size <= 0:
+                    raise ValueError(
+                        "--disaggregation-enable-chunk-prefill-transfer requires "
+                        "--chunked-prefill-size > 0"
+                    )
+                if self.chunked_prefill_size % self.page_size:
+                    raise ValueError(
+                        "--disaggregation-enable-chunk-prefill-transfer requires "
+                        "--chunked-prefill-size to be divisible by --page-size"
+                    )
         else:
             # null mode ignores the PD fields; warn so a misconfigured
             # deployment isn't silently ignored.
@@ -570,6 +653,16 @@ class ServerArgs:
                     "disaggregation_enable_d2h",
                     self.disaggregation_enable_d2h,
                     ServerArgs.disaggregation_enable_d2h,
+                ),
+                (
+                    "disaggregation_use_raiden",
+                    self.disaggregation_use_raiden,
+                    ServerArgs.disaggregation_use_raiden,
+                ),
+                (
+                    "disaggregation_enable_chunk_prefill_transfer",
+                    self.disaggregation_enable_chunk_prefill_transfer,
+                    ServerArgs.disaggregation_enable_chunk_prefill_transfer,
                 ),
             ]
             non_default = [name for name, value, default in pd_overrides if value != default]
@@ -961,6 +1054,29 @@ class ServerArgs:
             type=int,
             default=ServerArgs.pd_num_prefill,
             help="Number of prefill slices for pathways PD (Stage 6 multi-P).",
+        )
+        parser.add_argument(
+            "--pd-num-decode",
+            dest="pd_num_decode",
+            type=int,
+            default=ServerArgs.pd_num_decode,
+            help="Number of decode slices for pathways PD (1P-ND fan-out).",
+        )
+        parser.add_argument(
+            "--pd-prefill-tp-size",
+            dest="pd_prefill_tp_size",
+            type=int,
+            default=ServerArgs.pd_prefill_tp_size,
+            help="Prefill-side tp_size for pathways PD hetero-TP (Stage 6 "
+            "P-D-different-tp). 0 = same as --tp-size (D side).",
+        )
+        parser.add_argument(
+            "--pd-prefill-ep-size",
+            dest="pd_prefill_ep_size",
+            type=int,
+            default=ServerArgs.pd_prefill_ep_size,
+            help="Prefill-side ep_size for pathways PD hetero-TP. "
+            "0 = scale ep_size by tp_p/tp_d.",
         )
 
         parser.add_argument(
@@ -1355,6 +1471,22 @@ class ServerArgs:
             help="Set the list of batch sizes buckets for jax jit",
         )
         parser.add_argument(
+            "--precompile-vision-patch-paddings",
+            type=int,
+            nargs="+",
+            default=ServerArgs.precompile_vision_patch_paddings,
+            help="JIT buckets for the vision encoder patch dimension.",
+        )
+        parser.add_argument(
+            "--vision-encoder-parallel",
+            type=str,
+            choices=["dp", "tp"],
+            default=ServerArgs.vision_encoder_parallel,
+            help="'dp' (default) load-balances images over all mesh devices; 'tp' "
+            "shards ViT weights over the tensor axis and load-balances images over "
+            "data-parallel groups (requires tp_size > 1).",
+        )
+        parser.add_argument(
             "--disable-precompile",
             action="store_true",
             help="whether disable precompile",
@@ -1367,6 +1499,7 @@ class ServerArgs:
                 "native",
                 "fa",
                 "fa_mha",
+                "dsa_sparse",
             ],
             default=ServerArgs.attention_backend,
             help=(
@@ -1374,8 +1507,28 @@ class ServerArgs:
                 "'fa' = FlashAttention for MHA models, MLA Pallas kernel (absorbed) for MLA models. "
                 "'fa_mha' = force the MHA FlashAttention path for MLA models too "
                 "(decompress latent KV per-forward via kv_b_proj; ~70x more KV cache than 'fa', "
-                "intended for kernel A/B on short contexts)."
+                "intended for kernel A/B on short contexts). "
+                "'dsa_sparse' = DeepSeek Sparse Attention (lightning-indexer top-k + sparse MLA) "
+                "with IndexShare cross-layer reuse; MLA models with index_* config only."
             ),
+        )
+        parser.add_argument(
+            "--gdn-prefill-impl",
+            type=str,
+            choices=["chunked_jax", "fused_chunk_parallel"],
+            default=ServerArgs.gdn_prefill_impl,
+            help=(
+                "Choose the Qwen3.5 GDN prefill implementation. "
+                "'chunked_jax' uses the native JAX recurrence; "
+                "'fused_chunk_parallel' uses the Pallas fused Conv1D+GDN kernel. "
+                "Decode uses the base JAX implementation for both choices."
+            ),
+        )
+        parser.add_argument(
+            "--dsa-use-pallas",
+            action="store_true",
+            default=ServerArgs.dsa_use_pallas,
+            help="Use Pallas kernels for the dsa_sparse backend (default: jnp reference).",
         )
         parser.add_argument(
             "--moe-backend",
@@ -1406,12 +1559,14 @@ class ServerArgs:
             ),
         )
         parser.add_argument(
-            "--enable-grouped-topk-kernel",
-            action="store_true",
-            default=ServerArgs.enable_grouped_topk_kernel,
+            "--disable-topk-kernel",
+            dest="enable_topk_kernel",
+            action="store_false",
+            default=ServerArgs.enable_topk_kernel,
             help=(
-                "Enable the Pallas grouped-topk kernel for biased grouped top-k "
-                "routing (TPU only). Default off, using the pure JAX implementation."
+                "Disable Pallas kernels for top-k routing, including grouped, biased, "
+                "and plain paths (TPU only), and use pure JAX instead. "
+                "The kernels are enabled by default."
             ),
         )
 
@@ -1425,7 +1580,7 @@ class ServerArgs:
         parser.add_argument(
             "--speculative-algorithm",
             type=str,
-            choices=["EAGLE", "EAGLE3", "NEXTN", "STANDALONE"],
+            choices=["EAGLE", "EAGLE3", "NEXTN", "STANDALONE", "DFLASH"],
             help="Speculative algorithm.",
             default=ServerArgs.speculative_algorithm,
         )
@@ -1498,7 +1653,28 @@ class ServerArgs:
         parser.add_argument(
             "--multimodal",
             action="store_true",
-            help="Enable multimodal HTTP server.",
+            help=(
+                "Enable the standalone multi-stage multimodal HTTP server. "
+                "This flag is not required for multimodal models using the regular SRT runtime."
+            ),
+        )
+        parser.add_argument(
+            "--limit-mm-data-per-request",
+            type=json.loads,
+            default=ServerArgs.limit_mm_data_per_request,
+            help="JSON object that limits the number of multimodal items per request, e.g. '{\"image\": 16}'.",
+        )
+        parser.add_argument(
+            "--mm-io-worker-num",
+            type=int,
+            default=ServerArgs.mm_io_worker_num,
+            help="Number of multimodal data loading workers. 0 uses the model default.",
+        )
+        parser.add_argument(
+            "--mm-processor-worker-num",
+            type=int,
+            default=ServerArgs.mm_processor_worker_num,
+            help="Number of multimodal processor workers. 0 uses the model default.",
         )
 
         # LoRA
@@ -1580,6 +1756,20 @@ class ServerArgs:
             "prefill HBM pressure via the host pool. Default OFF.",
         )
         parser.add_argument(
+            "--disaggregation-use-raiden",
+            action=argparse.BooleanOptionalAction,
+            default=ServerArgs.disaggregation_use_raiden,
+            help="Use tpu-raiden for direct block transfer into decode KV pages.",
+        )
+        parser.add_argument(
+            "--disaggregation-enable-chunk-prefill-transfer",
+            action=argparse.BooleanOptionalAction,
+            default=ServerArgs.disaggregation_enable_chunk_prefill_transfer,
+            help="Register and pull each completed prefill chunk through Raiden "
+            "so transfer overlaps the next chunk forward. Requires Raiden, "
+            "ChunkCache, and chunked prefill. Default OFF.",
+        )
+        parser.add_argument(
             "--disaggregation-side-channel-port",
             type=int,
             default=ServerArgs.disaggregation_side_channel_port,
@@ -1647,7 +1837,7 @@ class ServerArgs:
             "--disaggregation-bootstrap-timeout-seconds",
             type=float,
             default=ServerArgs.disaggregation_bootstrap_timeout_seconds,
-            help="Bootstrap-server query timeout in seconds. <=0 to " "disable.",
+            help="Bootstrap-server query timeout in seconds. <=0 to disable.",
         )
         parser.add_argument(
             "--disaggregation-pull-timeout-seconds",
@@ -1655,7 +1845,9 @@ class ServerArgs:
             default=ServerArgs.disaggregation_pull_timeout_seconds,
             help="Decode-side pull timeout in seconds. A receiver "
             "stuck in TRANSFERRING longer than this is reaped to "
-            "FAILED. <=0 to disable.",
+            "FAILED. With Raiden, this also bounds engine terminalization "
+            "after abort, so FINISH_ABORT may be delayed by up to this "
+            "interval. <=0 to disable.",
         )
         parser.add_argument(
             "--disaggregation-ack-timeout-seconds",
@@ -1670,7 +1862,7 @@ class ServerArgs:
             "--disaggregation-orphan-reaper-interval-seconds",
             type=float,
             default=ServerArgs.disaggregation_orphan_reaper_interval_seconds,
-            help="How often the background reaper scans for orphan " "senders/receivers.",
+            help="How often the background reaper scans for orphan senders/receivers.",
         )
         parser.add_argument(
             "--disaggregation-decode-watchdog-seconds",
@@ -1716,9 +1908,7 @@ class ServerArgs:
             "--disaggregation-channel-number",
             type=int,
             default=ServerArgs.disaggregation_channel_number,
-            help="Parallel jax_transfer channels per (P, D) pair. "
-            "Four is the validated default on v6e; increase for "
-            "higher-bandwidth interconnects.",
+            help="Parallel transfer channels per (P, D) pair.",
         )
 
     @classmethod
@@ -1751,7 +1941,10 @@ class ServerArgs:
         from sgl_jax.srt.multimodal.common.ServerArgs import MultimodalServerArgs
 
         MultimodalServerArgs.add_cli_args(parser)
-        return cls.from_cli_args(parser.parse_args(argv or sys.argv[1:]))
+        raw_argv = argv or sys.argv[1:]
+        server_args = cls.from_cli_args(parser.parse_args(raw_argv))
+        server_args._explicit_cli_args = set(raw_argv)
+        return server_args
 
     def url(self):
         if is_valid_ipv6_address(self.host):
@@ -1783,21 +1976,74 @@ class ServerArgs:
         # Check LoRA configuration
         self.check_lora_server_args()
 
-        # Speculative overlap is currently implemented for the fused NEXTN
-        # topk=1 path only.
+        # Speculative overlap uses a fused linear-chain path or DFlash's
+        # dedicated relay-backed draft/verify path.
         if self.speculative_algorithm is not None and not self.disable_overlap_schedule:
-            supports_spec_overlap = (
+            supports_nextn_overlap = (
                 self.speculative_algorithm == "NEXTN"
                 and self.speculative_eagle_topk == 1
                 and self.speculative_num_draft_tokens == self.speculative_num_steps + 1
             )
-            if not supports_spec_overlap:
+            supports_eagle3_overlap = (
+                self.speculative_algorithm == "EAGLE3"
+                and self.speculative_eagle_topk == 1
+                and self.speculative_num_draft_tokens == self.speculative_num_steps + 1
+                and self.attention_backend == "fa"
+            )
+            supports_dflash_overlap = self.speculative_algorithm == "DFLASH"
+            if not (supports_nextn_overlap or supports_eagle3_overlap or supports_dflash_overlap):
                 raise ValueError(
-                    "Speculative overlap scheduler only supports NEXTN with "
-                    "--speculative-eagle-topk=1 and "
+                    "Speculative overlap scheduler only supports DFLASH, EAGLE3+FA, "
+                    "or NEXTN with --speculative-eagle-topk=1 and "
                     "--speculative-num-draft-tokens == --speculative-num-steps + 1. "
                     "Please pass --disable-overlap-schedule for other speculative configs."
                 )
+
+        # DFLASH: non-causal one-shot diffusion draft + linear-chain greedy verify.
+        if self.speculative_algorithm == "DFLASH":
+            if self.tp_size < 1:
+                raise ValueError("DFLASH requires --tp-size>=1.")
+            if self.speculative_eagle_topk != 1:
+                raise ValueError(
+                    "DFLASH requires --speculative-eagle-topk=1 (linear chain, no tree)."
+                )
+            if self.speculative_num_steps != 1:
+                raise ValueError("DFLASH (minimal) requires --speculative-num-steps=1.")
+            if self.speculative_draft_model_path is None:
+                raise ValueError(
+                    "DFLASH requires --speculative-draft-model-path (the diffusion draft)."
+                )
+            explicit_cli_args = getattr(self, "_explicit_cli_args", set())
+            explicit_draft_tokens = any(
+                str(arg) == "--speculative-num-draft-tokens"
+                or str(arg).startswith("--speculative-num-draft-tokens=")
+                for arg in explicit_cli_args
+            )
+            if (
+                not explicit_draft_tokens
+                and self.speculative_num_draft_tokens == ServerArgs.speculative_num_draft_tokens
+            ):
+                from sgl_jax.srt.speculative.dflash_util import (
+                    parse_dflash_draft_config,
+                )
+
+                draft_config = parse_dflash_draft_config(
+                    self.speculative_draft_model_path,
+                    revision=self.speculative_draft_model_revision,
+                    trust_remote_code=self.trust_remote_code,
+                )
+                if draft_config.block_size != self.speculative_num_draft_tokens:
+                    logger.info(
+                        "DFLASH: using draft config block_size=%d for "
+                        "--speculative-num-draft-tokens (default was %d).",
+                        draft_config.block_size,
+                        self.speculative_num_draft_tokens,
+                    )
+                    self.speculative_num_draft_tokens = draft_config.block_size
+            if self.enable_lora or self.enable_static_lora or self.lora_paths:
+                raise ValueError("DFLASH does not support LoRA.")
+            if self.grammar_backend not in (None, "none"):
+                raise ValueError("DFLASH does not support constrained decoding.")
 
     def check_lora_server_args(self):
         """Validate and normalize LoRA-related server arguments."""

@@ -2,11 +2,13 @@
 
 ## Module Overview
 
-sglang-jax's multimodal subsystem is an independent parallel architecture supporting text-to-image / video (Wan), vision-language understanding (Qwen2.5-VL), omni-modal (Qwen3-Omni), and audio (MiMo Audio) modalities. Unlike the single-Scheduler architecture used for text inference, multimodal uses a `GlobalScheduler` to orchestrate a multi-stage pipeline, with each stage owning its own Scheduler, Model Executor, and device mesh. The reason for adopting an independent multi-stage architecture rather than reusing the text engine is that multimodal tasks have computational patterns fundamentally different from autoregressive text generation: Diffusion requires fixed-step iterative denoising, ViT processes the full image patch grid in one pass, VAE needs large memory blocks for latent decoding — these stages have different scheduling strategies, memory management, and parallelism patterns, and cannot be unified into the text engine's prefill-decode loop.
+sglang-jax's standalone multimodal subsystem is an independent parallel architecture supporting text-to-image / video (Wan), vision-language understanding (Qwen2.5-VL), omni-modal (Qwen3-Omni), and audio (MiMo Audio) modalities. The newly added in-model path is now a supported execution path for regular autoregressive multimodal models through the standard SRT prefill-decode loop. The standalone runtime uses a `GlobalScheduler` to orchestrate multi-stage workloads, with each stage owning its own Scheduler, Model Executor, and device mesh. Diffusion requires fixed-step iterative denoising, ViT processes the full image patch grid in one pass, and VAE needs large memory blocks for latent decoding, so these stages retain their own scheduling strategies, memory management, and parallelism patterns.
+
+Here, `model_config.is_multimodal` describes whether the model accepts multimodal inputs, `server_args.multimodal` selects this standalone runtime, and `ModelRegistry.is_in_model_multimodal(...)` identifies architectures whose encoder is integrated into the regular SRT `ModelRunner`.
 
 Multimodal mode automatically disables the radix cache because the prefix-sharing rate of multimodal requests is extremely low — each image/video's visual token sequence is highly unlikely to overlap with another request's, so the maintenance overhead of the radix tree (LRU tracking, refcounts, eviction logic) yields no payoff in prefix reuse.
 
-**`Modality` enum** (`multimodal/common/modality_enum.py`): `IMAGE`, `MULTI_IMAGES`, `VIDEO`, `AUDIO`
+**`Modality` enum** (`multimodal/common/modality_enum.py`): `IMAGE`, `MULTI_IMAGES`, `VIDEO`, `AUDIO`. `MULTI_IMAGES` is retained for legacy compatibility; new multi-image requests use multiple `IMAGE` items.
 
 ![Multimodal request processing flow](images/12-multimodal-request-flow.svg)
 
@@ -119,7 +121,8 @@ Each stage contains:
 | `DiffusionScheduler` | Text-to-image / video | Manages diffusion-step iteration |
 | `VaeScheduler` | VAE decoding | Latent → pixel decoding scheduling |
 | `VitScheduler` | Vision Transformer | Image patch encoding |
-| `EmbedScheduler` | Text embedding | Text encoder feature extraction |
+| `EncoderScheduler` | Text encoding | Runs dedicated text encoders such as CLIP, T5, and UMT5 |
+| `EmbedScheduler` | Text embedding | Produces embedding-model outputs |
 | `AudioScheduler` | Audio | Audio feature extraction/generation |
 | `AudioBackboneScheduler` | Audio backbone | Audio model backbone network |
 
@@ -141,7 +144,7 @@ The `auto_regressive` Scheduler type in the YAML config reuses the text engine's
 
 | Directory | Model | Pipeline stages |
 |------|------|--------------|
-| `wan/` | Wan 2.1/2.2 | Embed → Diffusion → VAE |
+| `wan/` | Wan 2.1/2.2 | Text Encoder → Diffusion → VAE |
 | `qwen2_5VL/` | Qwen2.5-VL | ViT → AutoRegressive |
 | `qwen3_omni_moe/` | Qwen3-Omni-MoE | ViT → AutoRegressive → Audio |
 | `mimo_audio/` | MiMo Audio | Audio → AutoRegressive |
@@ -154,8 +157,8 @@ Each model has a corresponding YAML config under `multimodal/models/static_confi
 **Wan 2.1 example** (3-stage pipeline, `wan2_1_stage_config.yaml`):
 
 ```text
-Stage 0: scheduler=auto_regressive, model_class=UMT5EncoderModel
-  → Text encoding (reuses the text engine's Scheduler)
+Stage 0: scheduler=text_encoder, model_class=UMT5EncoderModel
+  → UMT5 text encoding through the dedicated encoder scheduler
 
 Stage 1: scheduler=diffusion, model_class=WanTransformer3DModel
   → N-step diffusion denoising
@@ -212,7 +215,8 @@ Each stage's YAML definition contains:
 |------|------|--------|
 | `audio/` | Audio processing | Audio encoding/decoding execution |
 | `diffusion/` | Diffusion model execution | Manages denoising steps, invokes UNet/DiT |
-| `embed/` | Embedding extraction | Text encoder forward |
+| `embed/` | Embedding extraction | Produces embedding-model outputs |
+| `encoder/` | Text encoding | Tokenization and dedicated text encoder forward |
 | `vae/` | VAE encode/decode | Latent ↔ pixel conversion |
 | `vit/` | Vision Transformer | Image patch encoding |
 
@@ -236,9 +240,9 @@ HTTP Request (text prompt + params)
   → GlobalScheduler
     → TypeBasedDispatcher → Wan Pipeline
 
-  → Stage 0 (Embed)
-    → EmbedScheduler → EmbedModelExecutor
-    → Text → CLIP/T5 embedding
+  → Stage 0 (Text Encoder)
+    → EncoderScheduler → EncoderModelWorker → EncoderModelRunner
+    → Text → UMT5 embeddings
 
   → Stage 1 (Diffusion)
     → DiffusionScheduler → DiffusionModelExecutor
@@ -344,7 +348,7 @@ Auto-behaviors when `multimodal` is enabled:
 | `Stage` | `multimodal/manager/stage.py` | Pipeline stage definition |
 | `DeviceManager` | `multimodal/manager/device_manager.py` | Device mesh allocation (greedy in-order) |
 | `StageConfigRegistry` | `multimodal/models/static_configs/` | Mapping from model name → stage config YAML |
-| `Modality` | `multimodal/common/modality_enum.py` | Modality enum (IMAGE/MULTI_IMAGES/VIDEO/AUDIO) |
+| `Modality` | `multimodal/common/modality_enum.py` | Modality enum (IMAGE/VIDEO/AUDIO) |
 | `DataType` | `multimodal/manager/io_struct.py` | Request data-type enum (IMAGE/VIDEO/AUDIO) |
 | `GenerateMMReqInput` | `multimodal/manager/io_struct.py` | Image/video generation request |
 | `TokenizedGenerateMMReqInput` | `multimodal/manager/io_struct.py` | Tokenized image/video generation request (ZMQ transport) |

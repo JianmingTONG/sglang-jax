@@ -1099,11 +1099,9 @@ def _chunk_fwd_o_pl(
         )
     )
     spec_gamma = (
-        None
-        if g_gamma is None
-        else pl.BlockSpec(memory_space=pltpu.ANY if interpret else pltpu.SMEM)
+        None if g_gamma is None else pl.BlockSpec(memory_space=pl.ANY if interpret else pltpu.SMEM)
     )
-    spec_scale = pl.BlockSpec(memory_space=pltpu.ANY if interpret else pltpu.SMEM)
+    spec_scale = pl.BlockSpec(memory_space=pl.ANY if interpret else pltpu.SMEM)
 
     subchunk_rows = (
         _output_subchunk_rows(BT) if enable__chunk_fwd_o_pl_variant else None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import jax
@@ -10,8 +11,12 @@ from sgl_jax.srt.configs.kernel_control import (
     KernelControlContext,
     KernelControlPolicy,
 )
-from sgl_jax.srt.kernels.kda.kda import chunk_kda_fwd as chunk_kda
-from sgl_jax.srt.kernels.kda.naive import naive_recurrent_kda
+from sgl_jax.srt.kernels.kda import (
+    chunk_kda,
+    is_mega_kda_layout_supported,
+    kda_forward_packed,
+    naive_recurrent_kda,
+)
 from sgl_jax.srt.layers.attention.hybrid_linear_attn_backend import (
     LinearRecurrentAttnBackend,
     get_current_device_kind,
@@ -27,9 +32,10 @@ if TYPE_CHECKING:
 
 
 def l2_normalize(x: jax.Array, epsilon: float = 1e-6) -> jax.Array:
-    """L2-normalize along the last axis. Computed in fp32, cast back to input dtype."""
-    norm = jnp.linalg.norm(x.astype(jnp.float32), axis=-1, keepdims=True)
-    return (x.astype(jnp.float32) / jnp.maximum(norm, epsilon)).astype(x.dtype)
+    """Match FLA ``l2norm_fwd``: ``x / sqrt(sum(x**2) + eps)``."""
+    x32 = x.astype(jnp.float32)
+    rstd = jax.lax.rsqrt(jnp.sum(jnp.square(x32), axis=-1, keepdims=True) + epsilon)
+    return (x32 * rstd).astype(x.dtype)
 
 
 class KDAAttnBackend(LinearRecurrentAttnBackend):
@@ -115,11 +121,6 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
         a = a.reshape(a.shape[0], layer.num_q_heads, layer.head_q_dim)
         b = b.reshape(b.shape[0], layer.num_q_heads)
 
-        # KDA requires L2-normalized q/k for all paths; upstream fuses this
-        # via use_qk_l2norm_in_kernel=True, while current kernel doesn't support.
-        q = l2_normalize(q)
-        k = l2_normalize(k)
-
         if forward_batch.forward_mode == ForwardMode.EXTEND:
             output, new_recurrent = self._forward_extend(
                 q,
@@ -133,6 +134,11 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
                 scale=layer.scale,
             )
         elif forward_batch.forward_mode == ForwardMode.DECODE:
+            # Decode uses the recurrent JAX path, so normalize Q/K before the
+            # call. Mega KDA performs the same normalization inside its prefill
+            # kernel; the chunked prefill fallback normalizes in its branch.
+            q = l2_normalize(q)
+            k = l2_normalize(k)
             output, new_recurrent = self._forward_decode(
                 q,
                 k,
@@ -356,7 +362,7 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
         layer: RadixLinearAttention,
         scale: float | None = None,
     ) -> tuple[jax.Array, jax.Array]:
-        """Chunked prefill via Pallas kernel."""
+        """Prefill via Mega KDA, with a guarded fallback to the chunked kernel."""
         if layer.A_log is None or layer.dt_bias is None:
             raise ValueError("KDA gate activation requires layer.A_log and layer.dt_bias")
         H = q.shape[-2]
@@ -364,8 +370,27 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
         A_log = layer.A_log.value.reshape(H)
         dt_bias = layer.dt_bias.value.reshape(H, -1)
         scale = scale if scale is not None else layer.scale
+        lower_bound = getattr(layer, "kda_gate_lower_bound", None)
+        if lower_bound is None:
+            lower_bound = getattr(layer, "kda_lower_bound", None)
 
-        def _chunk_kda_call(q, k, v, g, beta, initial_state, cu_seqlens, A_log, dt_bias):
+        # An explicit KDA control policy selects the chunked implementation it
+        # configures. Without one, retain upstream's Mega-KDA default. The
+        # environment variable is an explicit implementation override.
+        kernel_override = os.environ.get("SGLANG_JAX_KDA_PREFILL_KERNEL")
+        kernel = (
+            kernel_override.strip().lower()
+            if kernel_override is not None
+            else ("chunked" if "kda" in self.kernel_control.to_dict() else "mega")
+        )
+        if kernel not in {"chunked", "mega"}:
+            raise ValueError(
+                f"SGLANG_JAX_KDA_PREFILL_KERNEL must be 'chunked' or 'mega', got {kernel!r}"
+            )
+        use_mega = kernel == "mega"
+
+        def _prefill_call(q, k, v, g, beta, initial_state, cu_seqlens, A_log, dt_bias):
+            operands = (q, k, v, g, beta, initial_state, cu_seqlens, A_log, dt_bias)
             controls = self.kernel_control.resolve_kda(
                 KernelControlContext(
                     sequence_length=q.shape[1],
@@ -378,33 +403,65 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
                     device_kind=get_current_device_kind(),
                 )
             )
-            o, final_state, *_ = chunk_kda(
-                q,
-                k,
-                v,
-                g,
-                beta,
-                scale=scale,
-                initial_state=initial_state,
-                output_final_state=True,
-                cu_seqlens=cu_seqlens,
-                use_gate_in_kernel=True,
-                A_log=A_log,
-                dt_bias=dt_bias,
-                chunk_size=controls.chunk_size,
-                intra_block_size=controls.intra_block_size,
-                scalar_intra_solve=controls.scalar_intra_solve,
-                compute_block_chunks=controls.compute_block_chunks,
-                state_block_chunks=controls.state_block_chunks,
-                state_dim_alignment=controls.state_dim_alignment,
-                pipeline_impl=controls.pipeline_impl,
-                single_chunk_state_elision=controls.single_chunk_state_elision,
-                zero_state_output_elision=controls.zero_state_output_elision,
+
+            def _chunked(args):
+                q, k, v, g, beta, initial_state, cu_seqlens, A_log, dt_bias = args
+                q = l2_normalize(q)
+                k = l2_normalize(k)
+                o, final_state, *_ = chunk_kda(
+                    q,
+                    k,
+                    v,
+                    g,
+                    beta,
+                    scale=scale,
+                    initial_state=initial_state,
+                    output_final_state=True,
+                    cu_seqlens=cu_seqlens,
+                    use_gate_in_kernel=True,
+                    A_log=A_log,
+                    dt_bias=dt_bias,
+                    lower_bound=lower_bound,
+                    chunk_size=controls.chunk_size,
+                    intra_block_size=controls.intra_block_size,
+                    scalar_intra_solve=controls.scalar_intra_solve,
+                    compute_block_chunks=controls.compute_block_chunks,
+                    state_block_chunks=controls.state_block_chunks,
+                    state_dim_alignment=controls.state_dim_alignment,
+                    pipeline_impl=controls.pipeline_impl,
+                    single_chunk_state_elision=controls.single_chunk_state_elision,
+                    zero_state_output_elision=controls.zero_state_output_elision,
+                )
+                return o, final_state
+
+            if not use_mega:
+                return _chunked(operands)
+
+            def _mega(args):
+                q, k, v, g, beta, initial_state, cu_seqlens, A_log, dt_bias = args
+                return kda_forward_packed(
+                    q,
+                    k,
+                    v,
+                    g,
+                    beta,
+                    cu_seqlens=cu_seqlens,
+                    A_log=A_log,
+                    dt_bias=dt_bias,
+                    scale=scale,
+                    initial_state=initial_state,
+                    lower_bound=lower_bound,
+                )
+
+            padded_tokens = (q.shape[1] + 63) // 64 * 64
+            layout_supported = is_mega_kda_layout_supported(
+                cu_seqlens,
+                padded_tokens,
             )
-            return o, final_state
+            return jax.lax.cond(layout_supported, _mega, _chunked, operands)
 
         sharded = jax.shard_map(
-            _chunk_kda_call,
+            _prefill_call,
             mesh=self.mesh,
             in_specs=(
                 P(None, "data", "tensor", None),  # q [1, T, H, K]
@@ -495,7 +552,14 @@ class KDAAttnBackend(LinearRecurrentAttnBackend):
         H = g.shape[-2]
         orig_dtype = g.dtype
         g32 = g.astype(jnp.float32) + layer.dt_bias.value.reshape(H, -1).astype(jnp.float32)
-        out = -jnp.exp(layer.A_log.value.reshape(H, 1).astype(jnp.float32)) * jax.nn.softplus(g32)
+        a_scale = jnp.exp(layer.A_log.value.reshape(H, 1).astype(jnp.float32))
+        lower_bound = getattr(layer, "kda_gate_lower_bound", None)
+        if lower_bound is None:
+            lower_bound = getattr(layer, "kda_lower_bound", None)
+        if lower_bound is None:
+            out = -a_scale * jax.nn.softplus(g32)
+        else:
+            out = lower_bound * jax.nn.sigmoid(a_scale * g32)
         return out.astype(orig_dtype)
 
     def _unpack_conv_states(

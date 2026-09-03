@@ -1,0 +1,1732 @@
+"""CPU contract tests for the optional tpu-raiden PD data plane."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+import threading
+import time
+import types
+from unittest import mock
+
+import jax
+import numpy as np
+import pytest
+from jax.sharding import AxisType, Mesh, NamedSharding, PartitionSpec
+
+from sgl_jax.raiden import raiden_requested
+from sgl_jax.srt.disaggregation.base.kv_manager import KVPoll
+from sgl_jax.srt.disaggregation.base.transfer import (
+    AdmissionState,
+    DecodeMetadataContext,
+    DecodeTransferContext,
+    chunk_transfer_id,
+    parse_chunk_transfer_id,
+    slots_to_page_ids,
+)
+from sgl_jax.srt.disaggregation.common.capacity import (
+    CHUNK_TRANSFER_WINDOW,
+    per_rank_inflight_limit,
+)
+from sgl_jax.srt.disaggregation.factory import (
+    _raiden_transfer_pool_shape,
+    _tree_cache_supports_swa,
+    create_transfer_backend,
+)
+from sgl_jax.srt.disaggregation.raiden_transfer.conn import (
+    RaidenChunkedMetadata,
+    RaidenMetadata,
+    RaidenTransferKVManager,
+    _uuid_to_int,
+)
+from sgl_jax.srt.disaggregation.raiden_transfer.wrapper import (
+    RaidenTransferWrapper,
+    _rank_local_array,
+)
+from sgl_jax.srt.server_args import ServerArgs
+
+
+class _FakeBootstrap:
+    def __init__(self) -> None:
+        self.registered: list[tuple[tuple, dict]] = []
+        self.popped: list[tuple[int, dict]] = []
+        self.transfer_info = None
+        self.fail_register = False
+        self.get_calls = 0
+
+    def register_transfer(self, *args, **kwargs) -> None:
+        if self.fail_register:
+            raise RuntimeError("bootstrap unavailable")
+        self.registered.append((args, kwargs))
+
+    def pop_transfer(self, room: int, **kwargs) -> None:
+        self.popped.append((room, kwargs))
+
+    def get_transfer_info(self, _room: int, **_kwargs):
+        self.get_calls += 1
+        return self.transfer_info
+
+
+def _prepare_decode_metadata(manager, context, timeout=1.0):
+    metadata_context = DecodeMetadataContext(
+        req_id=context.req_id,
+        transfer_id=context.transfer_id,
+        bootstrap_room=context.bootstrap_room,
+        prefill_dp_rank=context.prefill_dp_rank,
+        peer_info=context.peer_info,
+    )
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if manager.poll_decode_metadata(metadata_context):
+            return
+        time.sleep(0.001)
+    raise AssertionError("decode metadata did not become ready")
+
+
+def _start_decode(manager, context):
+    _prepare_decode_metadata(manager, context)
+    return manager.try_start_decode(context)
+
+
+class _FakeRaiden:
+    control_port = 7777
+
+    def __init__(self, dp_size: int = 1) -> None:
+        self.dp_size = dp_size
+        self._endpoints_by_dp_rank = {
+            rank: [
+                {
+                    "endpoint": f"10.0.0.1:{7777 + rank * 10}",
+                    "shards": [0],
+                }
+            ]
+            for rank in range(dp_size)
+        }
+        self.registered: list[tuple] = []
+        self.started: list[tuple] = []
+        self.stats = ([], [], [])
+        self.register_result = True
+
+    @property
+    def endpoints_by_dp_rank(self):
+        return {rank: list(endpoints) for rank, endpoints in self._endpoints_by_dp_rank.items()}
+
+    @property
+    def endpoints(self):
+        return self._endpoints_by_dp_rank.get(0, [])
+
+    @endpoints.setter
+    def endpoints(self, value):
+        self._endpoints_by_dp_rank[0] = value
+
+    def register_read(self, *args, **kwargs):
+        self.registered.append((args, kwargs))
+        return self.register_result
+
+    def start_read(self, *args, **kwargs):
+        self.started.append((args, kwargs))
+
+    def poll_stats(self):
+        return self.stats
+
+
+def _manager(fake_raiden: _FakeRaiden, bootstrap: _FakeBootstrap):
+    return RaidenTransferKVManager(fake_raiden, bootstrap)
+
+
+def _chunk_manager(fake_raiden: _FakeRaiden, bootstrap: _FakeBootstrap):
+    return RaidenTransferKVManager(
+        fake_raiden,
+        bootstrap,
+        enable_chunk_prefill_transfer=True,
+    )
+
+
+def _chunk_record(
+    base_uuid: str,
+    chunk_index: int,
+    remote_block_ids: list[int],
+    *,
+    page_offset: int,
+    num_chunks: int = 0,
+    prefill_dp_rank: int = 0,
+) -> dict[str, object]:
+    return {
+        "transfer_id": f"{base_uuid}#c{chunk_index}",
+        "base_transfer_id": base_uuid,
+        "jax_process_index": 0,
+        "prefill_dp_rank": prefill_dp_rank,
+        "chunk_index": chunk_index,
+        "num_chunks": num_chunks,
+        "chunk_page_offset": page_offset,
+        "transport_metadata": {"remote_block_ids": remote_block_ids},
+    }
+
+
+def _chunk_bundle(
+    base_uuid: str,
+    records: list[dict[str, object]],
+    *,
+    expected_total_pages: int,
+):
+    return {
+        "base_transfer_id": base_uuid,
+        "chunks": {record["chunk_index"]: record for record in records},
+        "num_chunks": max((int(record["num_chunks"]) for record in records), default=0),
+        "expected_total_pages": expected_total_pages,
+    }
+
+
+def _poll_until(receiver, predicate, timeout: float = 1.0):
+    deadline = time.monotonic() + timeout
+    state = receiver.state
+    while time.monotonic() < deadline:
+        state = receiver.poll()
+        if predicate():
+            return state
+        time.sleep(0.001)
+    raise AssertionError(f"condition was not met before timeout; state={state}")
+
+
+def test_raiden_sender_registers_once_and_completes_from_poll_stats():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _manager(raiden, bootstrap)
+    sender = manager.create_sender("req-1")
+    sender.init(None, transfer_id="wire-1")
+    sender.attach_block_ids([3, 8, 13], bootstrap_room=42, dp_rank=0)
+
+    sender.send()
+
+    assert raiden.registered == [(("wire-1", _uuid_to_int("wire-1"), [3, 8, 13]), {"dp_rank": 0})]
+    assert bootstrap.registered[0][0] == (42, "wire-1")
+    assert bootstrap.registered[0][1] == {
+        "base_transfer_id": None,
+        "jax_process_index": 0,
+        "prefill_dp_rank": 0,
+        "chunk_index": 0,
+        "num_chunks": 1,
+        "chunk_page_offset": 0,
+        "expected_total_pages": 0,
+        "transport_metadata": {"remote_block_ids": [3, 8, 13]},
+    }
+    assert sender.poll() == KVPoll.TRANSFERRING
+
+    raiden.stats = (["wire-1"], [], [])
+    assert sender.poll() == KVPoll.SUCCESS
+    assert "req-1" not in manager._senders
+
+
+def test_raiden_chunk_sender_waits_for_final_descriptor_and_every_child_ack():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _chunk_manager(raiden, bootstrap)
+    sender = manager.create_sender("req-chunk-send")
+    sender.init(None, transfer_id="wire-chunk-send")
+
+    sender.send_chunk(
+        0,
+        [3, 8],
+        bootstrap_room=81,
+        chunk_page_offset=0,
+        is_final=False,
+        expected_total_pages=3,
+    )
+    assert sender.poll() == KVPoll.TRANSFERRING
+    raiden.stats = (["wire-chunk-send#c0"], [], [])
+    assert sender.poll() == KVPoll.TRANSFERRING
+
+    sender.send_chunk(
+        1,
+        [13],
+        bootstrap_room=81,
+        chunk_page_offset=2,
+        is_final=True,
+        expected_total_pages=3,
+    )
+    assert [call[0][0] for call in raiden.registered] == [
+        "wire-chunk-send#c0",
+        "wire-chunk-send#c1",
+    ]
+    assert bootstrap.registered[0][1]["base_transfer_id"] == "wire-chunk-send"
+    assert bootstrap.registered[0][1]["num_chunks"] == 0
+    assert bootstrap.registered[1][1]["chunk_page_offset"] == 2
+    assert bootstrap.registered[1][1]["num_chunks"] == 2
+    assert sender.poll() == KVPoll.TRANSFERRING
+
+    raiden.stats = (["wire-chunk-send#c0", "wire-chunk-send#c1"], [], [])
+    assert sender.poll() == KVPoll.SUCCESS
+    assert bootstrap.popped == [
+        (
+            81,
+            {
+                "jax_process_index": 0,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-chunk-send",
+            },
+        )
+    ]
+
+
+def test_raiden_chunk_sender_limits_active_children_to_transfer_window():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _chunk_manager(raiden, bootstrap)
+    sender = manager.create_sender("req-chunk-window")
+    sender.init(None, transfer_id="wire-chunk-window")
+    ready_callbacks = [mock.Mock() for _ in range(CHUNK_TRANSFER_WINDOW + 1)]
+
+    for chunk_index in range(CHUNK_TRANSFER_WINDOW + 1):
+        sender.send_chunk(
+            chunk_index,
+            [chunk_index + 1],
+            bootstrap_room=83,
+            chunk_page_offset=chunk_index,
+            is_final=chunk_index == CHUNK_TRANSFER_WINDOW,
+            expected_total_pages=CHUNK_TRANSFER_WINDOW + 1,
+            on_ready=ready_callbacks[chunk_index],
+        )
+
+    assert [call[0][0] for call in raiden.registered] == [
+        f"wire-chunk-window#c{index}" for index in range(CHUNK_TRANSFER_WINDOW)
+    ]
+    assert len(bootstrap.registered) == CHUNK_TRANSFER_WINDOW
+    assert all(callback.call_count == 1 for callback in ready_callbacks[:CHUNK_TRANSFER_WINDOW])
+    assert ready_callbacks[-1].call_count == 0
+
+    raiden.stats = (["wire-chunk-window#c0"], [], [])
+    assert sender.poll() == KVPoll.TRANSFERRING
+    assert [call[0][0] for call in raiden.registered] == [
+        f"wire-chunk-window#c{index}" for index in range(CHUNK_TRANSFER_WINDOW + 1)
+    ]
+    assert ready_callbacks[-1].call_count == 1
+
+    raiden.stats = (
+        [f"wire-chunk-window#c{index}" for index in range(CHUNK_TRANSFER_WINDOW + 1)],
+        [],
+        [],
+    )
+    assert sender.poll() == KVPoll.SUCCESS
+
+
+def test_raiden_chunk_sender_drops_queued_children_after_abort():
+    raiden = _FakeRaiden()
+    manager = _chunk_manager(raiden, _FakeBootstrap())
+    sender = manager.create_sender("req-chunk-window-abort")
+    sender.init(None, transfer_id="wire-chunk-window-abort")
+
+    for chunk_index in range(CHUNK_TRANSFER_WINDOW + 1):
+        sender.send_chunk(
+            chunk_index,
+            [chunk_index + 1],
+            bootstrap_room=84,
+            chunk_page_offset=chunk_index,
+            is_final=chunk_index == CHUNK_TRANSFER_WINDOW,
+            expected_total_pages=CHUNK_TRANSFER_WINDOW + 1,
+        )
+
+    sender.abort()
+    raiden.stats = (
+        [f"wire-chunk-window-abort#c{index}" for index in range(CHUNK_TRANSFER_WINDOW)],
+        [],
+        [],
+    )
+
+    assert sender.poll() == KVPoll.FAILED
+    assert len(raiden.registered) == CHUNK_TRANSFER_WINDOW
+
+
+def test_raiden_chunk_sender_abort_waits_for_started_children():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _chunk_manager(raiden, bootstrap)
+    sender = manager.create_sender("req-chunk-abort")
+    sender.init(None, transfer_id="wire-chunk-abort")
+    sender.send_chunk(
+        0,
+        [1],
+        bootstrap_room=82,
+        chunk_page_offset=0,
+        is_final=False,
+        expected_total_pages=2,
+    )
+
+    sender.abort()
+    assert sender.poll() == KVPoll.TRANSFERRING
+    assert bootstrap.popped == []
+
+    raiden.stats = (["wire-chunk-abort#c0"], [], [])
+    assert sender.poll() == KVPoll.FAILED
+    assert bootstrap.popped == [
+        (
+            82,
+            {
+                "jax_process_index": 0,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-chunk-abort",
+            },
+        )
+    ]
+
+
+def test_raiden_chunk_sender_ack_timeout_excludes_prefill_compute_gap():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = RaidenTransferKVManager(
+        raiden,
+        bootstrap,
+        enable_chunk_prefill_transfer=True,
+        ack_timeout_seconds=1.0,
+    )
+    sender = manager.create_sender("req-send-compute-gap")
+    sender.init(None, transfer_id="wire-send-compute-gap")
+    sender.send_chunk(
+        0,
+        [1],
+        bootstrap_room=85,
+        chunk_page_offset=0,
+        is_final=False,
+        expected_total_pages=2,
+    )
+    raiden.stats = (["wire-send-compute-gap#c0"], [], [])
+
+    assert sender.poll() == KVPoll.TRANSFERRING
+    assert sender.transfer_started_at is None
+    timed_out, _ = manager.reap_once(time.monotonic() + 2.0)
+
+    assert timed_out == []
+
+
+def test_raiden_receiver_starts_direct_block_read_and_pops_metadata():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _manager(raiden, bootstrap)
+    receiver = manager.create_receiver("req-2")
+    receiver.init(
+        RaidenMetadata(
+            uuid="wire-2",
+            remote_endpoint="10.0.0.1:7777",
+            remote_block_ids=(1, 4),
+            local_block_ids=(9, 10),
+            bootstrap_room=43,
+            jax_process_index=3,
+        )
+    )
+
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert raiden.started == [
+        (
+            ("wire-2", _uuid_to_int("wire-2"), "10.0.0.1:7777", [1, 4], [9, 10]),
+            {"decode_dp_rank": 0},
+        )
+    ]
+
+    raiden.stats = ([], ["wire-2"], [])
+    assert receiver.poll() == KVPoll.SUCCESS
+    assert bootstrap.popped == [
+        (
+            43,
+            {
+                "jax_process_index": 3,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-2",
+            },
+        )
+    ]
+    assert "req-2" not in manager._receivers
+
+
+def test_raiden_chunk_receiver_discovers_new_chunks_and_commits_after_all_done():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    first = _chunk_record("wire-chunk-recv", 0, [1, 4], page_offset=0)
+    bootstrap.transfer_info = _chunk_bundle("wire-chunk-recv", [first], expected_total_pages=3)
+    manager = _chunk_manager(raiden, bootstrap)
+    committed = []
+    receiver = manager.create_receiver("req-chunk-recv")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-chunk-recv",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10, 11),
+            bootstrap_room=83,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={0: first},
+            expected_total_pages=3,
+            direct_commit=committed.append,
+        )
+    )
+
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert raiden.started[-1][0][0] == "wire-chunk-recv#c0"
+    assert raiden.started[-1][0][3:] == ([1, 4], [9, 10])
+
+    final = _chunk_record(
+        "wire-chunk-recv",
+        1,
+        [7],
+        page_offset=2,
+        num_chunks=2,
+    )
+    bootstrap.transfer_info = _chunk_bundle(
+        "wire-chunk-recv", [first, final], expected_total_pages=3
+    )
+    assert _poll_until(receiver, lambda: len(raiden.started) == 2) == KVPoll.TRANSFERRING
+    assert raiden.started[-1][0][0] == "wire-chunk-recv#c1"
+    assert raiden.started[-1][0][3:] == ([7], [11])
+
+    raiden.stats = ([], ["wire-chunk-recv#c0"], [])
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    raiden.stats = (
+        [],
+        ["wire-chunk-recv#c0", "wire-chunk-recv#c1"],
+        [],
+    )
+    assert receiver.poll() == KVPoll.SUCCESS
+    receiver.commit(lambda _: None)
+    assert committed == [None]
+    assert bootstrap.popped == [
+        (
+            83,
+            {
+                "jax_process_index": 0,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-chunk-recv",
+            },
+        )
+    ]
+
+
+def test_raiden_chunk_metadata_lookup_never_blocks_receiver_poll():
+    class _BlockingBootstrap(_FakeBootstrap):
+        def __init__(self):
+            super().__init__()
+            self.lookup_started = threading.Event()
+            self.release_lookup = threading.Event()
+
+        def get_transfer_info(self, _room: int, **_kwargs):
+            self.get_calls += 1
+            self.lookup_started.set()
+            assert self.release_lookup.wait(timeout=1.0)
+            return self.transfer_info
+
+    raiden = _FakeRaiden()
+    bootstrap = _BlockingBootstrap()
+    first = _chunk_record("wire-nonblocking", 0, [1], page_offset=0)
+    bootstrap.transfer_info = _chunk_bundle("wire-nonblocking", [first], expected_total_pages=2)
+    receiver = _chunk_manager(raiden, bootstrap).create_receiver("req-nonblocking")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-nonblocking",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10),
+            bootstrap_room=91,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={0: first},
+            expected_total_pages=2,
+        )
+    )
+
+    try:
+        started_at = time.monotonic()
+        assert receiver.poll() == KVPoll.TRANSFERRING
+        elapsed = time.monotonic() - started_at
+
+        assert elapsed < 0.1
+        assert bootstrap.lookup_started.wait(timeout=1.0)
+    finally:
+        bootstrap.release_lookup.set()
+
+
+def test_raiden_decode_admission_metadata_lookup_never_blocks_scheduler():
+    class _BlockingBootstrap(_FakeBootstrap):
+        def __init__(self):
+            super().__init__()
+            self.lookup_started = threading.Event()
+            self.release_lookup = threading.Event()
+
+        def get_transfer_info(self, _room: int, **_kwargs):
+            self.get_calls += 1
+            self.lookup_started.set()
+            assert self.release_lookup.wait(timeout=1.0)
+            return self.transfer_info
+
+    bootstrap = _BlockingBootstrap()
+    bootstrap.transfer_info = {
+        "transfer_id": "wire-admission-nonblocking",
+        "transport_metadata": {"remote_block_ids": [1]},
+    }
+    manager = _manager(_FakeRaiden(), bootstrap)
+    context = DecodeMetadataContext(
+        req_id="req-admission-nonblocking",
+        transfer_id="wire-admission-nonblocking",
+        bootstrap_room=92,
+        prefill_dp_rank=0,
+        peer_info={},
+    )
+
+    try:
+        started_at = time.monotonic()
+        ready = manager.poll_decode_metadata(context)
+        elapsed = time.monotonic() - started_at
+
+        assert not ready
+        assert elapsed < 0.1
+        assert bootstrap.lookup_started.wait(timeout=1.0)
+    finally:
+        bootstrap.release_lookup.set()
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        if manager.poll_decode_metadata(context):
+            break
+        time.sleep(0.001)
+    else:
+        raise AssertionError("admission metadata lookup did not finish")
+    assert bootstrap.get_calls == 1
+
+
+@pytest.mark.parametrize("raise_lookup", [False, True])
+def test_raiden_decode_admission_metadata_failures_back_off(raise_lookup):
+    class _RetryBootstrap(_FakeBootstrap):
+        def get_transfer_info(self, _room: int, **_kwargs):
+            self.get_calls += 1
+            if raise_lookup:
+                raise RuntimeError("bootstrap unavailable")
+            return None
+
+    bootstrap = _RetryBootstrap()
+    manager = _manager(_FakeRaiden(), bootstrap)
+    context = DecodeMetadataContext(
+        req_id="req-admission-backoff",
+        transfer_id="wire-admission-backoff",
+        bootstrap_room=93,
+        prefill_dp_rank=0,
+        peer_info={},
+    )
+    key = manager._decode_metadata_key(93, 0, 0, "wire-admission-backoff")
+
+    assert not manager.poll_decode_metadata(context)
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        manager.poll_decode_metadata(context)
+        with manager._decode_metadata_lock:
+            lookup = manager._decode_metadata[key]
+            completed = lookup.future is None and lookup.next_poll_at > time.monotonic()
+        if completed:
+            break
+        time.sleep(0.001)
+    else:
+        raise AssertionError("failed metadata lookup was not processed")
+
+    for _ in range(10):
+        assert not manager.poll_decode_metadata(context)
+    assert bootstrap.get_calls == 1
+    assert lookup.poll_interval >= 2 * 0.01
+
+
+@pytest.mark.parametrize("raise_lookup", [False, True])
+def test_raiden_chunk_receiver_metadata_failures_back_off(raise_lookup):
+    class _RetryBootstrap(_FakeBootstrap):
+        def get_transfer_info(self, _room: int, **_kwargs):
+            self.get_calls += 1
+            if raise_lookup:
+                raise RuntimeError("bootstrap unavailable")
+            return None
+
+    bootstrap = _RetryBootstrap()
+    first = _chunk_record("wire-receiver-backoff", 0, [1], page_offset=0)
+    receiver = _chunk_manager(_FakeRaiden(), bootstrap).create_receiver("req-receiver-backoff")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-receiver-backoff",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10),
+            bootstrap_room=94,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={0: first},
+            expected_total_pages=2,
+        )
+    )
+
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        receiver.poll()
+        if receiver._metadata_future is None and receiver._metadata_poll_interval > 0.01:
+            break
+        time.sleep(0.001)
+    else:
+        raise AssertionError("failed receiver metadata lookup was not processed")
+
+    for _ in range(10):
+        assert receiver.poll() == KVPoll.TRANSFERRING
+    assert bootstrap.get_calls == 1
+
+
+def test_raiden_chunk_receiver_skips_lookup_when_all_metadata_is_known():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    records = [
+        _chunk_record("wire-known", 0, [1], page_offset=0),
+        _chunk_record("wire-known", 1, [2], page_offset=1, num_chunks=2),
+    ]
+    receiver = _chunk_manager(raiden, bootstrap).create_receiver("req-known")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-known",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10),
+            bootstrap_room=92,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={index: record for index, record in enumerate(records)},
+            known_num_chunks=2,
+            expected_total_pages=2,
+        )
+    )
+
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert bootstrap.get_calls == 0
+
+
+def test_raiden_chunk_receiver_pull_timeout_excludes_producer_compute_gap():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    first = _chunk_record("wire-compute-gap", 0, [1], page_offset=0)
+    bootstrap.transfer_info = _chunk_bundle("wire-compute-gap", [first], expected_total_pages=2)
+    manager = RaidenTransferKVManager(
+        raiden,
+        bootstrap,
+        enable_chunk_prefill_transfer=True,
+        pull_timeout_seconds=1.0,
+    )
+    receiver = manager.create_receiver("req-compute-gap")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-compute-gap",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10),
+            bootstrap_room=93,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={0: first},
+            expected_total_pages=2,
+        )
+    )
+    assert receiver.poll() == KVPoll.TRANSFERRING
+
+    raiden.stats = ([], ["wire-compute-gap#c0"], [])
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert receiver.transfer_started_at is None
+    assert receiver.producer_wait_started_at is not None
+
+    _, timed_out = manager.reap_once(receiver.producer_wait_started_at + 2.0)
+    assert timed_out == []
+
+
+def test_raiden_chunk_commit_preserves_kv_debug_metadata():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    expected = {"global_digest": "chunk-digest"}
+    final = _chunk_record("wire-chunk-debug", 0, [1], page_offset=0, num_chunks=1)
+    final["transport_metadata"]["kv_debug"] = expected
+    committed = []
+    receiver = _chunk_manager(raiden, bootstrap).create_receiver("req-chunk-debug")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-chunk-debug",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9,),
+            bootstrap_room=94,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={0: final},
+            known_num_chunks=1,
+            expected_total_pages=1,
+            direct_commit=committed.append,
+        )
+    )
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    raiden.stats = ([], ["wire-chunk-debug#c0"], [])
+    assert receiver.poll() == KVPoll.SUCCESS
+
+    receiver.commit(lambda _: None)
+    assert committed == [expected]
+
+
+def test_raiden_chunk_receiver_failure_waits_for_all_started_children():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    records = [
+        _chunk_record("wire-chunk-fail", 0, [1], page_offset=0),
+        _chunk_record(
+            "wire-chunk-fail",
+            1,
+            [2],
+            page_offset=1,
+            num_chunks=2,
+        ),
+    ]
+    bootstrap.transfer_info = _chunk_bundle("wire-chunk-fail", records, expected_total_pages=2)
+    manager = _chunk_manager(raiden, bootstrap)
+    receiver = manager.create_receiver("req-chunk-fail")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-chunk-fail",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10),
+            bootstrap_room=84,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={index: record for index, record in enumerate(records)},
+            known_num_chunks=2,
+            expected_total_pages=2,
+        )
+    )
+    assert receiver.poll() == KVPoll.TRANSFERRING
+
+    raiden.stats = ([], [], ["wire-chunk-fail#c0"])
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert bootstrap.popped == []
+
+    raiden.stats = ([], ["wire-chunk-fail#c1"], ["wire-chunk-fail#c0"])
+    assert receiver.poll() == KVPoll.FAILED
+    assert bootstrap.popped == [
+        (
+            84,
+            {
+                "jax_process_index": 0,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-chunk-fail",
+            },
+        )
+    ]
+
+
+def test_raiden_chunk_receiver_rejects_overlapping_page_ranges():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    records = [
+        _chunk_record("wire-overlap", 0, [1, 2], page_offset=0),
+        _chunk_record(
+            "wire-overlap",
+            1,
+            [3],
+            page_offset=1,
+            num_chunks=2,
+        ),
+    ]
+    bootstrap.transfer_info = _chunk_bundle("wire-overlap", records, expected_total_pages=3)
+    manager = _chunk_manager(raiden, bootstrap)
+    receiver = manager.create_receiver("req-overlap")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-overlap",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10, 11),
+            bootstrap_room=86,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={index: record for index, record in enumerate(records)},
+            known_num_chunks=2,
+            expected_total_pages=3,
+        )
+    )
+
+    assert receiver.poll() == KVPoll.FAILED
+    assert raiden.started == []
+
+
+def test_raiden_chunk_receiver_limits_each_parent_to_two_active_pulls():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    records = [
+        _chunk_record("wire-window", 0, [1], page_offset=0),
+        _chunk_record("wire-window", 1, [2], page_offset=1),
+        _chunk_record(
+            "wire-window",
+            2,
+            [3],
+            page_offset=2,
+            num_chunks=3,
+        ),
+    ]
+    bootstrap.transfer_info = _chunk_bundle("wire-window", records, expected_total_pages=3)
+    manager = _chunk_manager(raiden, bootstrap)
+    receiver = manager.create_receiver("req-window")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-window",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10, 11),
+            bootstrap_room=87,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={index: record for index, record in enumerate(records)},
+            known_num_chunks=3,
+            expected_total_pages=3,
+        )
+    )
+
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert [call[0][0] for call in raiden.started] == [
+        "wire-window#c0",
+        "wire-window#c1",
+    ]
+
+    raiden.stats = ([], ["wire-window#c0"], [])
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert len(raiden.started) == 2
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert [call[0][0] for call in raiden.started] == [
+        "wire-window#c0",
+        "wire-window#c1",
+        "wire-window#c2",
+    ]
+
+
+def test_raiden_chunk_receiver_rejects_gaps_before_decode_commit():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    records = [
+        _chunk_record("wire-gap", 0, [1], page_offset=0),
+        _chunk_record(
+            "wire-gap",
+            1,
+            [2],
+            page_offset=2,
+            num_chunks=2,
+        ),
+    ]
+    bootstrap.transfer_info = _chunk_bundle("wire-gap", records, expected_total_pages=3)
+    manager = _chunk_manager(raiden, bootstrap)
+    receiver = manager.create_receiver("req-gap")
+    receiver.init(
+        RaidenChunkedMetadata(
+            base_uuid="wire-gap",
+            remote_endpoint="10.0.0.1:7777",
+            local_block_ids=(9, 10, 11),
+            bootstrap_room=88,
+            jax_process_index=0,
+            prefill_dp_rank=0,
+            decode_dp_rank=0,
+            initial_chunks={index: record for index, record in enumerate(records)},
+            known_num_chunks=2,
+            expected_total_pages=3,
+        )
+    )
+    assert receiver.poll() == KVPoll.TRANSFERRING
+
+    raiden.stats = ([], ["wire-gap#c0", "wire-gap#c1"], [])
+    assert receiver.poll() == KVPoll.FAILED
+
+
+def test_raiden_commit_runs_direct_observability_hook():
+    raiden = _FakeRaiden()
+    manager = _manager(raiden, _FakeBootstrap())
+    committed = []
+    receiver = manager.create_receiver("req-commit")
+    expected = {"global_digest": "abc"}
+    receiver.init(
+        RaidenMetadata(
+            uuid="wire-commit",
+            remote_endpoint="10.0.0.1:7777",
+            remote_block_ids=(1,),
+            local_block_ids=(2,),
+            bootstrap_room=None,
+            direct_commit=committed.append,
+            expected_debug=expected,
+        )
+    )
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    raiden.stats = ([], ["wire-commit"], [])
+    assert receiver.poll() == KVPoll.SUCCESS
+
+    receiver.commit(lambda _: None)
+
+    assert committed == [expected]
+
+
+def test_raiden_failure_and_abort_cleanup_are_terminal_and_idempotent():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _manager(raiden, bootstrap)
+    receiver = manager.create_receiver("req-3")
+    receiver.init(
+        RaidenMetadata(
+            uuid="wire-3",
+            remote_endpoint="10.0.0.1:7777",
+            remote_block_ids=(1,),
+            local_block_ids=(2,),
+            bootstrap_room=44,
+        )
+    )
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    raiden.stats = ([], [], ["wire-3"])
+    assert receiver.poll() == KVPoll.FAILED
+    receiver.abort()
+    assert bootstrap.popped == [
+        (
+            44,
+            {
+                "jax_process_index": 0,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-3",
+            },
+        )
+    ]
+
+
+def test_raiden_abort_waits_for_engine_terminal_before_cleanup():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _manager(raiden, bootstrap)
+    sender = manager.create_sender("req-abort")
+    sender.init(None, transfer_id="wire-abort")
+    sender.attach_block_ids([1], bootstrap_room=48)
+    sender.send()
+
+    sender.abort()
+
+    assert sender.poll() == KVPoll.TRANSFERRING
+    assert "req-abort" in manager._senders
+    assert bootstrap.popped == []
+
+    raiden.stats = (["wire-abort"], [], [])
+    assert sender.poll() == KVPoll.FAILED
+    assert "req-abort" not in manager._senders
+    assert bootstrap.popped == [
+        (
+            48,
+            {
+                "jax_process_index": 0,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-abort",
+            },
+        )
+    ]
+
+
+def test_raiden_receiver_abort_waits_for_engine_terminal():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = _manager(raiden, bootstrap)
+    receiver = manager.create_receiver("req-abort")
+    receiver.init(
+        RaidenMetadata(
+            uuid="wire-abort",
+            remote_endpoint="10.0.0.1:7777",
+            remote_block_ids=(1,),
+            local_block_ids=(2,),
+            bootstrap_room=49,
+        )
+    )
+    assert receiver.poll() == KVPoll.TRANSFERRING
+
+    receiver.abort()
+
+    assert receiver.poll() == KVPoll.TRANSFERRING
+    assert "req-abort" in manager._receivers
+    assert bootstrap.popped == []
+
+    raiden.stats = ([], ["wire-abort"], [])
+    assert receiver.poll() == KVPoll.FAILED
+    assert "req-abort" not in manager._receivers
+    assert bootstrap.popped == [
+        (
+            49,
+            {
+                "jax_process_index": 0,
+                "prefill_dp_rank": 0,
+                "expected_transfer_id": "wire-abort",
+            },
+        )
+    ]
+
+
+def test_raiden_reaper_marks_timeout_without_pruning_sender():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    manager = RaidenTransferKVManager(
+        raiden,
+        bootstrap,
+        ack_timeout_seconds=1.0,
+        pull_timeout_seconds=1.0,
+    )
+    sender = manager.create_sender("req-timeout")
+    sender.init(None, transfer_id="wire-timeout")
+    sender.attach_block_ids([1], bootstrap_room=52)
+    sender.send()
+
+    timed_out, _ = manager.reap_once(sender.transfer_started_at + 2.0)
+
+    assert timed_out == ["req-timeout"]
+    assert sender.state == KVPoll.TRANSFERRING
+    assert "req-timeout" in manager._senders
+    assert bootstrap.popped == []
+
+
+def test_raiden_metadata_publish_failure_keeps_pages_until_terminal():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    bootstrap.fail_register = True
+    manager = _manager(raiden, bootstrap)
+    sender = manager.create_sender("req-publish")
+    sender.init(None, transfer_id="wire-publish")
+    sender.attach_block_ids([1], bootstrap_room=53)
+
+    sender.send()
+
+    assert sender.state == KVPoll.TRANSFERRING
+    assert "req-publish" in manager._senders
+    raiden.stats = (["wire-publish"], [], [])
+    assert sender.poll() == KVPoll.FAILED
+
+
+def test_raiden_manager_owns_decode_admission_and_endpoint_mapping():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    bootstrap.transfer_info = {
+        "transfer_id": "wire-4",
+        "prefill_dp_rank": 0,
+        "transport_metadata": {"remote_block_ids": [3, 4]},
+    }
+    manager = _manager(raiden, bootstrap)
+    context = DecodeTransferContext(
+        req_id="req-4",
+        transfer_id="wire-4",
+        bootstrap_room=45,
+        decode_dp_rank=0,
+        prefill_dp_rank=0,
+        peer_info={
+            "host": "10.0.0.1",
+            "transport_metadata": {
+                "engine": "raiden",
+                "dp_rank": 0,
+                "dp_size": 1,
+                "local_control_port": 7777,
+                "endpoints": raiden.endpoints,
+            },
+        },
+        kv_indices=[18, 19, 20, 21],
+        page_size=2,
+        prompt_tokens=4,
+        spec_factory=lambda: None,
+    )
+
+    admission = _start_decode(manager, context)
+
+    assert admission.state == AdmissionState.ADMITTED
+    assert admission.receiver is not None
+    assert admission.receiver.poll() == KVPoll.TRANSFERRING
+    assert raiden.started == [
+        (
+            ("wire-4", _uuid_to_int("wire-4"), "10.0.0.1:7777", [3, 4], [9, 10]),
+            {"decode_dp_rank": 0},
+        )
+    ]
+
+
+def test_raiden_chunk_decode_admission_starts_from_chunk_zero_metadata():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    first = _chunk_record("wire-admit-chunk", 0, [3], page_offset=0)
+    bootstrap.transfer_info = _chunk_bundle("wire-admit-chunk", [first], expected_total_pages=2)
+    manager = _chunk_manager(raiden, bootstrap)
+    context = DecodeTransferContext(
+        req_id="req-admit-chunk",
+        transfer_id="wire-admit-chunk",
+        bootstrap_room=85,
+        decode_dp_rank=0,
+        prefill_dp_rank=0,
+        peer_info={
+            "host": "10.0.0.1",
+            "transport_metadata": {
+                "engine": "raiden",
+                "dp_rank": 0,
+                "dp_size": 1,
+                "endpoints": raiden.endpoints,
+            },
+        },
+        kv_indices=[18, 19, 20, 21],
+        page_size=2,
+        prompt_tokens=4,
+        spec_factory=lambda: None,
+    )
+
+    admission = _start_decode(manager, context)
+
+    assert admission.state == AdmissionState.ADMITTED
+    assert admission.receiver.poll() == KVPoll.TRANSFERRING
+    assert raiden.started[-1][0][0] == "wire-admit-chunk#c0"
+    assert raiden.started[-1][0][3:] == ([3], [9])
+
+
+def test_raiden_chunk_decode_admission_rejects_total_page_mismatch():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    first = _chunk_record("wire-total-mismatch", 0, [3], page_offset=0)
+    bootstrap.transfer_info = _chunk_bundle("wire-total-mismatch", [first], expected_total_pages=3)
+    manager = _chunk_manager(raiden, bootstrap)
+    context = DecodeTransferContext(
+        req_id="req-total-mismatch",
+        transfer_id="wire-total-mismatch",
+        bootstrap_room=86,
+        decode_dp_rank=0,
+        prefill_dp_rank=0,
+        peer_info={
+            "host": "10.0.0.1",
+            "transport_metadata": {
+                "engine": "raiden",
+                "dp_rank": 0,
+                "dp_size": 1,
+                "endpoints": raiden.endpoints,
+            },
+        },
+        kv_indices=[18, 19, 20, 21],
+        page_size=2,
+        prompt_tokens=4,
+        spec_factory=lambda: None,
+    )
+
+    _prepare_decode_metadata(manager, context)
+    with pytest.raises(ValueError, match="total block count mismatch"):
+        manager.try_start_decode(context)
+
+    assert raiden.started == []
+
+
+@pytest.mark.parametrize(
+    ("prefill_dp_rank", "decode_dp_rank"),
+    [(prefill, decode) for prefill in range(4) for decode in range(4)],
+)
+def test_raiden_manager_routes_all_dp4_prefill_decode_pairs(prefill_dp_rank, decode_dp_rank):
+    raiden = _FakeRaiden(dp_size=4)
+    bootstrap = _FakeBootstrap()
+    bootstrap.transfer_info = {
+        "transfer_id": "wire-cross",
+        "prefill_dp_rank": prefill_dp_rank,
+        "transport_metadata": {"remote_block_ids": [1]},
+    }
+    manager = _manager(raiden, bootstrap)
+    prefill_endpoints = raiden.endpoints_by_dp_rank[prefill_dp_rank]
+
+    admission = _start_decode(
+        manager,
+        DecodeTransferContext(
+            req_id="req-cross",
+            transfer_id="wire-cross",
+            bootstrap_room=91,
+            decode_dp_rank=decode_dp_rank,
+            prefill_dp_rank=prefill_dp_rank,
+            peer_info={
+                "host": "10.0.0.9",
+                "system_dp_rank": prefill_dp_rank,
+                "transport_metadata": {
+                    "engine": "raiden",
+                    "dp_rank": prefill_dp_rank,
+                    "dp_size": 4,
+                    "endpoints": prefill_endpoints,
+                },
+            },
+            kv_indices=[2, 3],
+            page_size=2,
+            prompt_tokens=2,
+            spec_factory=lambda: None,
+        ),
+    )
+
+    assert admission.state == AdmissionState.ADMITTED
+    assert bootstrap.transfer_info is not None
+    assert admission.receiver.poll() == KVPoll.TRANSFERRING
+    args, kwargs = raiden.started[-1]
+    assert args[2] == f"10.0.0.1:{7777 + prefill_dp_rank * 10}"
+    assert args[3:] == ([1], [1])
+    assert kwargs == {"decode_dp_rank": decode_dp_rank}
+
+
+def test_raiden_manager_rejects_peer_without_endpoint_descriptors():
+    raiden = _FakeRaiden()
+    bootstrap = _FakeBootstrap()
+    bootstrap.transfer_info = {
+        "transfer_id": "wire-legacy",
+        "prefill_dp_rank": 0,
+        "transport_metadata": {"remote_block_ids": [3]},
+    }
+    manager = _manager(raiden, bootstrap)
+
+    context = DecodeTransferContext(
+        req_id="req-legacy",
+        transfer_id="wire-legacy",
+        bootstrap_room=47,
+        decode_dp_rank=0,
+        prefill_dp_rank=0,
+        peer_info={
+            "host": "10.0.0.1",
+            "local_control_port": 7777,
+        },
+        kv_indices=[18, 19],
+        page_size=2,
+        prompt_tokens=2,
+        spec_factory=lambda: None,
+    )
+    _prepare_decode_metadata(manager, context)
+    with pytest.raises(ValueError, match="endpoint descriptors"):
+        manager.try_start_decode(context)
+
+
+def test_raiden_preserves_published_shard_endpoints():
+    raiden = _FakeRaiden()
+    raiden.endpoints = [
+        {"endpoint": "10.0.0.2:8000", "shards": [0, 2]},
+        {"endpoint": "10.0.0.2:8100", "shards": [1, 3]},
+    ]
+    bootstrap = _FakeBootstrap()
+    bootstrap.transfer_info = {
+        "transfer_id": "wire-shards",
+        "transport_metadata": {"remote_block_ids": [3]},
+    }
+    manager = _manager(raiden, bootstrap)
+    endpoints = [
+        {"endpoint": "0.0.0.0:7001", "shards": [0, 2]},
+        {"endpoint": "10.0.0.1:7013", "shards": [1, 3]},
+    ]
+
+    admission = _start_decode(
+        manager,
+        DecodeTransferContext(
+            req_id="req-shards",
+            transfer_id="wire-shards",
+            bootstrap_room=50,
+            decode_dp_rank=0,
+            prefill_dp_rank=0,
+            peer_info={
+                "host": "10.0.0.1",
+                "transport_metadata": {"engine": "raiden", "endpoints": endpoints},
+            },
+            kv_indices=[18, 19],
+            page_size=2,
+            prompt_tokens=2,
+            spec_factory=lambda: None,
+        ),
+    )
+
+    assert admission.receiver is not None
+    admission.receiver.poll()
+    assert raiden.started[0][0][2] == [
+        {"endpoint": "10.0.0.1:7001", "shards": [0, 2]},
+        {"endpoint": "10.0.0.1:7013", "shards": [1, 3]},
+    ]
+
+
+def test_raiden_manager_preserves_each_published_endpoint_port_and_shards():
+    raiden = _FakeRaiden()
+    raiden._endpoints_by_dp_rank[0] = [
+        {"endpoint": "0.0.0.0:7001", "shards": [0, 2]},
+        {"endpoint": "0.0.0.0:7999", "shards": [1, 3]},
+    ]
+    bootstrap = _FakeBootstrap()
+    bootstrap.transfer_info = {
+        "transfer_id": "wire-endpoints",
+        "prefill_dp_rank": 0,
+        "transport_metadata": {"remote_block_ids": [1]},
+    }
+    manager = _manager(raiden, bootstrap)
+    admission = _start_decode(
+        manager,
+        DecodeTransferContext(
+            req_id="req-endpoints",
+            transfer_id="wire-endpoints",
+            bootstrap_room=48,
+            decode_dp_rank=0,
+            prefill_dp_rank=0,
+            peer_info={
+                "host": "10.0.0.8",
+                "transport_metadata": {
+                    "engine": "raiden",
+                    "dp_rank": 0,
+                    "dp_size": 1,
+                    "endpoints": raiden.endpoints,
+                },
+            },
+            kv_indices=[2, 3],
+            page_size=2,
+            prompt_tokens=2,
+            spec_factory=lambda: None,
+        ),
+    )
+    assert admission.receiver.poll() == KVPoll.TRANSFERRING
+    remote = raiden.started[-1][0][2]
+    assert remote == [
+        {"endpoint": "10.0.0.8:7001", "shards": [0, 2]},
+        {"endpoint": "10.0.0.8:7999", "shards": [1, 3]},
+    ]
+
+
+def test_raiden_manager_defers_until_request_metadata_is_published():
+    manager = _manager(_FakeRaiden(), _FakeBootstrap())
+    admission = manager.try_start_decode(
+        DecodeTransferContext(
+            req_id="req-5",
+            transfer_id="wire-5",
+            bootstrap_room=46,
+            decode_dp_rank=0,
+            prefill_dp_rank=0,
+            peer_info={},
+            kv_indices=[],
+            page_size=128,
+            prompt_tokens=1,
+            spec_factory=lambda: None,
+        )
+    )
+    assert admission.state == AdmissionState.DEFERRED
+
+
+def test_raiden_prefill_metadata_requires_a_bound_control_port():
+    raiden = _FakeRaiden()
+    raiden.endpoints = []
+    raiden.control_port = 0
+
+    with pytest.raises(RuntimeError, match="did not publish endpoints"):
+        _manager(raiden, _FakeBootstrap()).prefill_transport_metadata()
+
+
+def test_raiden_prefill_batch_waits_for_kv_buffers_once():
+    manager = _manager(_FakeRaiden(), _FakeBootstrap())
+    buffers = [object(), object()]
+    with mock.patch("jax.block_until_ready") as block_until_ready:
+        manager.prepare_prefill_batch(buffers)
+    block_until_ready.assert_called_once_with(buffers)
+
+
+def test_raiden_uuid_is_stable_and_json_safe():
+    assert _uuid_to_int("wire") == _uuid_to_int("wire")
+    assert _uuid_to_int("wire") != _uuid_to_int("other")
+    assert 0 <= _uuid_to_int("wire") < 2**50
+
+
+def test_raiden_page_mapping_requires_aligned_contiguous_slots():
+    assert slots_to_page_ids([8, 9, 10, 11, 20, 21], 4, 6) == (2, 5)
+    with pytest.raises(ValueError, match="non-aligned"):
+        slots_to_page_ids([9, 10], 2, 2)
+    with pytest.raises(ValueError, match="not contiguous"):
+        slots_to_page_ids([8, 10], 2, 2)
+
+
+def test_raiden_chunk_transfer_id_round_trip_and_validation():
+    transfer_id = chunk_transfer_id("wire-request", 7)
+
+    assert transfer_id == "wire-request#c7"
+    assert parse_chunk_transfer_id(transfer_id) == ("wire-request", 7)
+    with pytest.raises(ValueError, match="non-negative"):
+        chunk_transfer_id("wire-request", -1)
+    with pytest.raises(ValueError, match="invalid chunk transfer_id"):
+        parse_chunk_transfer_id("wire-request")
+
+
+def test_register_read_false_does_not_publish_stale_metadata():
+    raiden = _FakeRaiden()
+    raiden.register_result = False
+    bootstrap = _FakeBootstrap()
+    manager = _manager(raiden, bootstrap)
+    sender = manager.create_sender("req-skip")
+    sender.init(None, transfer_id="wire-skip")
+    sender.attach_block_ids([3], bootstrap_room=51)
+
+    sender.send()
+
+    assert sender.poll() == KVPoll.SUCCESS
+    assert bootstrap.registered == []
+    assert "req-skip" not in manager._senders
+
+
+def test_raiden_loader_is_opt_in():
+    assert not raiden_requested([])
+    assert raiden_requested(["--disaggregation-use-raiden"])
+    assert not raiden_requested(["--disaggregation-use-raiden", "--no-disaggregation-use-raiden"])
+
+
+def test_launch_server_spawn_reimport_preloads_raiden_before_jax():
+    code = """
+import runpy
+import sys
+import types
+
+extension = "tpu_raiden.frameworks.jax._tpu_raiden_jax"
+sys.modules[extension] = types.ModuleType(extension)
+sys.argv = ["sgl_jax.launch_server", "--disaggregation-use-raiden"]
+runpy.run_module("sgl_jax.launch_server", run_name="__mp_main__")
+assert extension in sys.modules
+assert "jax" not in sys.modules
+"""
+    env = os.environ.copy()
+    python_path = os.path.abspath("python")
+    env["PYTHONPATH"] = os.pathsep.join(
+        value for value in (python_path, env.get("PYTHONPATH", "")) if value
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_raiden_cli_is_opt_in():
+    parser = argparse.ArgumentParser()
+    ServerArgs.add_cli_args(parser)
+    defaults = parser.parse_args(["--model-path", "dummy"])
+    selected = parser.parse_args(["--model-path", "dummy", "--disaggregation-use-raiden"])
+    chunked = parser.parse_args(
+        ["--model-path", "dummy", "--disaggregation-enable-chunk-prefill-transfer"]
+    )
+    assert defaults.disaggregation_use_raiden is False
+    assert selected.disaggregation_use_raiden is True
+    assert defaults.disaggregation_enable_chunk_prefill_transfer is False
+    assert chunked.disaggregation_enable_chunk_prefill_transfer is True
+
+
+@pytest.mark.parametrize(
+    ("override", "error"),
+    [
+        ({"disaggregation_use_raiden": False}, "requires --disaggregation-use-raiden"),
+        ({"disable_radix_cache": False}, "requires --disable-radix-cache"),
+        ({"chunked_prefill_size": 1000}, "divisible by --page-size"),
+    ],
+)
+def test_chunk_prefill_transfer_server_args_reject_incompatible_modes(override, error):
+    config = {
+        "model_path": "dummy",
+        "device": "tpu",
+        "disaggregation_mode": "prefill",
+        "disaggregation_bootstrap_url": "http://bootstrap",
+        "page_size": 128,
+        "disaggregation_enable_chunk_prefill_transfer": True,
+        "disaggregation_use_raiden": True,
+        "disable_radix_cache": True,
+        "chunked_prefill_size": 1024,
+    }
+    config.update(override)
+
+    with pytest.raises(ValueError, match=error):
+        ServerArgs(**config)
+
+
+def test_chunk_prefill_transfer_server_args_accept_raiden_chunk_cache():
+    args = ServerArgs(
+        model_path="dummy",
+        device="tpu",
+        disaggregation_mode="prefill",
+        disaggregation_bootstrap_url="http://bootstrap",
+        page_size=128,
+        disaggregation_enable_chunk_prefill_transfer=True,
+        disaggregation_use_raiden=True,
+        disable_radix_cache=True,
+        chunked_prefill_size=1024,
+    )
+
+    assert args.disaggregation_enable_chunk_prefill_transfer is True
+
+
+@pytest.mark.parametrize(
+    ("max_inflight", "dp_size", "expected"),
+    [(8, 1, 8), (8, 2, 4), (32, 4, 8), (10, 4, 3), (0, 4, 0)],
+)
+def test_raiden_inflight_capacity_is_partitioned_per_rank(max_inflight, dp_size, expected):
+    assert per_rank_inflight_limit(max_inflight, dp_size) == expected
+
+
+def test_raiden_chunk_pool_uses_two_chunk_sized_slot_waves():
+    assert _raiden_transfer_pool_shape(
+        max_req_input_len=32768,
+        page_size=128,
+        parent_slots=4,
+        chunk_prefill_size=1024,
+        chunk_transfer_enabled=True,
+    ) == (8, 8)
+    assert _raiden_transfer_pool_shape(
+        max_req_input_len=32768,
+        page_size=128,
+        parent_slots=4,
+        chunk_prefill_size=1024,
+        chunk_transfer_enabled=False,
+    ) == (256, 4)
+
+
+def test_raiden_chunk_factory_allows_plain_chunk_cache_without_swa_probe():
+    plain_chunk_cache = types.SimpleNamespace()
+    swa_chunk_cache = types.SimpleNamespace(supports_swa=lambda: True)
+
+    assert _tree_cache_supports_swa(plain_chunk_cache) is False
+    assert _tree_cache_supports_swa(swa_chunk_cache) is True
+
+
+@pytest.mark.parametrize(
+    ("override", "error"),
+    [
+        ({"device": "cpu"}, "device=tpu"),
+        ({"disaggregation_enable_d2h": True}, "D2H staging"),
+        ({"disaggregation_max_inflight_transfers": 0}, "max_inflight_transfers"),
+        ({"disable_radix_cache": False}, "disable-radix-cache"),
+    ],
+)
+def test_raiden_factory_rejects_invalid_config(override, error):
+    config = {
+        "disaggregation_use_raiden": True,
+        "device": "tpu",
+        "disaggregation_enable_d2h": False,
+        "disaggregation_max_inflight_transfers": 1,
+        "disable_radix_cache": True,
+    }
+    config.update(override)
+
+    with pytest.raises(ValueError, match=error):
+        create_transfer_backend(
+            None,
+            types.SimpleNamespace(**config),
+            local_host="127.0.0.1",
+            role="prefill",
+            shared_secret=None,
+            bootstrap_client=None,
+        )
+
+
+def test_raiden_wrapper_uses_public_jax_api_and_configured_parallelism():
+    engine = mock.MagicMock()
+    engine.get_local_endpoints.return_value = [{"endpoint": "127.0.0.1:7788", "shards": [0]}]
+    manager_cls = mock.MagicMock(return_value=engine)
+    modules = {
+        "tpu_raiden": types.ModuleType("tpu_raiden"),
+        "tpu_raiden.api": types.ModuleType("tpu_raiden.api"),
+        "tpu_raiden.api.jax": types.ModuleType("tpu_raiden.api.jax"),
+        "tpu_raiden.api.jax.kv_cache_manager": types.ModuleType(
+            "tpu_raiden.api.jax.kv_cache_manager"
+        ),
+    }
+    modules["tpu_raiden.api.jax.kv_cache_manager"].KVCacheManager = manager_cls
+
+    with mock.patch.dict(sys.modules, modules):
+        wrapper = RaidenTransferWrapper("127.0.0.1", 0, parallelism=3)
+        wrapper.start([object()], max_blocks=64, num_slots=8, timeout_s=12.0)
+        wrapper.start_read("req", 11, "remote:1", [1], [2])
+
+    kwargs = manager_cls.call_args.kwargs
+    assert kwargs["max_blocks"] == 64
+    assert kwargs["num_slots"] == 8
+    assert kwargs["unsafe_skip_buffer_lock"] is True
+    engine.start_read.assert_called_once_with("req", 11, "remote:1", [1], [2], 3)
+
+
+def test_raiden_wrapper_routes_each_operation_to_its_dp_manager():
+    engines = [mock.MagicMock() for _ in range(4)]
+    for rank, engine in enumerate(engines):
+        engine.get_local_endpoints.return_value = [
+            {"endpoint": f"127.0.0.1:{7800 + rank}", "shards": [0]}
+        ]
+        engine.register_read.return_value = True
+        engine.poll_stats.return_value = ([], [], [])
+    manager_cls = mock.MagicMock(side_effect=engines)
+    modules = {
+        "tpu_raiden": types.ModuleType("tpu_raiden"),
+        "tpu_raiden.api": types.ModuleType("tpu_raiden.api"),
+        "tpu_raiden.api.jax": types.ModuleType("tpu_raiden.api.jax"),
+        "tpu_raiden.api.jax.kv_cache_manager": types.ModuleType(
+            "tpu_raiden.api.jax.kv_cache_manager"
+        ),
+    }
+    modules["tpu_raiden.api.jax.kv_cache_manager"].KVCacheManager = manager_cls
+
+    with (
+        mock.patch.dict(sys.modules, modules),
+        mock.patch(
+            "sgl_jax.srt.disaggregation.raiden_transfer.wrapper._split_kv_caches_by_dp_rank",
+            return_value={rank: [f"rank-{rank}"] for rank in range(4)},
+        ),
+    ):
+        wrapper = RaidenTransferWrapper("127.0.0.1", 0, parallelism=2)
+        wrapper.start([object()], max_blocks=8, num_slots=4, dp_size=4)
+        wrapper.register_read("req", 7, [1], dp_rank=2)
+        wrapper.start_read(
+            "req",
+            7,
+            "remote:1",
+            [1],
+            [2],
+            decode_dp_rank=3,
+        )
+
+    assert wrapper.dp_size == 4
+    assert sorted(wrapper.endpoints_by_dp_rank) == [0, 1, 2, 3]
+    engines[2].register_read.assert_called_once_with("req", 7, [1])
+    engines[3].start_read.assert_called_once_with("req", 7, "remote:1", [1], [2], 2)
+
+
+def test_raiden_wrapper_preserves_drained_events_when_one_rank_poll_fails(caplog):
+    engines = [mock.MagicMock() for _ in range(3)]
+    engines[0].poll_stats.return_value = (["sent-0"], [], ["failed-0"])
+    engines[1].poll_stats.side_effect = RuntimeError("rank poll failed")
+    engines[2].poll_stats.return_value = ([], ["received-2"], [])
+    wrapper = RaidenTransferWrapper("127.0.0.1")
+    wrapper._engines = {rank: engine for rank, engine in enumerate(engines)}
+
+    with caplog.at_level("ERROR"):
+        stats = wrapper.poll_stats()
+
+    assert stats == (["sent-0"], ["received-2"], ["failed-0"])
+    assert "Raiden poll_stats failed for dp_rank=1" in caplog.text
+
+
+def test_rank_local_array_builds_real_views_for_each_data_rank():
+    devices = jax.local_devices()
+    if jax.process_count() != 1 or len(devices) < 2 or len(devices) % 2:
+        pytest.skip("requires an even number of locally addressable JAX devices")
+    mesh = Mesh(
+        np.asarray(devices).reshape(2, len(devices) // 2),
+        ("data", "tensor"),
+        axis_types=(AxisType.Explicit, AxisType.Explicit),
+    )
+    sharding = NamedSharding(mesh, PartitionSpec("data", None))
+    source = np.arange(32, dtype=np.int32).reshape(8, 4)
+    array = jax.device_put(source, sharding)
+
+    rank0 = _rank_local_array(array, dp_rank=0, dp_size=2)
+    rank1 = _rank_local_array(array, dp_rank=1, dp_size=2)
+
+    assert rank0.shape == rank1.shape == (4, 4)
+    np.testing.assert_array_equal(np.asarray(rank0), source[:4])
+    np.testing.assert_array_equal(np.asarray(rank1), source[4:])
+
+
+def test_rank_local_array_rejects_kv_replicated_across_data_axis():
+    devices = jax.local_devices()
+    if jax.process_count() != 1 or len(devices) < 2 or len(devices) % 2:
+        pytest.skip("requires an even number of locally addressable JAX devices")
+    mesh = Mesh(
+        np.asarray(devices).reshape(2, len(devices) // 2),
+        ("data", "tensor"),
+        axis_types=(AxisType.Explicit, AxisType.Explicit),
+    )
+    sharding = NamedSharding(mesh, PartitionSpec(None, None))
+    array = jax.device_put(np.arange(32, dtype=np.int32).reshape(8, 4), sharding)
+
+    with pytest.raises(ValueError, match="KV PartitionSpec"):
+        _rank_local_array(array, dp_rank=0, dp_size=2)

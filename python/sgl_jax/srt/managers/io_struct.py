@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from sgl_jax.srt.managers.schedule_batch import BaseFinishReason
-from sgl_jax.srt.multimodal.common.modality_enum import flatten_nested_list
+from sgl_jax.srt.multimodal.common.modality_enum import (
+    MultimodalInputs,
+    build_radix_input_ids,
+    flatten_nested_list,
+)
 
 # Handle serialization of Image for pydantic
 if TYPE_CHECKING:
@@ -140,6 +144,9 @@ class TokenizedGenerateReqInput:
     text: list[str] | str | None = None
     # The token ids for text; one can specify either text or input_ids
     input_ids: list[list[int]] | list[int] | None = None
+    # Canonical radix-cache identity. This equals input_ids for text requests
+    # and contains hash-substituted multimodal placeholder IDs otherwise.
+    radix_input_ids: list[list[int]] | list[int] = field(default_factory=list)
     # The sampling_params. See descriptions below.
     sampling_params: list[dict] | dict | None = None
     # Whether to return logprobs.
@@ -164,17 +171,36 @@ class TokenizedGenerateReqInput:
     # whether to return hidden states
     return_hidden_states: bool = False
     # multimodal inputs (e.g., mrope positions, embeddings)
-    mm_inputs: dict | None = None
-    # The data parallel rank for this request
+    mm_inputs: MultimodalInputs | dict | None = None
+    # Decode DP rank selected by request routing.
     dp_rank: int | None = None
     # PD disaggregation routing keys.
     bootstrap_host: str | None = None
     bootstrap_port: int | None = None
     bootstrap_room: int | None = None
+    # Prefill DP rank that owns this request's KV cache.
+    disagg_prefill_dp_rank: int | None = None
     # Optional wire-level transfer identity. When omitted we fall back
     # to ``rid``; callers that may reuse ``rid`` across retries should
     # provide a per-attempt value to isolate late acks.
     disagg_transfer_id: str | None = None
+
+    def __post_init__(self):
+        if not self.radix_input_ids and self.input_ids:
+            if isinstance(self.input_ids[0], int):
+                self.radix_input_ids = build_radix_input_ids(self.input_ids, self.mm_inputs)
+            else:
+                # Batched requests are expanded before scheduling. Preserve a
+                # canonical copy until then rather than aliasing model IDs.
+                self.radix_input_ids = copy.deepcopy(self.input_ids)
+
+        if (
+            self.input_ids
+            and isinstance(self.input_ids[0], int)
+            and self.radix_input_ids
+            and isinstance(self.radix_input_ids[0], int)
+        ):
+            assert len(self.input_ids) == len(self.radix_input_ids)
 
 
 @dataclass
@@ -315,10 +341,14 @@ class GenerateReqInput:
 
     return_routed_experts: list[bool] | bool | None = None
 
+    # Decode DP rank selected by request routing.
+    dp_rank: list[int] | int | None = None
+
     # PD disaggregation routing keys.
     bootstrap_host: list[str] | str | None = None
     bootstrap_port: list[int] | int | None = None
     bootstrap_room: list[int] | int | None = None
+    disagg_prefill_dp_rank: list[int] | int | None = None
     disagg_transfer_id: list[str] | str | None = None
 
     def contains_mm_input(self) -> bool:
@@ -410,6 +440,12 @@ class GenerateReqInput:
                 self.input_ids = [self.input_ids]
             if self.input_embeds is not None:
                 self.input_embeds = [self.input_embeds]
+            if self.image_data is not None:
+                self.image_data = [self.image_data]
+            if self.video_data is not None:
+                self.video_data = [self.video_data]
+            if self.audio_data is not None:
+                self.audio_data = [self.audio_data]
 
     def _normalize_batch_inputs(self):
         """Normalize inputs for a batch of examples, including parallel sampling expansion."""
@@ -545,6 +581,10 @@ class GenerateReqInput:
         return GenerateReqInput(
             text=self.text[i] if self.text is not None else None,
             input_ids=self.input_ids[i] if self.input_ids is not None else None,
+            input_embeds=self.input_embeds[i] if self.input_embeds is not None else None,
+            image_data=self.image_data[i] if self.image_data is not None else None,
+            video_data=self.video_data[i] if self.video_data is not None else None,
+            audio_data=self.audio_data[i] if self.audio_data is not None else None,
             sampling_params=self.sampling_params[i],
             rid=self.rid[i],
             return_logprob=self.return_logprob[i],
@@ -556,6 +596,7 @@ class GenerateReqInput:
             lora_path=self.lora_path[i] if self.lora_path is not None else None,
             lora_id=self.lora_id[i] if self.lora_id is not None else None,
             return_routed_experts=self.return_routed_experts[i],
+            dp_rank=self.dp_rank[i] if isinstance(self.dp_rank, list) else self.dp_rank,
             # PD disaggregation passthrough.
             # Supports both scalar and list shapes.
             bootstrap_host=(
@@ -572,6 +613,11 @@ class GenerateReqInput:
                 self.bootstrap_room[i]
                 if isinstance(self.bootstrap_room, list)
                 else self.bootstrap_room
+            ),
+            disagg_prefill_dp_rank=(
+                self.disagg_prefill_dp_rank[i]
+                if isinstance(self.disagg_prefill_dp_rank, list)
+                else self.disagg_prefill_dp_rank
             ),
             disagg_transfer_id=(
                 self.disagg_transfer_id[i]
@@ -683,8 +729,8 @@ class ProfileReqInput:
     num_steps: int | None = None
     # Sets the trace level for host-side activities.
     # 0: Disables host (CPU) tracing entirely.
-    # 1: Enables tracing of only user-instrumented TraceMe events (this is the default).
-    # 2: Includes level 1 traces plus high-level program execution details like expensive XLA operations.
+    # 1: Enables tracing of only user-instrumented TraceMe events.
+    # 2: Includes level 1 traces plus high-level program execution details like expensive XLA operations (this is the default).
     # 3: Includes level 2 traces plus more verbose, low-level program execution details such as cheap XLA operations.
     host_tracer_level: int | None = None
     # Controls whether Python tracing is enabled.

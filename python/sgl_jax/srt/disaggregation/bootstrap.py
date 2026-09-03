@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 import time
@@ -13,6 +14,12 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
+from pydantic import Field as PydanticField
+
+from sgl_jax.srt.disaggregation.base.transfer import (
+    chunk_transfer_id,
+    parse_chunk_transfer_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +27,15 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_TTL_SECONDS = 30.0
 # Beat at ~TTL/3 so a single missed beat doesn't evict the entry.
 HEARTBEAT_INTERVAL_SECONDS = HEARTBEAT_TTL_SECONDS / 3.0
+TRANSFER_METADATA_TTL_SECONDS = 300.0
+BOOTSTRAP_CAPABILITIES = ("transfer_metadata", "chunk_transfer_metadata")
 
 # PD wire protocol version. Bump when ``PrefillInfo``
 # or any of the 4 endpoint payloads change shape.
-PROTOCOL_VERSION: int = 1
-MIN_COMPATIBLE_VERSION: int = 1
+PROTOCOL_VERSION: int = 5
+# v5 changes request transfer metadata from a single descriptor into a
+# per-chunk envelope. Mixed v4/v5 P/D peers are therefore unsupported.
+MIN_COMPATIBLE_VERSION: int = PROTOCOL_VERSION
 
 
 def _set_registry_size(n: int) -> None:
@@ -53,11 +64,10 @@ class PrefillInfo:
     jax_process_index: int = 0
     jax_process_count: int = 1
     protocol_version: int = PROTOCOL_VERSION
-    # KV layout. Decode must match these or the transferred KV would be
-    # silently misinterpreted. Defaults (0 / "") mean "not reported" so a
-    # peer predating these fields skips the check.
     page_size: int = 0
     kv_dtype: str = ""
+    chunk_prefill_transfer: bool = False
+    transport_metadata: dict[str, object] = field(default_factory=lambda: {"engine": "jax"})
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -104,6 +114,10 @@ def check_prefill_compat(
     *,
     local_page_size: int,
     local_kv_dtype: str,
+    expected_transfer_engine: str | None = None,
+    expected_dp_rank: int | None = None,
+    expected_dp_size: int | None = None,
+    expected_chunk_prefill_transfer: bool | None = None,
 ) -> None:
     """Raise ``ValueError`` if the prefill peer's KV layout is incompatible.
 
@@ -126,6 +140,36 @@ def check_prefill_compat(
             f"kv_dtype={peer_kv_dtype!r} but this decode uses "
             f"kv_dtype={local_kv_dtype!r}; KV layout incompatible"
         )
+    transport_metadata = info.get("transport_metadata", {})
+    if isinstance(transport_metadata, dict) and "engine" in transport_metadata:
+        peer_engine = str(transport_metadata["engine"])
+    else:
+        peer_engine = str(info.get("transfer_engine", "jax"))
+    if expected_transfer_engine is not None and peer_engine != expected_transfer_engine:
+        raise ValueError(
+            f"PD transfer engine mismatch: prefill={peer_engine}, decode={expected_transfer_engine}"
+        )
+    peer_dp_rank = int(info.get("system_dp_rank", 0))
+    if expected_dp_rank is not None and peer_dp_rank != expected_dp_rank:
+        raise ValueError(
+            f"PD Prefill rank mismatch: prefill={peer_dp_rank}, expected={expected_dp_rank}"
+        )
+    peer_dp_size = int(
+        transport_metadata.get("dp_size", 1) if isinstance(transport_metadata, dict) else 1
+    )
+    if expected_dp_size is not None and peer_dp_size != expected_dp_size:
+        raise ValueError(
+            f"PD topology mismatch: prefill dp_size={peer_dp_size}, "
+            f"decode dp_size={expected_dp_size}"
+        )
+    if expected_chunk_prefill_transfer is not None:
+        peer_chunk_prefill_transfer = bool(info.get("chunk_prefill_transfer", False))
+        if peer_chunk_prefill_transfer != expected_chunk_prefill_transfer:
+            raise ValueError(
+                "PD chunk prefill transfer mismatch: "
+                f"prefill={peer_chunk_prefill_transfer}, "
+                f"decode={expected_chunk_prefill_transfer}"
+            )
 
 
 class RegisterPrefillRequest(BaseModel):
@@ -141,6 +185,23 @@ class RegisterPrefillRequest(BaseModel):
     protocol_version: int = PROTOCOL_VERSION
     page_size: int = 0
     kv_dtype: str = ""
+    chunk_prefill_transfer: bool = False
+    transport_metadata: dict[str, object] = PydanticField(default_factory=lambda: {"engine": "jax"})
+
+
+class RegisterTransferRequest(BaseModel):
+    bootstrap_room: int
+    transfer_id: str
+    base_transfer_id: str | None = None
+    jax_process_index: int = 0
+    prefill_dp_rank: int = 0
+    chunk_index: int = 0
+    # Request-level transfer is represented as one final chunk. Chunked
+    # prefill publishes zero until the final descriptor fixes the total.
+    num_chunks: int = 1
+    chunk_page_offset: int = 0
+    expected_total_pages: int = 0
+    transport_metadata: dict[str, object]
 
 
 class HeartbeatRequest(BaseModel):
@@ -160,6 +221,10 @@ class _Registry:
     lock: threading.Lock = field(default_factory=threading.Lock)
     ttl_seconds: float = HEARTBEAT_TTL_SECONDS
     clock: Callable[[], float] = time.monotonic
+    # A multi-host request has distinct physical page IDs on every P process.
+    transfers: dict[tuple[int, int, int], dict[str, object]] = field(default_factory=dict)
+    transfer_last_seen: dict[tuple[int, int, int], float] = field(default_factory=dict)
+    transfer_ttl_seconds: float = TRANSFER_METADATA_TTL_SECONDS
 
     def now(self) -> float:
         return self.clock()  # type: ignore[no-any-return]
@@ -202,14 +267,144 @@ class _Registry:
             self._evict_stale_locked()
             return list(self.prefills.values())
 
-    def pick_for_room(self, bootstrap_room: int) -> PrefillInfo | None:
+    def pick_for_room(self, bootstrap_room: int, dp_rank: int = 0) -> PrefillInfo | None:
         with self.lock:
             self._evict_stale_locked()
-            if not self.prefills:
+            matching = {
+                key: info
+                for key, info in self.prefills.items()
+                if info.system_dp_rank == int(dp_rank)
+            }
+            if not matching:
                 return None
-            keys = sorted(self.prefills.keys())
+            keys = sorted(matching)
             chosen = keys[bootstrap_room % len(keys)]
-            return self.prefills[chosen]
+            return matching[chosen]
+
+    def _evict_stale_transfers_locked(self) -> None:
+        cutoff = self.now() - self.transfer_ttl_seconds
+        stale = [key for key, seen_at in self.transfer_last_seen.items() if seen_at < cutoff]
+        for key in stale:
+            self.transfers.pop(key, None)
+            self.transfer_last_seen.pop(key, None)
+
+    def register_transfer(self, info: dict[str, object]) -> None:
+        with self.lock:
+            self._evict_stale_transfers_locked()
+            room = int(info["bootstrap_room"])
+            process_index = int(info.get("jax_process_index", 0))
+            prefill_dp_rank = int(info.get("prefill_dp_rank", 0))
+            if not str(info.get("transfer_id", "")):
+                raise ValueError("transfer_id must be non-empty")
+            transfer_id = str(info["transfer_id"])
+            base_transfer_id = str(info.get("base_transfer_id") or transfer_id)
+            chunk_index = int(info.get("chunk_index", 0))
+            num_chunks = int(info.get("num_chunks", 1))
+            chunk_page_offset = int(info.get("chunk_page_offset", 0))
+            expected_total_pages = int(info.get("expected_total_pages", 0))
+            if chunk_index < 0:
+                raise ValueError("chunk_index must be non-negative")
+            if chunk_page_offset < 0:
+                raise ValueError("chunk_page_offset must be non-negative")
+            if num_chunks < 0:
+                raise ValueError("num_chunks must be non-negative")
+            if expected_total_pages < 0:
+                raise ValueError("expected_total_pages must be non-negative")
+            if num_chunks and num_chunks != chunk_index + 1:
+                raise ValueError("the final chunk must publish num_chunks == chunk_index + 1")
+            if base_transfer_id == transfer_id:
+                expected_transfer_id = base_transfer_id
+            else:
+                parsed_base, parsed_index = parse_chunk_transfer_id(transfer_id)
+                if parsed_base != base_transfer_id or parsed_index != chunk_index:
+                    raise ValueError(
+                        "chunk transfer_id must match base_transfer_id and chunk_index: "
+                        f"base={base_transfer_id!r}, chunk_index={chunk_index}, "
+                        f"got={transfer_id!r}"
+                    )
+                expected_transfer_id = chunk_transfer_id(base_transfer_id, chunk_index)
+            if transfer_id != expected_transfer_id:
+                raise ValueError(
+                    "chunk transfer_id must match base_transfer_id and chunk_index: "
+                    f"expected={expected_transfer_id!r}, got={transfer_id!r}"
+                )
+            key = (room, process_index, prefill_dp_rank)
+            bundle = self.transfers.get(key)
+            if bundle is not None and bundle.get("base_transfer_id") != base_transfer_id:
+                if chunk_index != 0:
+                    raise ValueError(
+                        "a new transfer may replace room metadata only from chunk zero"
+                    )
+                bundle = None
+            if bundle is None:
+                if base_transfer_id != transfer_id and chunk_index != 0:
+                    raise ValueError("a chunk transfer bundle must be created from chunk zero")
+                bundle = {
+                    "base_transfer_id": base_transfer_id,
+                    "chunks": {},
+                    "num_chunks": 0,
+                    "expected_total_pages": expected_total_pages,
+                }
+                self.transfers[key] = bundle
+            chunks = bundle["chunks"]
+            assert isinstance(chunks, dict)
+            existing = chunks.get(chunk_index)
+            if existing is not None and existing != info:
+                raise ValueError(f"conflicting transfer metadata for chunk_index={chunk_index}")
+            known_total = int(bundle.get("num_chunks", 0))
+            if known_total and chunk_index >= known_total:
+                raise ValueError(
+                    f"chunk_index={chunk_index} is outside finalized num_chunks={known_total}"
+                )
+            if num_chunks and known_total not in (0, num_chunks):
+                raise ValueError(
+                    f"conflicting num_chunks: existing={known_total}, new={num_chunks}"
+                )
+            known_total_pages = int(bundle.get("expected_total_pages", 0))
+            if expected_total_pages and known_total_pages not in (0, expected_total_pages):
+                raise ValueError(
+                    "conflicting expected_total_pages: "
+                    f"existing={known_total_pages}, new={expected_total_pages}"
+                )
+            chunks[chunk_index] = dict(info)
+            if num_chunks:
+                bundle["num_chunks"] = num_chunks
+            if expected_total_pages:
+                bundle["expected_total_pages"] = expected_total_pages
+            self.transfer_last_seen[key] = self.now()
+
+    def get_transfer(
+        self,
+        bootstrap_room: int,
+        jax_process_index: int = 0,
+        prefill_dp_rank: int = 0,
+    ) -> dict[str, object] | None:
+        with self.lock:
+            self._evict_stale_transfers_locked()
+            info = self.transfers.get(
+                (int(bootstrap_room), int(jax_process_index), int(prefill_dp_rank))
+            )
+            return copy.deepcopy(info) if info is not None else None
+
+    def pop_room(
+        self,
+        bootstrap_room: int,
+        jax_process_index: int = 0,
+        prefill_dp_rank: int = 0,
+        expected_transfer_id: str | None = None,
+    ) -> bool:
+        with self.lock:
+            key = (int(bootstrap_room), int(jax_process_index), int(prefill_dp_rank))
+            bundle = self.transfers.get(key)
+            if (
+                expected_transfer_id is not None
+                and bundle is not None
+                and bundle.get("base_transfer_id") != expected_transfer_id
+            ):
+                return False
+            self.transfers.pop(key, None)
+            self.transfer_last_seen.pop(key, None)
+            return bundle is not None
 
 
 def build_app(
@@ -250,8 +445,12 @@ def build_app(
             return await call_next(request)
 
     @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health() -> dict[str, object]:
+        return {
+            "status": "ok",
+            "protocol_version": PROTOCOL_VERSION,
+            "capabilities": list(BOOTSTRAP_CAPABILITIES),
+        }
 
     @app.post("/register_prefill")
     def register_prefill(req: RegisterPrefillRequest) -> dict[str, str]:
@@ -278,14 +477,57 @@ def build_app(
         return {"prefills": [p.to_dict() for p in registry.list_all()]}
 
     @app.get("/get_prefill_info")
-    def get_prefill_info(bootstrap_room: int) -> dict[str, object]:
-        info = registry.pick_for_room(bootstrap_room)
+    def get_prefill_info(bootstrap_room: int, dp_rank: int = 0) -> dict[str, object]:
+        info = registry.pick_for_room(bootstrap_room, dp_rank)
         if info is None:
             raise HTTPException(
                 status_code=503,
                 detail="no prefill workers registered",
             )
         return info.to_dict()
+
+    @app.post("/register_transfer")
+    def register_transfer(req: RegisterTransferRequest) -> dict[str, str]:
+        try:
+            registry.register_transfer(req.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"status": "registered"}
+
+    @app.get("/get_transfer_info")
+    def get_transfer_info(
+        bootstrap_room: int,
+        jax_process_index: int = 0,
+        prefill_dp_rank: int = 0,
+    ) -> dict[str, object]:
+        info = registry.get_transfer(bootstrap_room, jax_process_index, prefill_dp_rank)
+        if info is None:
+            # Not registered yet: 404 lets the decode side treat it as
+            # "defer + retry" (never abort) rather than a hard error.
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"no transfer info for bootstrap_room={bootstrap_room}, "
+                    f"jax_process_index={jax_process_index}, "
+                    f"prefill_dp_rank={prefill_dp_rank}"
+                ),
+            )
+        return info
+
+    @app.post("/pop_transfer")
+    def pop_transfer(
+        bootstrap_room: int,
+        jax_process_index: int = 0,
+        prefill_dp_rank: int = 0,
+        expected_transfer_id: str | None = None,
+    ) -> dict[str, str]:
+        registry.pop_room(
+            bootstrap_room,
+            jax_process_index,
+            prefill_dp_rank,
+            expected_transfer_id,
+        )
+        return {"status": "popped"}
 
     # Bootstrap runs as a standalone single process and does NOT inherit
     # PROMETHEUS_MULTIPROC_DIR, so it exposes its own default-registry
@@ -390,7 +632,7 @@ class BootstrapServer:
                 last_err = e
             time.sleep(0.05)
         raise TimeoutError(
-            f"BootstrapServer did not become ready within {timeout_s}s " f"(last error: {last_err})"
+            f"BootstrapServer did not become ready within {timeout_s}s (last error: {last_err})"
         )
 
 
@@ -432,6 +674,16 @@ class BootstrapClient:
         r = self._client.get(f"{self._base_url}/health", timeout=self._timeout_s)
         return r.status_code == 200
 
+    def require_capability(self, capability: str) -> None:
+        r = self._client.get(f"{self._base_url}/health", timeout=self._timeout_s)
+        r.raise_for_status()
+        capabilities = r.json().get("capabilities", [])
+        if capability not in capabilities:
+            raise RuntimeError(
+                f"bootstrap at {self._base_url} does not advertise required "
+                f"capability {capability!r}; upgrade the bootstrap service"
+            )
+
     def register_prefill(
         self,
         bootstrap_key: str,
@@ -447,6 +699,8 @@ class BootstrapClient:
         protocol_version: int = PROTOCOL_VERSION,
         page_size: int = 0,
         kv_dtype: str = "",
+        chunk_prefill_transfer: bool = False,
+        transport_metadata: dict[str, object] | None = None,
     ) -> None:
         payload = {
             "bootstrap_key": bootstrap_key,
@@ -461,6 +715,8 @@ class BootstrapClient:
             "protocol_version": protocol_version,
             "page_size": page_size,
             "kv_dtype": kv_dtype,
+            "chunk_prefill_transfer": bool(chunk_prefill_transfer),
+            "transport_metadata": transport_metadata or {"engine": "jax"},
         }
         last_err: Exception | None = None
         for attempt in range(self._register_retries):
@@ -477,8 +733,7 @@ class BootstrapClient:
                 last_err = e
                 if attempt + 1 < self._register_retries:
                     logger.warning(
-                        "bootstrap register_prefill attempt %d/%d "
-                        "failed (%s); retrying in %.1fs",
+                        "bootstrap register_prefill attempt %d/%d failed (%s); retrying in %.1fs",
                         attempt + 1,
                         self._register_retries,
                         e,
@@ -486,8 +741,7 @@ class BootstrapClient:
                     )
                     time.sleep(self._register_retry_delay_s)
         raise RuntimeError(
-            f"bootstrap register_prefill failed after "
-            f"{self._register_retries} attempts: {last_err}"
+            f"bootstrap register_prefill failed after {self._register_retries} attempts: {last_err}"
         )
 
     def heartbeat(self, bootstrap_key: str) -> None:
@@ -517,10 +771,10 @@ class BootstrapClient:
         r.raise_for_status()
         return r.json()["prefills"]
 
-    def get_prefill_info(self, bootstrap_room: int) -> dict[str, object]:
+    def get_prefill_info(self, bootstrap_room: int, dp_rank: int = 0) -> dict[str, object]:
         r = self._client.get(
             f"{self._base_url}/get_prefill_info",
-            params={"bootstrap_room": bootstrap_room},
+            params={"bootstrap_room": bootstrap_room, "dp_rank": dp_rank},
             timeout=self._timeout_s,
             headers=self._headers(),
         )
@@ -529,6 +783,85 @@ class BootstrapClient:
         # Reject peers below the supported protocol floor.
         _reject_if_below_protocol_floor(info)
         return info
+
+    def register_transfer(
+        self,
+        bootstrap_room: int,
+        transfer_id: str,
+        *,
+        base_transfer_id: str | None = None,
+        jax_process_index: int = 0,
+        prefill_dp_rank: int = 0,
+        chunk_index: int = 0,
+        num_chunks: int = 1,
+        chunk_page_offset: int = 0,
+        expected_total_pages: int = 0,
+        transport_metadata: dict[str, object],
+    ) -> None:
+        payload = {
+            "bootstrap_room": bootstrap_room,
+            "transfer_id": transfer_id,
+            "base_transfer_id": base_transfer_id or transfer_id,
+            "jax_process_index": jax_process_index,
+            "prefill_dp_rank": prefill_dp_rank,
+            "chunk_index": chunk_index,
+            "num_chunks": num_chunks,
+            "chunk_page_offset": chunk_page_offset,
+            "expected_total_pages": expected_total_pages,
+            "transport_metadata": transport_metadata,
+        }
+        r = self._client.post(
+            f"{self._base_url}/register_transfer",
+            json=payload,
+            timeout=self._timeout_s,
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+
+    def get_transfer_info(
+        self,
+        bootstrap_room: int,
+        *,
+        jax_process_index: int = 0,
+        prefill_dp_rank: int = 0,
+    ) -> dict[str, object] | None:
+        r = self._client.get(
+            f"{self._base_url}/get_transfer_info",
+            params={
+                "bootstrap_room": bootstrap_room,
+                "jax_process_index": jax_process_index,
+                "prefill_dp_rank": prefill_dp_rank,
+            },
+            timeout=self._timeout_s,
+            headers=self._headers(),
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
+
+    def pop_transfer(
+        self,
+        bootstrap_room: int,
+        *,
+        jax_process_index: int = 0,
+        prefill_dp_rank: int = 0,
+        expected_transfer_id: str | None = None,
+    ) -> None:
+        params: dict[str, object] = {
+            "bootstrap_room": bootstrap_room,
+            "jax_process_index": jax_process_index,
+            "prefill_dp_rank": prefill_dp_rank,
+        }
+        if expected_transfer_id is not None:
+            params["expected_transfer_id"] = expected_transfer_id
+        r = self._client.post(
+            f"{self._base_url}/pop_transfer",
+            params=params,
+            timeout=self._timeout_s,
+            headers=self._headers(),
+        )
+        r.raise_for_status()
 
 
 class PrefillInfoCache:
@@ -568,13 +901,18 @@ class PrefillInfoCache:
         self._sorted_keys = sorted(by_key)
         self._last_refresh = self._clock()
 
-    def _pick_locked(self, bootstrap_room: int) -> dict[str, object] | None:
-        if not self._sorted_keys:
+    def _pick_locked(self, bootstrap_room: int, dp_rank: int = 0) -> dict[str, object] | None:
+        keys = [
+            key
+            for key in self._sorted_keys
+            if int(self._by_key[key].get("system_dp_rank", 0)) == int(dp_rank)
+        ]
+        if not keys:
             return None
-        chosen = self._sorted_keys[bootstrap_room % len(self._sorted_keys)]
+        chosen = keys[bootstrap_room % len(keys)]
         return self._by_key[chosen]
 
-    def pick_for_room(self, bootstrap_room: int) -> dict[str, object] | None:
+    def pick_for_room(self, bootstrap_room: int, dp_rank: int = 0) -> dict[str, object] | None:
         """Return prefill info for ``bootstrap_room``, or ``None`` if no
         prefill is registered yet (caller should defer + retry).
 
@@ -610,7 +948,7 @@ class PrefillInfoCache:
                             len(self._sorted_keys),
                             exc,
                         )
-            info = self._pick_locked(bootstrap_room)
+            info = self._pick_locked(bootstrap_room, dp_rank)
         if info is None:
             return None
         _reject_if_below_protocol_floor(info)
@@ -626,11 +964,15 @@ class HeartbeatDaemon:
     def __init__(
         self,
         client: BootstrapClient,
-        bootstrap_key: str,
+        bootstrap_keys: str | list[str],
         interval_s: float = HEARTBEAT_INTERVAL_SECONDS,
     ) -> None:
         self._client = client
-        self._bootstrap_key = bootstrap_key
+        self._bootstrap_keys = (
+            [bootstrap_keys] if isinstance(bootstrap_keys, str) else list(bootstrap_keys)
+        )
+        if not self._bootstrap_keys:
+            raise ValueError("HeartbeatDaemon requires at least one bootstrap key")
         self._interval_s = interval_s
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -642,7 +984,7 @@ class HeartbeatDaemon:
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._loop,
-            name=f"BootstrapHeartbeat-{self._bootstrap_key}",
+            name=f"BootstrapHeartbeat-{self._bootstrap_keys[0]}",
             daemon=True,
         )
         self._thread.start()
@@ -659,12 +1001,16 @@ class HeartbeatDaemon:
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
+            self._heartbeat_once()
+            self._stop_event.wait(self._interval_s)
+
+    def _heartbeat_once(self) -> None:
+        for bootstrap_key in self._bootstrap_keys:
             try:
-                self._client.heartbeat(self._bootstrap_key)
+                self._client.heartbeat(bootstrap_key)
             except Exception:
                 logger.warning(
                     "bootstrap heartbeat for %s failed; will retry",
-                    self._bootstrap_key,
+                    bootstrap_key,
                     exc_info=True,
                 )
-            self._stop_event.wait(self._interval_s)

@@ -221,13 +221,9 @@ class RotaryEmbedding:
     ) -> tuple[jax.Array, jax.Array]:
         positions = positions.flatten()  # [num_tokens]
 
-        inv_freq = jnp.asarray(self._inv_freq_np, dtype=self.dtype)
-
-        # Compute freqs = positions * inv_freq
-        freqs = jnp.einsum("n,d->nd", positions.astype(jnp.float32), inv_freq)
-
-        cos = jnp.cos(freqs).astype(self.dtype)
-        sin = jnp.sin(freqs).astype(self.dtype)
+        cos, sin = self._compute_cos_sin(positions)
+        cos = cos.astype(self.dtype)
+        sin = sin.astype(self.dtype)
 
         query_shape = query.shape
         num_tokens = positions.shape[0]
@@ -251,6 +247,12 @@ class RotaryEmbedding:
             key = key_rot.reshape(key_shape)
 
         return query, key
+
+    def _compute_cos_sin(self, positions: jax.Array) -> tuple[jax.Array, jax.Array]:
+        """Compute RoPE phases in float32 before casting to the model dtype."""
+        inv_freq = jnp.asarray(self._inv_freq_np, dtype=jnp.float32)
+        freqs = positions.astype(jnp.float32)[..., None] * inv_freq
+        return jnp.cos(freqs), jnp.sin(freqs)
 
     def _compute_inv_freq(self, base: int | float) -> jax.Array:
         """Compute the inverse frequency."""
@@ -391,14 +393,11 @@ class MRotaryEmbedding(RotaryEmbedding):
         # positions: [3, num_tokens]
         num_tokens = positions.shape[-1]
 
-        # 1. Compute Cos/Sin for all 3 dimensions
-        inv_freq = jnp.asarray(self._inv_freq_np, dtype=self.dtype)
-
-        # freqs: [3, num_tokens, rotary_dim // 2]
-        freqs = jnp.einsum("cn,d->cnd", positions.astype(jnp.float32), inv_freq)
-
-        cos_all = jnp.cos(freqs).astype(self.dtype)
-        sin_all = jnp.sin(freqs).astype(self.dtype)
+        # Compute all three axes in float32, then cast the resulting
+        # trigonometric values to the model dtype.
+        cos_all, sin_all = self._compute_cos_sin(positions)
+        cos_all = cos_all.astype(self.dtype)
+        sin_all = sin_all.astype(self.dtype)
 
         if self.mrope_interleaved:
             # --- Interleaved Mode ---
@@ -660,11 +659,27 @@ def get_rope(
             raise ValueError("Unknown RoPE scaling type")
 
         if scaling_type == "default":
-            # HF transformers uses rope_type="default" to mean "no scaling",
-            # equivalent to rope_scaling=None.  Fall back to plain RotaryEmbedding.
-            rotary_emb = RotaryEmbedding(
-                head_size, rotary_dim, max_position, base, is_neox_style, dtype
-            )
+            if "mrope_section" in rope_scaling:
+                # Qwen2.5-VL / Omni: HF config is rope_type="default" plus an
+                # mrope_section -> multimodal sectioned RoPE. Aligns upstream
+                # get_rope (the model/attention stay mrope-agnostic; the 3D
+                # positions come from forward_batch.mrope_positions).
+                rotary_emb = MRotaryEmbedding(
+                    head_size,
+                    rotary_dim,
+                    max_position,
+                    base,
+                    is_neox_style,
+                    dtype,
+                    mrope_section=rope_scaling["mrope_section"],
+                    mrope_interleaved=rope_scaling.get("mrope_interleaved", False),
+                )
+            else:
+                # HF transformers uses rope_type="default" to mean "no scaling",
+                # equivalent to rope_scaling=None.  Fall back to plain RotaryEmbedding.
+                rotary_emb = RotaryEmbedding(
+                    head_size, rotary_dim, max_position, base, is_neox_style, dtype
+                )
         elif scaling_type == "proportional":
             rotary_emb = ProportionalRotaryEmbedding(
                 head_size,
@@ -829,11 +844,9 @@ class YarnRotaryEmbedding(RotaryEmbedding):
     ) -> tuple[jax.Array, jax.Array]:
         positions = positions.flatten()
 
-        inv_freq = jnp.asarray(self._inv_freq_np, dtype=self.dtype)
-        freqs = jnp.einsum("n,d->nd", positions.astype(jnp.float32), inv_freq)
-
-        cos = (jnp.cos(freqs) * self._rope_mscale).astype(self.dtype)
-        sin = (jnp.sin(freqs) * self._rope_mscale).astype(self.dtype)
+        cos, sin = self._compute_cos_sin(positions)
+        cos = (cos * self._rope_mscale).astype(self.dtype)
+        sin = (sin * self._rope_mscale).astype(self.dtype)
 
         query_shape = query.shape
         num_tokens = positions.shape[0]

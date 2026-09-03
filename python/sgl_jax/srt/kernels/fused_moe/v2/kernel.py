@@ -91,8 +91,8 @@ def get_dtype_packing(dtype):
 def swigluoai(
     gate: jax.Array, up: jax.Array, *, alpha: float = 1.702, limit: float = 7.0
 ) -> jax.Array:
-    gate = jnp.clip(gate, a_max=limit)
-    up = jnp.clip(up, a_min=-limit, a_max=limit)
+    gate = jnp.clip(gate, max=limit)
+    up = jnp.clip(up, min=-limit, max=limit)
     glu = gate * jax.nn.sigmoid(alpha * gate)
     return (up + 1.0) * glu
 
@@ -111,8 +111,8 @@ def activation_fn(acc1, acc3, act_fn, swiglu_limit=None):
     # single-sided and the up branch double-sided before the multiply. None =
     # disabled (default), preserving prior behavior bit-for-bit.
     if swiglu_limit is not None:
-        act = jnp.clip(act, a_max=swiglu_limit)
-        acc3 = jnp.clip(acc3, a_min=-swiglu_limit, a_max=swiglu_limit)
+        act = jnp.clip(act, max=swiglu_limit)
+        acc3 = jnp.clip(acc3, min=-swiglu_limit, max=swiglu_limit)
     return act * acc3
 
 
@@ -290,6 +290,7 @@ def _fused_ep_moe_kernel(
     n_active_x2_smem,  # (smem_banks, 1) — compact loop
     a2a_s_sends_x2_smem,  # (expert_buffer_count,) or (2, expert_buffer_count)
     # --- VMEM scratch ---
+    d2e_count_x2_vmem,  # (2, num_devices, 1, padded_num_experts)
     a2a_g_acc_vmem,  # (2, top_k, acc_bt, t_packing, h_per_t)
     b_topk_weights_x2_vmem,  # (2, bt, padded_top_k)
     b_topk_ids_x2_vmem,  # (2, bt, padded_top_k)
@@ -326,8 +327,8 @@ def _fused_ep_moe_kernel(
     gather_send_x2_sems,  # DMA(expert_buffer_count,)
     a2a_gather_sem,  # DMA (num_experts,) — per-expert gather recv
     a2a_acc_sems,  # DMA(1,)
-    md_send_sem,  # DMA scalar
-    md_recv_sem,  # DMA scalar
+    md_send_sems,  # (2,) — one DMA semaphore per metadata mailbox bank
+    md_recv_sems,  # (2,) — one DMA semaphore per metadata mailbox bank
     barrier_sem,  # BARRIER
     *,
     # Static params
@@ -339,7 +340,7 @@ def _fused_ep_moe_kernel(
     shared_swiglu_limit: float | None = None,
     enable_bt_scatter_overlap: bool = True,
     cross_expert_prefetch_mode: str = "full",
-    interleave_bt: bool = True,
+    fixed_gather_banks: int | None = 2,
     direct_scaled_dot: bool = False,
     bt: int,
     bf: int,
@@ -361,9 +362,16 @@ def _fused_ep_moe_kernel(
     assert local_num_tokens % bt == 0
     num_bt = local_num_tokens // bt
     use_bt_scatter_bank = enable_bt_scatter_overlap and num_bt > 1
-    use_gather_bank = interleave_bt and num_bt > 1
+    use_gather_bank = num_bt > 1
     use_bt_banking = use_bt_scatter_bank or use_gather_bank
-    num_bt_banks = num_bt if use_gather_bank else (2 if use_bt_scatter_bank else 1)
+    use_fixed_gather_banks = (
+        use_gather_bank and fixed_gather_banks is not None and fixed_gather_banks < num_bt
+    )
+    _gather_bank_count = fixed_gather_banks if use_fixed_gather_banks else num_bt
+    num_bt_banks = _gather_bank_count if use_gather_bank else (2 if use_bt_scatter_bank else 1)
+    # Km (metadata/topk depth) read from the metadata SMEM alloc: Km=K+1 on the
+    # fixed path, else == num_bt_banks. Keeps inner/outer bank depths in sync.
+    smem_banks = t2e_routing_x2_smem.shape[0] if use_gather_bank else 2
     if use_bt_banking:
         expert_buffer_count = a2a_s_x2_hbm.shape[1]
         a2a_max_tokens = a2a_s_x2_hbm.shape[2]
@@ -447,12 +455,12 @@ def _fused_ep_moe_kernel(
 
     def a2a_bank_for_bt(bt_id):
         if use_gather_bank:
-            return bt_id
+            return bt_id % num_bt_banks
         return bt_id & jnp.int32(1)
 
     def bt_bank_id(bt_id):
         if use_gather_bank:
-            return bt_id
+            return bt_id % smem_banks
         return bt_id & jnp.int32(1)
 
     def a2a_s_ref(a2a_bank_id, e_sem_id, start, size):
@@ -504,12 +512,12 @@ def _fused_ep_moe_kernel(
     @jax.named_scope("sync_barrier")
     def sync_barrier():
         for i in range(num_devices):
-            pltpu.semaphore_signal(
+            pl.semaphore_signal(
                 barrier_sem,
                 device_id=get_mesh_device_id(i),
-                device_id_type=pltpu.DeviceIdType.MESH,
+                device_id_type=pl.DeviceIdType.MESH,
             )
-        pltpu.semaphore_wait(barrier_sem, num_devices)
+        pl.semaphore_wait(barrier_sem, num_devices)
 
     # ===== Topk fetch/wait =====
     @jax.named_scope("topk_fetch")
@@ -548,10 +556,19 @@ def _fused_ep_moe_kernel(
 
         offsets_sem = local_sems.at[bt_sem_id, 8]
         routing_sem = local_sems.at[bt_sem_id, 9]
+        # Keep the direct-all-gather mailbox alive for the full kernel. Two
+        # banks are sufficient: before a rank can start metadata generation
+        # N+2, it must receive generation N+1 from every peer, which means
+        # every peer has already finished consuming generation N. The DMA
+        # semaphores must use the same bank so an N+1 completion cannot satisfy
+        # an N wait while ranks progress at different speeds.
+        md_bank_id = bt_id & jnp.int32(1)
+        d2e_count_vmem = d2e_count_x2_vmem.at[md_bank_id]
+        md_send_sem = md_send_sems.at[md_bank_id]
+        md_recv_sem = md_recv_sems.at[md_bank_id]
 
         def _inkernel_allreduce(
             t2e_routing_vmem,
-            d2e_count_vmem,
             offsets_vmem,
             starts_vmem,
             sizes_vmem,
@@ -585,10 +602,10 @@ def _fused_ep_moe_kernel(
                 keepdims=True,
             ).reshape(1, padded_num_experts)
 
-            d2e_count_vmem[...] = jnp.zeros_like(d2e_count_vmem)
+            # Every peer writes its complete histogram row before the reduction,
+            # so no receiver-side initialization is needed. Clearing the full
+            # bank here is racy: a faster peer may already have written its row.
             d2e_count_vmem[my_id] = local_sizes
-
-            sync_barrier()
 
             # Metadata all-reduce = 1-round direct all-gather of per-device
             # histogram rows via fori_loop + dynamic device_id. No static unroll
@@ -605,7 +622,7 @@ def _fused_ep_moe_kernel(
                     send_sem=md_send_sem,
                     recv_sem=md_recv_sem,
                     device_id=get_mesh_device_id(peer_id),
-                    device_id_type=pltpu.DeviceIdType.MESH,
+                    device_id_type=pl.DeviceIdType.MESH,
                 ).start()
                 return None
 
@@ -620,7 +637,6 @@ def _fused_ep_moe_kernel(
                 return None
 
             lax.fori_loop(1, num_devices, _md_drain, None, unroll=False)
-            sync_barrier()
 
             reduced_sizes = jnp.zeros((1, padded_num_experts), dtype=jnp.int32)
             reduced_starts = jnp.zeros((1, padded_num_experts), dtype=jnp.int32)
@@ -661,7 +677,6 @@ def _fused_ep_moe_kernel(
         pl.run_scoped(
             _inkernel_allreduce,
             pltpu.VMEM(t2e_routing_x2_smem.shape[1:], t2e_routing_x2_smem.dtype),
-            pltpu.VMEM(d2e_count_x2_smem.shape[1:], d2e_count_x2_smem.dtype),
             pltpu.VMEM(expert_offsets_x2_smem.shape[1:], expert_offsets_x2_smem.dtype),
             pltpu.VMEM(expert_starts_x2_smem.shape[1:], expert_starts_x2_smem.dtype),
             pltpu.VMEM(expert_sizes_x2_smem.shape[1:], expert_sizes_x2_smem.dtype),
@@ -726,7 +741,7 @@ def _fused_ep_moe_kernel(
                             send_sem=scatter_send_sem(a2a_bank_id, e_sem_id_k),
                             recv_sem=scatter_recv_sem(a2a_bank_id, e_sem_id_k),
                             device_id=get_mesh_device_id(recv_id),
-                            device_id_type=pltpu.DeviceIdType.MESH,
+                            device_id_type=pl.DeviceIdType.MESH,
                         ).start()
 
             return None
@@ -822,7 +837,7 @@ def _fused_ep_moe_kernel(
                         send_sem=gather_send_sem_ref(gather_bank_id, e_sem_id),
                         recv_sem=a2a_gather_sem_ref(gather_bank_id),
                         device_id=get_mesh_device_id(recv_id),
-                        device_id_type=pltpu.DeviceIdType.MESH,
+                        device_id_type=pl.DeviceIdType.MESH,
                     ).start()
 
             start += sz
@@ -1314,6 +1329,45 @@ def _fused_ep_moe_kernel(
                         wait_fetch_w3(slot)
 
                         def gate_up_btc_direct(btc_id, ___):
+                            if per_channel and enable_act_quant:
+                                # per-channel scale is whole-K (p_id-invariant), so
+                                # fold it OUT of the t_packing loop: accumulate raw
+                                # f32 dots across the K-slices, apply per-token ×
+                                # per-channel scale ONCE (saves ~3/4 of FFN1's VPU
+                                # scale-muls). n_sg==1 here. Math-identical
+                                # (Σ d·s == (Σ d)·s); f32 rounding within tol.
+                                g_raw = jnp.zeros((btc, bf), dtype=jnp.float32)
+                                u_raw = jnp.zeros((btc, bf), dtype=jnp.float32)
+                                for p_id in range(t_packing):
+                                    x_slice = b_x_vmem[
+                                        pl.ds(btc_id * btc, btc), p_id, pl.ds(0, ffn1_qbk)
+                                    ]
+                                    w1_tile = b_w1_x2_vmem[
+                                        slot, p_id, pl.ds(0, ffn1_qbk), pl.ds(0, bf)
+                                    ]
+                                    w3_tile = b_w3_x2_vmem[
+                                        slot, p_id, pl.ds(0, ffn1_qbk), pl.ds(0, bf)
+                                    ]
+                                    g_raw = g_raw + jnp.dot(
+                                        x_slice, w1_tile, preferred_element_type=jnp.float32
+                                    )
+                                    u_raw = u_raw + jnp.dot(
+                                        x_slice, w3_tile, preferred_element_type=jnp.float32
+                                    )
+                                x_s = b_x_scale_vmem[pl.ds(btc_id * btc, btc), pl.ds(0, 1)]
+                                s1 = b_w1_scale_x2_vmem[
+                                    slot, 0, pl.ds(0, 1), 0, pl.ds(0, bf)
+                                ].reshape(bf)
+                                s3 = b_w3_scale_x2_vmem[
+                                    slot, 0, pl.ds(0, 1), 0, pl.ds(0, bf)
+                                ].reshape(bf)
+                                b_gate_acc_vmem.at[pl.ds(btc_id * btc, btc), pl.ds(0, bf)][...] = (
+                                    g_raw * (x_s * s1[jnp.newaxis, :])
+                                )
+                                b_up_acc_vmem.at[pl.ds(btc_id * btc, btc), pl.ds(0, bf)][...] = (
+                                    u_raw * (x_s * s3[jnp.newaxis, :])
+                                )
+                                return None
                             gate = jnp.zeros((btc, bf), dtype=jnp.float32)
                             up = jnp.zeros((btc, bf), dtype=jnp.float32)
                             with jax.named_scope("ffn1_gate_up"):
@@ -1701,18 +1755,18 @@ def _fused_ep_moe_kernel(
 
     @jax.named_scope("output_store")
     def start_send_bo(*, bt_id, priority=0):
-        bt_sem_id = bt_bank_id(bt_id)
+        out_buf_id = a2a_bank_for_bt(bt_id)  # b_output + store sem are K-deep
         bt_start = bt_id * bt
         pltpu.make_async_copy(
-            src_ref=b_output_x2_vmem.at[bt_sem_id],
+            src_ref=b_output_x2_vmem.at[out_buf_id],
             dst_ref=output_hbm.at[pl.ds(bt_start, bt)],
-            sem=local_sems.at[bt_sem_id, 7],
+            sem=local_sems.at[out_buf_id, 7],
         ).start(priority=priority)
 
     @jax.named_scope("output_store_wait")
     def wait_store_output(*, bt_id):
         is_valid = jnp.logical_and(bt_id >= 0, bt_id < num_bt)
-        bt_sem_id = bt_bank_id(bt_id)
+        out_buf_id = a2a_bank_for_bt(bt_id)  # b_output + store sem are K-deep
 
         @pl.when(is_valid)
         def _():
@@ -1721,7 +1775,7 @@ def _fused_ep_moe_kernel(
             pltpu.make_async_copy(
                 src_ref=ref,
                 dst_ref=ref,
-                sem=local_sems.at[bt_sem_id, 7],
+                sem=local_sems.at[out_buf_id, 7],
             ).wait()
 
     # ===== Shared expert (reads weights directly from HBM refs) =====
@@ -2003,20 +2057,10 @@ def _fused_ep_moe_kernel(
     def run_bt(bt_id, e_sem_id, *, skip_post_gather=False):
         bt_start = bt_id * bt
         bt_sem_id = bt_bank_id(bt_id)
-        gather_bank_id = bt_id
+        gather_bank_id = a2a_bank_for_bt(bt_id)
         next_bt_id = bt_id + jnp.int32(1)
         a2a_bank_id = a2a_bank_for_bt(bt_id)
-        out_buf_id = bt_bank_id(bt_id)
-
-        @pl.when(next_bt_id < num_bt)
-        def _():
-            start_fetch_topk(bt_id=next_bt_id)
-            if use_per_bt_prequant:
-                prequant_bt(next_bt_id)
-
-        current_bt_scatter_prefetched = jnp.logical_and(
-            can_bt_scatter_overlap, bt_id > jnp.int32(0)
-        )
+        out_buf_id = a2a_bank_for_bt(bt_id)  # b_output is K-deep (%K); metadata/topk %Km
 
         def prepare_bt_metadata(_bt_id, _bt_sem_id):
             wait_fetch_topk(bt_id=_bt_id)
@@ -2026,6 +2070,17 @@ def _fused_ep_moe_kernel(
                 bt_sem_id=_bt_sem_id,
                 t2e_routing=_t2e_routing,
             )
+
+        # 1-ahead topk prefetch then prequant for next.
+        @pl.when(next_bt_id < num_bt)
+        def _():
+            start_fetch_topk(bt_id=next_bt_id)
+            if use_per_bt_prequant:
+                prequant_bt(next_bt_id)
+
+        current_bt_scatter_prefetched = jnp.logical_and(
+            can_bt_scatter_overlap, bt_id > jnp.int32(0)
+        )
 
         if can_bt_scatter_overlap:
 
@@ -2058,6 +2113,14 @@ def _fused_ep_moe_kernel(
             @pl.when(next_bt_id < num_bt)
             def _():
                 prepare_bt_metadata(next_bt_id, next_bt_sem_id)
+                if use_fixed_gather_banks:
+                    # Reuse of a2a scatter bank (next%K): drain block (next-K)'s
+                    # outbound send before overwriting the payload HBM. Metadata
+                    # lives on the separate Km bank (next%Km), covered by Km depth.
+                    @pl.when(next_bt_id >= jnp.int32(num_bt_banks))
+                    def _():
+                        wait_a2a_scatter_send_batch(a2a_bank_id=next_a2a_bank_id)
+
                 start_a2a_scatter_batch(
                     bt_sem_id=next_bt_sem_id,
                     bt_start=next_bt_start,
@@ -2220,6 +2283,69 @@ def _fused_ep_moe_kernel(
             pltpu.SemaphoreType.DMA,
         )
 
+    if use_gather_bank and use_fixed_gather_banks:
+        # ---- Fixed-K single K-deep software pipeline ----
+        # Only K gather banks are live (not num_bt), decoupling gather-overlap
+        # SMEM/VMEM/HBM/sems from token count. Each iteration i first drains
+        # block i-K (freeing bank i%K), then fires block i into that same bank.
+        # All 1-ahead prefetches (topk, scatter) are disabled on this path, so
+        # fire(i) never writes bank (i+1)%K => K_min=2.
+        K = num_bt_banks  # gather/output/scatter depth; metadata/topk = smem_banks = K+1
+
+        def _drain(j):
+            bt_sem_id = bt_bank_id(j)  # metadata/topk %Km
+            gather_bank_id = a2a_bank_for_bt(j)  # %K
+            a2a_bank_id = a2a_bank_for_bt(j)  # %K
+            out_buf_id = a2a_bank_for_bt(j)  # b_output %K
+            # scatter-send drain moved to fire's reuse-wait (before it re-scatters
+            # this a2a bank); re-waiting here would double-consume the send sem.
+            wait_a2a_gather_recv_all(bt_sem_id=bt_sem_id, gather_bank_id=gather_bank_id)
+            # Free b_output bank (j-K)%K == j%K before acc overwrites it: the
+            # prior occupant (block j-K)'s async store DMA must have drained.
+            # wait_store_output's internal is_valid no-ops j-K<0.
+            wait_store_output(bt_id=j - jnp.int32(K))
+            acc_and_store_output(
+                bt_sem_id=bt_sem_id, out_buf_id=out_buf_id, gather_bank_id=gather_bank_id
+            )
+            sync_barrier()
+            start_send_bo(bt_id=j)
+            tail_start = max(local_num_experts - expert_buffer_count, 0)
+            for tail_e_id in range(tail_start, local_num_experts):
+                wait_a2a_gather_send(
+                    bt_sem_id=bt_sem_id,
+                    e_sem_id=tail_e_id,
+                    local_e_id=tail_e_id,
+                    a2a_bank_id=a2a_bank_id,
+                    gather_bank_id=gather_bank_id,
+                )
+
+        def _pipe_body(i, e_sem_id):
+            @pl.when(i >= jnp.int32(K))
+            def _():
+                _drain(i - jnp.int32(K))
+
+            # Fire block i (i<num_bt); thread e_sem_id carry via lax.cond so the
+            # tail iterations (i>=num_bt, drain-only) leave it unchanged.
+            e_sem_id = lax.cond(
+                i < jnp.int32(num_bt),
+                lambda es: run_bt(i, es, skip_post_gather=True),
+                lambda es: es,
+                e_sem_id,
+            )
+            return e_sem_id
+
+        lax.fori_loop(0, num_bt + K, _pipe_body, jnp.int32(0), unroll=False)
+
+        # Tail: drain the last K blocks' async work that no later iteration
+        # reaches — output stores (never re-waited) AND scatter sends (their a2a
+        # bank is never reused, so fire's reuse-wait never drains them). Missing
+        # the scatter-send drain leaves its send sem nonzero -> Mosaic core-halt.
+        for _t in range(K):
+            _tail_bt = jnp.int32(num_bt - K + _t)
+            wait_store_output(bt_id=_tail_bt)
+            wait_a2a_scatter_send_batch(a2a_bank_id=a2a_bank_for_bt(_tail_bt))
+        return
+
     if use_gather_bank:
 
         def _run_bt_expert_only(bt_id, e_sem_id):
@@ -2289,7 +2415,7 @@ def _fused_ep_moe_kernel(
         "quant_block_k",
         "direct_scaled_dot",
         "cross_expert_prefetch_mode",
-        "interleave_bt",
+        "fixed_gather_banks",
         "enable_act_quant",
     ],
 )
@@ -2326,7 +2452,12 @@ def fused_ep_moe_v2(
     block_config: FusedMoEBlockConfig | None = None,
     direct_scaled_dot: bool = False,
     cross_expert_prefetch_mode: str = "full",
-    interleave_bt: bool = True,
+    # Number of rotating gather banks (K) for the gather-compute overlap software
+    # pipeline. Overlap is always on when num_bt > 1 (no separate enable switch).
+    # K < num_bt => K-deep sliding window (payload double-buffered at K=2, metadata
+    # Km=K+1), decoupling gather SMEM/VMEM from token count. K >= num_bt => legacy
+    # per-block banking. num_bt <= 1 (decode) => no overlap.
+    fixed_gather_banks: int | None = 2,
     enable_act_quant: bool = False,
     dp_axis_name: str = "data",
     tp_axis_name: str = "tensor",
@@ -2510,10 +2641,20 @@ def fused_ep_moe_v2(
     wb_slots = 2
     num_bt = local_num_tokens // bt
     use_bt_scatter_bank = enable_bt_scatter_overlap and num_bt > 1
-    use_gather_bank = interleave_bt and num_bt > 1
+    use_gather_bank = num_bt > 1
     use_bt_banking = use_bt_scatter_bank or use_gather_bank
-    num_bt_banks = num_bt if use_gather_bank else (2 if use_bt_scatter_bank else 1)
-    smem_banks = num_bt if use_gather_bank else 2
+    use_fixed_gather_banks = (
+        use_gather_bank and fixed_gather_banks is not None and fixed_gather_banks < num_bt
+    )
+    if use_fixed_gather_banks:
+        assert fixed_gather_banks >= 2, "fixed_gather_banks must be >= 2"
+    _gather_bank_count = fixed_gather_banks if use_fixed_gather_banks else num_bt
+    num_bt_banks = _gather_bank_count if use_gather_bank else (2 if use_bt_scatter_bank else 1)
+    # metadata/topk get one extra bank (Km = K+1) so their 1-ahead generation is
+    # not overwritten before drain(j) reads block j's metadata; scatter/gather/
+    # output stay at K.
+    _md_extra = 1 if use_fixed_gather_banks else 0
+    smem_banks = (_gather_bank_count + _md_extra) if use_gather_bank else 2
     use_w1_dequant_scratch = w1_scale is not None and not direct_scaled_dot
     use_w3_dequant_scratch = w3_scale is not None and not direct_scaled_dot
     use_w2_dequant_scratch = w2_scale is not None and not direct_scaled_dot
@@ -2528,8 +2669,8 @@ def fused_ep_moe_v2(
         scope_name += "-route_smem_topk"
     if use_bt_scatter_bank:
         scope_name += "-bt_scatter_overlap"
-    if interleave_bt:
-        scope_name += "-interleave_bt"
+    if use_gather_bank:
+        scope_name += f"-gather_banks_{_gather_bank_count}"
     if w1_shared is not None:
         scope_name += f"-se_bse_{bse}"
     if enable_act_quant:
@@ -2549,13 +2690,18 @@ def fused_ep_moe_v2(
             if use_bt_banking
             else pltpu.SMEM((expert_buffer_count,), jnp.int32)
         ),  # a2a_s_sends
+        # VMEM: double-buffered metadata all-gather mailbox. Keeping this
+        # kernel-scoped makes peer destinations valid without a metadata-entry
+        # barrier; alternating banks prevents the next block from clobbering a
+        # peer that is still materializing the previous generation.
+        pltpu.VMEM((2, num_devices, 1, padded_num_experts), jnp.int32),
         # VMEM: gather accumulation
         pltpu.VMEM((2, top_k, acc_bt, out_packing, h_per_out), out_dtype),  # a2a_g_acc
         # VMEM: topk
         pltpu.VMEM((smem_banks, bt, padded_top_k), jnp.float32),  # topk_weights
         pltpu.VMEM((smem_banks, bt, padded_top_k), jnp.int32),  # topk_ids
         # VMEM: output double buffer
-        pltpu.VMEM((smem_banks, bt, hidden_size), out_dtype),  # output
+        pltpu.VMEM((num_bt_banks, bt, hidden_size), out_dtype),  # output (K-deep, out_buf_id=%K)
         # VMEM: weight double buffers
         pltpu.VMEM((wb_slots, t_packing, h_per_t, bf), w1.dtype),  # W1
         pltpu.VMEM((wb_slots, t_packing, h_per_t, bf), w3.dtype),  # W3
@@ -2626,8 +2772,8 @@ def fused_ep_moe_v2(
             pltpu.SemaphoreType.DMA((num_bt_banks,)) if use_gather_bank else pltpu.SemaphoreType.DMA
         ),  # a2a_gather
         pltpu.SemaphoreType.DMA((1,)),  # a2a_acc
-        pltpu.SemaphoreType.DMA,  # md_send
-        pltpu.SemaphoreType.DMA,  # md_recv
+        pltpu.SemaphoreType.DMA((2,)),  # md_send, banked with metadata mailbox
+        pltpu.SemaphoreType.DMA((2,)),  # md_recv, banked with metadata mailbox
         pltpu.SemaphoreType.BARRIER,  # barrier
     )
 
@@ -2643,7 +2789,7 @@ def fused_ep_moe_v2(
                 shared_swiglu_limit=shared_swiglu_limit,
                 enable_bt_scatter_overlap=use_bt_scatter_bank,
                 cross_expert_prefetch_mode=cross_expert_prefetch_mode,
-                interleave_bt=interleave_bt,
+                fixed_gather_banks=fixed_gather_banks,
                 enable_act_quant=enable_act_quant,
                 direct_scaled_dot=direct_scaled_dot,
                 bt=bt,

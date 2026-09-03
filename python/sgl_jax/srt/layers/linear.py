@@ -253,6 +253,18 @@ class QuantizedLinear(nnx.Module):
             if n_out is not None:
                 weight_scale = expand_block_scale(weight_scale, n_out, int(weight_block_size[0]))
 
+        if (
+            mesh is not None
+            and kernel_axes is not None
+            and not isinstance(weight_scale, jax.ShapeDtypeStruct)
+        ):
+            scale_spec = (
+                P(kernel_axes[0], None, kernel_axes[1])
+                if weight_scale.ndim == 3
+                else P(kernel_axes[1])
+            )
+            weight_scale = jax.device_put(weight_scale, NamedSharding(mesh, scale_spec))
+
         self.weight_q = nnx.Param(weight_q)
         self.weight_scale = nnx.Param(weight_scale)
         self.bias = nnx.Param(bias) if bias is not None else None
@@ -469,6 +481,14 @@ class QuantizedLinear(nnx.Module):
         else:
             # Per-channel scale: [n_out]
             w_scale_spec = P(output_axis)
+        # jax[tpu] 0.10 runs the mesh in Explicit-axis mode ("sharding in types"):
+        # shard_map requires each input's committed sharding to match in_specs
+        # exactly, and with_sharding_constraint is only an assert. FP8 block-quant
+        # scales can arrive REPLICATED from the weight loader (the kernel-ready 3D
+        # expansion drops the sharding), which trips col-parallel projections such
+        # as q_b_proj. Explicitly reshard the scale to its expected spec — a no-op
+        # when it is already correctly sharded.
+        scale_val = jax.sharding.reshard(scale_val, NamedSharding(self.mesh, w_scale_spec))
         in_specs = (P("data", input_axis), P(output_axis, input_axis), w_scale_spec)
 
         target = out_sharding or NamedSharding(self.mesh, P("data", output_axis))
