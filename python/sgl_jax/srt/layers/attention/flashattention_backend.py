@@ -701,6 +701,18 @@ class FlashAttention(AttentionBackend):
             if is_target_verify
             else None
         )
+        # Ordinary decode metadata has distribution=(n, n, n), so only the
+        # decode stage can do work. Keep this fact static through the RPA JIT
+        # to avoid launching empty stages and fetching their scalar metadata.
+        # Speculative DECODE can instead use mixed-stage metadata (e.g. EAGLE).
+        decode_only = (
+            forward_batch is not None
+            and forward_batch.forward_mode.is_decode()
+            and (
+                forward_batch.spec_algorithm is None
+                or forward_batch.spec_algorithm.is_none()
+            )
+        )
 
         def _ragged_paged_attention_with_fused_kv(*args):
             queries, keys, values, kv_cache_fused = args[:4]
@@ -766,6 +778,7 @@ class FlashAttention(AttentionBackend):
                 m_block_sizes=target_verify_m_block_sizes,
                 d_bkv_sz=controls.d_bkv_sz,
                 p_bkv_sz=controls.p_bkv_sz,
+                decode_only=decode_only,
             )
 
             return result, updated_kv_cache_fused

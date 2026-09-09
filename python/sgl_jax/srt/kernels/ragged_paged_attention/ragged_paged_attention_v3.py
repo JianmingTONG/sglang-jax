@@ -1691,6 +1691,7 @@ def get_vmem_limit():
         "disable_semaphore_checks",
         "debug_mode",
         "mask_aligned_to_cu_kv",
+        "decode_only",
     ),
     donate_argnames=("queries", "keys", "values", "kv_cache_fused"),
 )
@@ -1729,6 +1730,7 @@ def ragged_paged_attention(
     disable_semaphore_checks: bool = True,
     debug_mode: bool = False,
     mask_aligned_to_cu_kv: bool = False,
+    decode_only: bool = False,
 ):
     """Ragged paged attention with fused KV cache.
 
@@ -1767,6 +1769,9 @@ def ragged_paged_attention(
         under m_block_sizes).
       vmem_limit_bytes: vmem limit for the pallas kernel.
       debug_mode: if true, skip DMAs and flash attention.
+      decode_only: static caller guarantee that distribution is (n, n, n)
+        and each active sequence has one query token. Omit the empty prefill
+        and mixed calls, including their scalar-prefetch and launch overhead.
 
     Returns:
       (output, updated_kv_cache_fused)
@@ -2131,7 +2136,7 @@ def ragged_paged_attention(
 
     # When chunk_prefill_size is None, PREFILL pallas_call is skipped.
     # Remap prefill sequences to MIXED so they are still processed.
-    if chunk_prefill_size is None:
+    if chunk_prefill_size is None and not decode_only:
         distribution = distribution.at[1].set(distribution[0])
 
     # Decode-only
@@ -2143,7 +2148,7 @@ def ragged_paged_attention(
         case=RpaCase.DECODE,
     )
 
-    if chunk_prefill_size is not None:
+    if not decode_only and chunk_prefill_size is not None:
         # Prefill-only
         q, kv_cache_fused_processed = run_rpa_kernel(
             q,
@@ -2152,14 +2157,16 @@ def ragged_paged_attention(
             static_q_len=chunk_prefill_size,
             case=RpaCase.PREFILL,
         )
-    # Mixed
-    q, kv_cache_fused_processed = run_rpa_kernel(
-        q,
-        kv_cache_fused_processed,
-        **_prepare_block_sizes(m_block_sizes, RpaCase.MIXED),
-        static_q_len=None,
-        case=RpaCase.MIXED,
-    )
+    # An empty Pallas stage still fetches scalar operands before checking its
+    # sequence range. The caller's static decode guarantee removes that call.
+    if not decode_only:
+        q, kv_cache_fused_processed = run_rpa_kernel(
+            q,
+            kv_cache_fused_processed,
+            **_prepare_block_sizes(m_block_sizes, RpaCase.MIXED),
+            static_q_len=None,
+            case=RpaCase.MIXED,
+        )
 
     return (
         prepare_outputs(q, actual_num_q_heads_per_kv_head, actual_head_dim),
