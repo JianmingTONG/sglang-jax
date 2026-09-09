@@ -27,8 +27,30 @@ class Sampler(nnx.Module):
     def _greedy_sampling(self, operands):
         """Greedy sampling branch"""
         logits, _, _ = operands
-        batch_next_token_ids = jnp.argmax(logits, -1).flatten()
-        logprobs = jax.nn.log_softmax(logits, axis=-1)
+        if logits.shape[-1] == 0:
+            raise ValueError("attempt to get argmax of an empty sequence")
+
+        # Share the vocabulary maximum with log-softmax. A separate argmax
+        # hides this value in a value/index reducer, which requires gathering
+        # both shard winners before reducing them again on tensor-sharded TPU.
+        max_logits = jnp.max(logits, axis=-1, initial=-jnp.inf, keepdims=True)
+        # Give NaNs priority independently of reduce_max's NaN propagation.
+        # The sign bit makes their indices sort before finite winners, while
+        # preserving first-index ties. Strip that bit after one minimum.
+        token_ids = jnp.arange(logits.shape[-1], dtype=int)
+        index_info = jnp.iinfo(token_ids.dtype)
+        ranked_ids = jnp.where(
+            jnp.isnan(logits),
+            jnp.bitwise_or(token_ids, index_info.min),
+            jnp.where(logits == max_logits, token_ids, index_info.max),
+        )
+        selected_ids = jnp.min(ranked_ids, axis=-1)
+        batch_next_token_ids = jnp.bitwise_and(selected_ids, index_info.max).flatten()
+
+        # Keep JAX log_softmax's operation order and implicit accumulation
+        # dtype; widening shifted or exp would change the bf16 numerics.
+        shifted = logits - lax.stop_gradient(max_logits)
+        logprobs = shifted - jnp.log(jnp.sum(jnp.exp(shifted), axis=-1, keepdims=True))
         return batch_next_token_ids, logprobs
 
     def _regular_sampling(self, operands):
