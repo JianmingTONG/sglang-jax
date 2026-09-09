@@ -412,6 +412,17 @@ def _ragged_paged_attention_kernel_loop(
     assert bkv_sz % page_size == 0
     assert bkv_sz % bkv_csz == 0, f"bkv_sz={bkv_sz} not divisible by bkv_csz={bkv_csz}"
     bkv_p = bkv_sz // page_size
+    # The complete page-index array bounds every valid sequence's KV length.
+    # When decode fits in one compute block, there is no previous softmax
+    # block to merge. Keep this fact static: loop-carried VMEM refs otherwise
+    # hide the initial m=-inf, l=0 and acc=0 from the compiler.
+    single_kv_block = (
+        case == RpaCase.DECODE
+        and bkv_sz == bkv_csz
+        and num_page_indices * page_size <= bkv_csz
+        and sliding_window is None
+        and attention_sink_ref is None
+    )
     start_seq_idx, end_seq_idx = case.get_range(distribution_ref)
 
     q_start = cu_q_lens_ref[seq_idx]
@@ -523,15 +534,23 @@ def _ragged_paged_attention_kernel_loop(
             s = s.astype(softmax_dtype)
 
         s_rowmax = jnp.max(s, axis=1, keepdims=True)
-        m_prev = m_ref[...].astype(jnp.float32)
-        m_curr = jnp.maximum(m_prev, s_rowmax)
-        m_ref[...] = m_curr.astype(out_dtype)
+        if single_kv_block:
+            m_dtype = jnp.promote_types(s_rowmax.dtype, jnp.float32)
+            m_curr = jnp.broadcast_to(s_rowmax.astype(m_dtype), m_ref.shape)
+        else:
+            m_prev = m_ref[...].astype(jnp.float32)
+            m_curr = jnp.maximum(m_prev, s_rowmax)
+            m_ref[...] = m_curr.astype(out_dtype)
         p = jnp.exp(s - broadcast_minor(m_curr, s.shape))
 
         p_rowsum = jnp.sum(p, axis=1, keepdims=True)
-        exp_m_diff = jnp.exp(m_prev - m_curr)
-        l_prev = l_ref[...].astype(jnp.float32)
-        l_ref[...] = (exp_m_diff * l_prev + p_rowsum).astype(out_dtype)
+        if single_kv_block:
+            l_ref[...] = jnp.broadcast_to(p_rowsum, l_ref.shape).astype(out_dtype)
+            exp_m_diff = None
+        else:
+            exp_m_diff = jnp.exp(m_prev - m_curr)
+            l_prev = l_ref[...].astype(jnp.float32)
+            l_ref[...] = (exp_m_diff * l_prev + p_rowsum).astype(out_dtype)
 
         return p, v, exp_m_diff
 
@@ -546,13 +565,19 @@ def _ragged_paged_attention_kernel_loop(
         assert p.shape[1] == bkv_csz
         actual_bq_csz = p.shape[0] // num_q_heads_per_kv_head
         assert v.shape == (bkv_csz, head_dim)
-        assert exp_m_diff.shape == (actual_bq_csz * num_q_heads_per_kv_head, 128)
+        if single_kv_block:
+            assert exp_m_diff is None
+        else:
+            assert exp_m_diff.shape == (actual_bq_csz * num_q_heads_per_kv_head, 128)
         assert o_ref.shape == (actual_bq_csz * num_q_heads_per_kv_head, head_dim)
         pv = jnp.matmul(p, v, preferred_element_type=jnp.float32)
         if v_scale is not None:
             pv *= v_scale
-        o_prev = o_ref[...].astype(jnp.float32)
-        o_ref[...] = (broadcast_minor(exp_m_diff, o_prev.shape) * o_prev + pv).astype(out_dtype)
+        if single_kv_block:
+            o_ref[...] = pv.astype(out_dtype)
+        else:
+            o_prev = o_ref[...].astype(jnp.float32)
+            o_ref[...] = (broadcast_minor(exp_m_diff, o_prev.shape) * o_prev + pv).astype(out_dtype)
 
     def _async_copy(src, dst, sem, wait):
         if debug_mode:
