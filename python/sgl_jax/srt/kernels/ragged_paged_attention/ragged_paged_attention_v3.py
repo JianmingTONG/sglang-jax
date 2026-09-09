@@ -640,8 +640,7 @@ def _ragged_paged_attention_kernel_loop(
             # Make sure the current bkv buffer is safe to overwrite.
             wait_update_kv_cache(bkv_sem_idx)
 
-            for i in range(bkv_p):
-                sz = jnp.clip(kv_left_frm_cache - i * page_size, 0, page_size)
+            def fetch_cache_page(i, sz):
                 page_idx = jnp.minimum(page_indices_offset + i, num_page_indices - 1)
                 _async_copy(
                     cache_hbm_ref.at[pl.ds(page_indices_ref[page_idx] * page_size, sz)],
@@ -650,6 +649,29 @@ def _ragged_paged_attention_kernel_loop(
                     wait=False,
                 )
 
+            # A Python loop over bkv_p emits a DMA descriptor for every page,
+            # including zero-length copies beyond the cached prefix. Keep a
+            # small unrolled group for descriptor scheduling, but bound the
+            # device loops by the amount of cached data in this block.
+            pages_per_group = min(8, bkv_p)
+            num_full_groups = bkv_sz_frm_cache // (pages_per_group * page_size)
+
+            @pl.loop(0, num_full_groups, unroll=False)
+            def fetch_cache_groups(group_idx):
+                for j in range(pages_per_group):
+                    fetch_cache_page(group_idx * pages_per_group + j, page_size)
+
+            @pl.loop(
+                num_full_groups * pages_per_group,
+                cdiv(bkv_sz_frm_cache, page_size),
+                unroll=False,
+            )
+            def fetch_cache_tail(i):
+                sz = jnp.minimum(bkv_sz_frm_cache - i * page_size, page_size)
+                fetch_cache_page(i, sz)
+
+            # The cached copies still transfer exactly bkv_sz_frm_cache tokens,
+            # so the combined cache/new-KV semaphore wait below is unchanged.
             new_kv_len_start = q_end - kv_left_frm_new
             _async_copy(
                 kv_hbm_ref.at[pl.ds(new_kv_len_start, bkv_sz_frm_new)],
