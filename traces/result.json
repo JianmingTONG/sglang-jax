@@ -1,0 +1,173 @@
+{
+  "benchmark": "sglang-jax/grouped-topk",
+  "command": [
+    "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli",
+    "-m",
+    "hierevo_v2.phase1.topk_baseline",
+    "--source",
+    "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli.runfiles/google3/experimental/akt/scaffolding/hierevo_v2/workload/sglang-jax/benchmark/kernels/grouped_topk/bench_grouped_topk.py",
+    "--output",
+    "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk/native"
+  ],
+  "cwd": "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli.runfiles/google3/experimental/akt/scaffolding/hierevo_v2/workload/sglang-jax",
+  "started": "2026-09-22T04:31:54.951015+00:00",
+  "status": "incomplete",
+  "entry": {
+    "id": "sglang-jax/grouped-topk",
+    "framework": "sglang-jax",
+    "kind": "kernel",
+    "source": "benchmark/kernels/grouped_topk/bench_grouped_topk.py",
+    "command": [
+      "{python}",
+      "-m",
+      "hierevo_v2.phase1.topk_baseline",
+      "--source",
+      "{framework}/benchmark/kernels/grouped_topk/bench_grouped_topk.py",
+      "--output",
+      "{output}/native"
+    ],
+    "args": [],
+    "env": {
+      "HIEREVO_DECODE_WORKERS": "4"
+    },
+    "notes": [
+      "Standalone kernel baseline: ten untimed warmups and mean of thirty synchronized dispatches. Token serving metrics do not apply."
+    ],
+    "tests": [],
+    "required_arguments": [],
+    "source_revision": "027fa79a6498a1afef5a36c4e093c07d2f12f1ef",
+    "profile": "native",
+    "hardware": {
+      "policy": "minimum-active-chips",
+      "min_chips": 1
+    },
+    "workload": "grouped-topk",
+    "execution_backend": "jax",
+    "parameters": {
+      "tp": "1",
+      "device_indexes": "0",
+      "memory_fraction": "0.8"
+    },
+    "_hardware": {
+      "generation": "tpu7x",
+      "provisioned_chips": 4,
+      "logical_devices_per_chip": 2,
+      "minimum_provisionable_chips": 4,
+      "max_active_chips": 4,
+      "gke_topology": "2x2x1",
+      "target": "tpu7x",
+      "active_chips": 4,
+      "tensor_parallel_size": 1,
+      "memory_fraction": 0.8,
+      "visible_chips": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "selection": "Borg TPU7x 2x2x1 slice (4 physical chips, 8 TensorCores)"
+    }
+  },
+  "hardware": {
+    "generation": "tpu7x",
+    "provisioned_chips": 4,
+    "logical_devices_per_chip": 2,
+    "minimum_provisionable_chips": 4,
+    "max_active_chips": 4,
+    "gke_topology": "2x2x1",
+    "target": "tpu7x",
+    "active_chips": 4,
+    "tensor_parallel_size": 1,
+    "memory_fraction": 0.8,
+    "visible_chips": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "selection": "Borg TPU7x 2x2x1 slice (4 physical chips, 8 TensorCores)"
+  },
+  "environment": {
+    "TMPDIR": "/tmp/hvb-de7f52bcd7e21b8777b4c8fc",
+    "TMP": "/tmp/hvb-de7f52bcd7e21b8777b4c8fc",
+    "HIEREVO_CNS_LOG_DIR": "/cns/iz-d/home/jianmingt/ttl=14d/vllm_torchtpu_logs/exp_291852380",
+    "HIEREVO_LLO_DUMP_DIR": "/tmp/vllm_profile/compiler-llo",
+    "HIEREVO_ON_BORG": "1",
+    "HIEREVO_TARGET_NAME": "tpu7x",
+    "JAX_PLATFORMS": "tpu",
+    "LIBTPU_INIT_ARGS": "--xla_jf_dump_to=/tmp/vllm_profile/compiler-llo --xla_jf_dump_llo_text=true '--xla_jf_dump_llo_pass_label_regex=.*(assembly|final).*' --xla_jf_debug_level=2 --xla_sc_dump_bundles_to=/tmp/vllm_profile/compiler-llo/sc-bundles --xla_sc_dump_mlir_to=/tmp/vllm_profile/compiler-llo/sc-bundles --xla_sc_dump_mlir_with_debug_info=true --xla_xprof_enable_custom_call_tracing=true --xla_xprof_register_llo_debug_info=true",
+    "TORCH_TPU_SLICEBUILDER_ADDRESSES": "/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport0,/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport1,/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport2,/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport3,/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport4,/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport5,/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport6,/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1/0:sbport7",
+    "TORCH_TPU_TOPOLOGY": "2,2,1,2",
+    "HIEREVO_BORG_ABSL_FLAGS": "[\"--census_cpu_accounting_enabled\", \"--ddt_default_configuration=borg_run_uid_enabled: true\", \"--deepsea_chips_per_host_bounds=2,2,1\", \"--deepsea_host_bounds=1,1,1\", \"--deepsea_slice_builder_worker_addresses=#/bns/yucmhsu/borg/yucmhsu/bns/jianmingt/jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1#slicebuilder#1\", \"--deepsea_slice_builder_worker_port=14019\", \"--nodeepsea_twist\", \"--deepsea_variant=\", \"--deepsea_version=ghostfish\", \"--deepsea_wrap=false,false,false\", \"--rpc_acl_config_source=FIREAXE\", \"--streamz_default_root_labels=xmanager:int:291852380,experiment_id:int:291852380,work_unit_id:int:1\", \"--undefok=binarylog,rpclog,ddt_default_configuration,rpc_acl_config_source,rate_acl_static_config,cfs_d_cid_enable,cfs_default_traffic_class,cfs_d_resource_user_override,rodos_client_force_retries_locality,l4_max_outstanding_rpcs,cfs_ro_recovery_read_memory_budget_mb,placer_allow_collect_best_replica_metrics,placer_corrected_predictions,userspace_coredumper,streamz_default_root_labels,census_cpu_accounting_enabled\", \"--undefok=binarylog,rpclog,ddt_default_configuration,rpc_acl_config_source,rate_acl_static_config,cfs_d_cid_enable,cfs_default_traffic_class,cfs_d_resource_user_override,rodos_client_force_retries_locality,l4_max_outstanding_rpcs,cfs_ro_recovery_read_memory_budget_mb,placer_allow_collect_best_replica_metrics,placer_corrected_predictions,userspace_coredumper,streamz_default_root_labels,census_cpu_accounting_enabled\", \"--streamz_default_root_labels=xmanager:int:291852380,experiment_id:int:291852380,work_unit_id:int:1\"]",
+    "HIEREVO_DECODE_WORKERS": "4",
+    "HIEREVO_CAPTURE_DIR": "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk",
+    "HIEREVO_FRAMEWORK_ROOT": "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli.runfiles/google3/experimental/akt/scaffolding/hierevo_v2/workload/sglang-jax",
+    "HIEREVO_PROFILE_MODE": "native",
+    "JAX_COMPILATION_CACHE_DIR": "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk/jax-cache",
+    "TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT": "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk/native-cache",
+    "VLLM_CACHE_ROOT": "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk/framework-cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk/torch-cache",
+    "TEMP": "/tmp/hvb-de7f52bcd7e21b8777b4c8fc",
+    "TPU_VISIBLE_CHIPS": "0,1,2,3",
+    "TPU_CHIPS_PER_PROCESS_BOUNDS": "2,2,1",
+    "TPU_PROCESS_BOUNDS": "1,1,1",
+    "HIEREVO_HARDWARE": "{\"generation\": \"tpu7x\", \"provisioned_chips\": 4, \"logical_devices_per_chip\": 2, \"minimum_provisionable_chips\": 4, \"max_active_chips\": 4, \"gke_topology\": \"2x2x1\", \"target\": \"tpu7x\", \"active_chips\": 4, \"tensor_parallel_size\": 1, \"memory_fraction\": 0.8, \"visible_chips\": [0, 1, 2, 3], \"selection\": \"Borg TPU7x 2x2x1 slice (4 physical chips, 8 TensorCores)\"}",
+    "HIEREVO_EXECUTION_TRACE": "0"
+  },
+  "interpreter": {
+    "path": "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli",
+    "status": "complete",
+    "scope": "Module discovery and package metadata; native ABI and TPU execution require a live run",
+    "executable": "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli",
+    "version": "3.14.5 (stable, redacted, redacted) [Clang 9999.0.0 (979b722373384babff6ea2befe17c5c1c93b64bd)]",
+    "modules": {
+      "hierevo_v2": "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli.runfiles/google3/experimental/akt/scaffolding/hierevo_v2/src/__init__.py",
+      "ijson": "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli.runfiles/google3/third_party/py/ijson/__init__.py",
+      "jax": "/export/hda3/borglet/local_ram_fs_dirs/0.jianmingt_group_291852380.1.hierevo_ghostfishlite_2_2_1.jianmingt.4633980242.8f4f9f98cb7a3055/flaze_scratch/local-bin/experimental/akt/scaffolding/hierevo_v2/baseline_cli.runfiles/google3/third_party/py/jax/__init__.py",
+      "jaxlib": null,
+      "libtpu": null,
+      "tpu_info": null
+    },
+    "packages": {
+      "torch-tpu": "0.0.0"
+    }
+  },
+  "source_revision": "027fa79a6498a1afef5a36c4e093c07d2f12f1ef",
+  "source_dirty": false,
+  "returncode": 1,
+  "command_wall_seconds": 378.55045626172796,
+  "execution_status": "finished",
+  "analysis_returncode": 0,
+  "issues": [],
+  "artifact_status": "complete",
+  "measurement_issues": [],
+  "measurement_status": "complete",
+  "finished": "2026-09-22T04:41:42.470375+00:00",
+  "capture_directory": "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk",
+  "hardware_attempts": [
+    {
+      "directory": "/tmp/hierevo-runs/baseline-20260922T043153.487344Z/tpu7x/phase1/sglang-jax/grouped-topk",
+      "hardware": {
+        "generation": "tpu7x",
+        "provisioned_chips": 4,
+        "logical_devices_per_chip": 2,
+        "minimum_provisionable_chips": 4,
+        "max_active_chips": 4,
+        "gke_topology": "2x2x1",
+        "target": "tpu7x",
+        "active_chips": 4,
+        "tensor_parallel_size": 1,
+        "memory_fraction": 0.8,
+        "visible_chips": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "selection": "Borg TPU7x 2x2x1 slice (4 physical chips, 8 TensorCores)"
+      },
+      "returncode": 1,
+      "status": "incomplete"
+    }
+  ]
+}
