@@ -1,0 +1,62 @@
+[
+  {
+    "config": "tokens-512",
+    "variant": "baseline",
+    "session_id": "jianmingt-17099891653529660508",
+    "filename_pb": "kda_prefill_r2_tokens_512_baseline.xplane.pb",
+    "filename_gz": "kda_prefill_r2_tokens_512_baseline.xplane.pb.gz",
+    "sha256": "46a2a81f04b4eb39a92db3a666820111f6a181320be69205fcd9159206d3fe88",
+    "pb_size_mb": 34.54,
+    "gz_size_mb": 8.39
+  },
+  {
+    "config": "tokens-512",
+    "variant": "candidate",
+    "session_id": "jianmingt-2632429016371433817",
+    "filename_pb": "kda_prefill_r2_tokens_512_candidate.xplane.pb",
+    "filename_gz": "kda_prefill_r2_tokens_512_candidate.xplane.pb.gz",
+    "sha256": "99c461d4652e50c70c317648b27cf29cbad2f78b02dac44a7dfe9a3837b998d3",
+    "pb_size_mb": 34.51,
+    "gz_size_mb": 8.42
+  },
+  {
+    "config": "tokens-2048",
+    "variant": "baseline",
+    "session_id": "jianmingt-17215298589022251470",
+    "filename_pb": "kda_prefill_r2_tokens_2048_baseline.xplane.pb",
+    "filename_gz": "kda_prefill_r2_tokens_2048_baseline.xplane.pb.gz",
+    "sha256": "2c40ce8f9f4e204fc1fc570547f4baa7f4ebab06a2b8942e93d3e2327c377cba",
+    "pb_size_mb": 34.67,
+    "gz_size_mb": 8.41
+  },
+  {
+    "config": "tokens-2048",
+    "variant": "candidate",
+    "session_id": "jianmingt-11223868408589484079",
+    "filename_pb": "kda_prefill_r2_tokens_2048_candidate.xplane.pb",
+    "filename_gz": "kda_prefill_r2_tokens_2048_candidate.xplane.pb.gz",
+    "sha256": "3ef9c3c8682711425735d405b6ac52e75a389ed5e9bdad82fc6c198557b97e1c",
+    "pb_size_mb": 34.48,
+    "gz_size_mb": 8.37
+  },
+  {
+    "config": "tokens-4096",
+    "variant": "baseline",
+    "session_id": "jianmingt-8275516332791092181",
+    "filename_pb": "kda_prefill_r2_tokens_4096_baseline.xplane.pb",
+    "filename_gz": "kda_prefill_r2_tokens_4096_baseline.xplane.pb.gz",
+    "sha256": "15e2fda78454f9ac1c6fd8da36528b4569f24b49c41f2e91f1c0c496813af23e",
+    "pb_size_mb": 34.48,
+    "gz_size_mb": 8.42
+  },
+  {
+    "config": "tokens-4096",
+    "variant": "candidate",
+    "session_id": "jianmingt-441322839157992806",
+    "filename_pb": "kda_prefill_r2_tokens_4096_candidate.xplane.pb",
+    "filename_gz": "kda_prefill_r2_tokens_4096_candidate.xplane.pb.gz",
+    "sha256": "fe7d4b23d4fcaa53d2a230cfbf6e13653f093230e24c32fa04061eb087d08a6f",
+    "pb_size_mb": 34.49,
+    "gz_size_mb": 8.4
+  }
+]
