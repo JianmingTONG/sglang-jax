@@ -1,0 +1,62 @@
+[
+  {
+    "config": "tokens-512",
+    "variant": "baseline",
+    "session_id": "jianmingt-34905515720235243",
+    "filename_pb": "kda_prefill_tokens_512_baseline.xplane.pb",
+    "filename_gz": "kda_prefill_tokens_512_baseline.xplane.pb.gz",
+    "sha256": "f38923723a36163201ed75043cd40fbb79022ef8d7b3b2a925702f3afc418488",
+    "pb_size_mb": 60.09,
+    "gz_size_mb": 20.68
+  },
+  {
+    "config": "tokens-512",
+    "variant": "candidate",
+    "session_id": "jianmingt-7704315528785127079",
+    "filename_pb": "kda_prefill_tokens_512_candidate.xplane.pb",
+    "filename_gz": "kda_prefill_tokens_512_candidate.xplane.pb.gz",
+    "sha256": "41cbfaf9de4d99e1156e9adb6f87360b345658fdd4783645d376ce0d6043791c",
+    "pb_size_mb": 34.49,
+    "gz_size_mb": 8.39
+  },
+  {
+    "config": "tokens-2048",
+    "variant": "baseline",
+    "session_id": "jianmingt-1088679029259579842",
+    "filename_pb": "kda_prefill_tokens_2048_baseline.xplane.pb",
+    "filename_gz": "kda_prefill_tokens_2048_baseline.xplane.pb.gz",
+    "sha256": "77957e6c754b29976eaef74a606a79b0cc91c1acf7d2e57bfe3c67bc0911473c",
+    "pb_size_mb": 60.12,
+    "gz_size_mb": 20.8
+  },
+  {
+    "config": "tokens-2048",
+    "variant": "candidate",
+    "session_id": "jianmingt-1162140042364887846",
+    "filename_pb": "kda_prefill_tokens_2048_candidate.xplane.pb",
+    "filename_gz": "kda_prefill_tokens_2048_candidate.xplane.pb.gz",
+    "sha256": "71e47814580cc61373dacaf1ef075b7ee764bb8da87a624d736a560e78dea374",
+    "pb_size_mb": 34.51,
+    "gz_size_mb": 8.4
+  },
+  {
+    "config": "tokens-4096",
+    "variant": "baseline",
+    "session_id": "jianmingt-998077277910333278",
+    "filename_pb": "kda_prefill_tokens_4096_baseline.xplane.pb",
+    "filename_gz": "kda_prefill_tokens_4096_baseline.xplane.pb.gz",
+    "sha256": "41420ad2a7bfff000a0c0b27e3971cda8a731b86608e6f1625fb8bcaaac57352",
+    "pb_size_mb": 60.95,
+    "gz_size_mb": 20.96
+  },
+  {
+    "config": "tokens-4096",
+    "variant": "candidate",
+    "session_id": "jianmingt-1656648659732337409",
+    "filename_pb": "kda_prefill_tokens_4096_candidate.xplane.pb",
+    "filename_gz": "kda_prefill_tokens_4096_candidate.xplane.pb.gz",
+    "sha256": "66cd861050918db61598e0d7769e7daf781423ed1c62cd7549b355c445ca97d7",
+    "pb_size_mb": 34.52,
+    "gz_size_mb": 8.41
+  }
+]
