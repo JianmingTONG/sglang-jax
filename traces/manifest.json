@@ -1,0 +1,22 @@
+[
+  {
+    "config": "native-suite",
+    "variant": "baseline",
+    "session_id": "jianmingt-11480784603979874372",
+    "filename_pb": "mla_v2_native_suite_round2_baseline.xplane.pb",
+    "filename_gz": "mla_v2_native_suite_round2_baseline.xplane.pb.gz",
+    "sha256": "b54315ba377f9e4beacf353d3e7611b677bfee92fa3c935c08d1413e0e4e253b",
+    "pb_size_mb": 25.89,
+    "gz_size_mb": 4.11
+  },
+  {
+    "config": "native-suite",
+    "variant": "candidate",
+    "session_id": "jianmingt-15022843053070638923",
+    "filename_pb": "mla_v2_native_suite_round2_candidate.xplane.pb",
+    "filename_gz": "mla_v2_native_suite_round2_candidate.xplane.pb.gz",
+    "sha256": "3fc842a914bc4bc9e1fc80c5ccab99c1730692b029d36b1cee896b3740395517",
+    "pb_size_mb": 25.93,
+    "gz_size_mb": 4.11
+  }
+]
