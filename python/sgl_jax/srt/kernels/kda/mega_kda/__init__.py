@@ -94,9 +94,8 @@ def kda_forward_packed(
 
     tokens = q.shape[1]
     if (
-        cu_seqlens.shape[0] == 2
         # Bound to TPU sublane register geometry (128 lanes), Neumann doubling stages, and KDA architecture.
-        and chunk_size == 64
+        chunk_size == 64
         # Bound to TPU MXU BF16 hardware execution and 60 MB VMEM capacity limits.
         and q.dtype == jnp.bfloat16
     ):
