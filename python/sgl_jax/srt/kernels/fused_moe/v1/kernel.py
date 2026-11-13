@@ -1,3 +1,4 @@
+# ruff: noqa: B023
 # Adapted from https://github.com/vllm-project/tpu-inference/blob/main/tpu_inference/kernels/fused_moe/v1/kernel.py
 # Copyright 2025 The tpu-inference Authors. All rights reserved.
 """TPU-Friendly Fused Mixture of Experts (MoE) kernel."""
@@ -771,7 +772,7 @@ def _fused_ep_moe_kernel(
         send_sem = send_x2_sems.at[0]
         recv_sem = recv_x2_sems.at[0]
 
-        if use_jax_allreduce_metadata and metadata_starts_hbm is not None:
+        if use_jax_allreduce_metadata and metadata_d2e_counts_hbm is not None:
             metadata_starts_sem = local_sems.at[bt_sem_id, 14]
             metadata_sizes_sem = local_sems.at[bt_sem_id, 15]
             metadata_counts_sem = local_sems.at[bt_sem_id, 16]
@@ -785,39 +786,57 @@ def _fused_ep_moe_kernel(
                 starts_vmem,
                 sizes_vmem,
             ):
-                offsets_vmem[...] = jnp.zeros_like(offsets_vmem)
-                t2e_routing_vmem[...] = t2e_routing
-
-                starts_load = pltpu.async_copy(
-                    src_ref=metadata_starts_hbm.at[bt_id],
-                    dst_ref=starts_vmem,
-                    sem=metadata_starts_sem,
-                )
-                sizes_load = pltpu.async_copy(
-                    src_ref=metadata_sizes_hbm.at[bt_id],
-                    dst_ref=sizes_vmem,
-                    sem=metadata_sizes_sem,
-                )
                 d2e_count_load = pltpu.async_copy(
                     src_ref=metadata_d2e_counts_hbm.at[bt_id],
                     dst_ref=d2e_count_vmem,
                     sem=metadata_counts_sem,
                 )
+                if metadata_starts_hbm is not None and metadata_sizes_hbm is not None:
+                    starts_load = pltpu.async_copy(
+                        src_ref=metadata_starts_hbm.at[bt_id],
+                        dst_ref=starts_vmem,
+                        sem=metadata_starts_sem,
+                    )
+                    sizes_load = pltpu.async_copy(
+                        src_ref=metadata_sizes_hbm.at[bt_id],
+                        dst_ref=sizes_vmem,
+                        sem=metadata_sizes_sem,
+                    )
 
+                offsets_vmem[...] = jnp.zeros_like(offsets_vmem)
                 offsets_copy = pltpu.async_copy(
                     src_ref=offsets_vmem,
                     dst_ref=expert_offsets_x2_smem.at[bt_sem_id],
                     sem=metadata_offsets_sem,
                 )
+                t2e_routing_vmem[...] = t2e_routing
                 t2e_routing_copy = pltpu.async_copy(
                     src_ref=t2e_routing_vmem,
                     dst_ref=t2e_routing_x2_smem.at[bt_sem_id],
                     sem=metadata_routing_sem,
                 )
 
-                starts_load.wait()
-                sizes_load.wait()
                 d2e_count_load.wait()
+                d2e_count_copy = pltpu.async_copy(
+                    src_ref=d2e_count_vmem,
+                    dst_ref=d2e_count_x2_smem.at[bt_sem_id],
+                    sem=metadata_counts_sem,
+                )
+
+                if metadata_starts_hbm is not None and metadata_sizes_hbm is not None:
+                    starts_load.wait()
+                    sizes_load.wait()
+                else:
+                    reduced_sizes = jnp.zeros_like(sizes)
+                    reduced_starts = jnp.zeros_like(starts)
+                    for dev_id in range(num_devices):
+                        dev_sizes = d2e_count_vmem[dev_id]
+                        reduced_sizes += dev_sizes
+                        reduced_starts += lax.select(
+                            dev_id < my_id, dev_sizes, jnp.zeros_like(dev_sizes)
+                        )
+                    starts_vmem[...] = reduced_starts
+                    sizes_vmem[...] = reduced_sizes
 
                 starts_copy = pltpu.async_copy(
                     src_ref=starts_vmem,
@@ -828,11 +847,6 @@ def _fused_ep_moe_kernel(
                     src_ref=sizes_vmem,
                     dst_ref=expert_sizes_x2_smem.at[bt_sem_id],
                     sem=metadata_sizes_sem,
-                )
-                d2e_count_copy = pltpu.async_copy(
-                    src_ref=d2e_count_vmem,
-                    dst_ref=d2e_count_x2_smem.at[bt_sem_id],
-                    sem=metadata_counts_sem,
                 )
 
                 t2e_routing_copy.wait()
@@ -1053,13 +1067,8 @@ def _fused_ep_moe_kernel(
                 e_id = t2e_routing_x2_smem[bt_sem_id, t_id, k_id]
                 is_valid = e_id >= 0
                 e_id_safe = lax.select(is_valid, e_id, jnp.int32(0))
-                if local_e_is_pow2:
-                    e_local_idx = e_id_safe & local_e_mask
-                    recv_id = e_id_safe >> local_e_shift
-                else:
-                    e_local_idx = e_id_safe % local_num_experts
-                    recv_id = e_id_safe // local_num_experts
-                is_active_expert = is_valid & (e_local_idx == local_e_id)
+                is_active_expert = is_valid & (e_id_safe % local_num_experts == local_e_id)
+                recv_id = e_id_safe // local_num_experts
                 offset = expert_offsets_x2_smem[bt_sem_id, 0, e_id_safe]
                 sz = lax.select(is_active_expert, jnp.int32(1), jnp.int32(0))
                 is_local = recv_id == my_id
@@ -1117,50 +1126,40 @@ def _fused_ep_moe_kernel(
             src_t_id = bt_start + t_id
             for k_id in range(top_k):
                 e_id = t2e_routing_x2_smem[bt_sem_id, t_id, k_id]
-                is_valid = e_id >= 0
-                e_id_safe = lax.select(is_valid, e_id, jnp.int32(0))
-                if local_e_is_pow2:
-                    e_sem_id_k = e_id_safe & local_e_mask
-                    recv_id = e_id_safe >> local_e_shift
-                else:
-                    e_sem_id_k = e_id_safe % jnp.int32(local_num_experts)
-                    recv_id = e_id_safe // local_num_experts
-                offset = expert_offsets_x2_smem[bt_sem_id, 0, e_id_safe]
-                sz = lax.select(is_valid, jnp.int32(1), jnp.int32(0))
-                is_local = recv_id == my_id
-                local_sz = lax.select(is_local, sz, jnp.int32(0))
-                remote_sz = lax.select(is_local, jnp.int32(0), sz)
-                expert_offsets_x2_smem[bt_sem_id, 0, e_id_safe] = offset + local_sz + remote_sz
-                start = expert_starts_x2_smem[bt_sem_id, 0, e_id_safe] + offset
-                cur_sends = a2a_s_sends_x2_smem[e_sem_id_k]
-                a2a_s_sends_x2_smem[e_sem_id_k] = cur_sends + remote_sz
 
-                @pl.when(local_sz != 0)
-                def _local_copy(
-                    src_t_id=src_t_id, start=start, local_sz=local_sz, e_sem_id_k=e_sem_id_k
-                ):
-                    pltpu.make_async_copy(
-                        src_ref=tokens_hbm.at[pl.ds(src_t_id, local_sz)],
-                        dst_ref=a2a_s_x2_hbm.at[e_sem_id_k, pl.ds(start, local_sz)],
-                        sem=recv_x2_sems.at[e_sem_id_k],
-                    ).start()
+                @pl.when(e_id >= 0)
+                def _(e_id=e_id, src_t_id=src_t_id):
+                    if local_e_is_pow2:
+                        e_sem_id_k = e_id & local_e_mask
+                        recv_id = e_id >> local_e_shift
+                    else:
+                        e_sem_id_k = e_id % jnp.int32(local_num_experts)
+                        recv_id = e_id // local_num_experts
+                    offset = expert_offsets_x2_smem[bt_sem_id, 0, e_id]
+                    expert_offsets_x2_smem[bt_sem_id, 0, e_id] = offset + jnp.int32(1)
+                    start = expert_starts_x2_smem[bt_sem_id, 0, e_id] + offset
 
-                @pl.when(remote_sz != 0)
-                def _remote_copy(
-                    src_t_id=src_t_id,
-                    start=start,
-                    remote_sz=remote_sz,
-                    e_sem_id_k=e_sem_id_k,
-                    recv_id=recv_id,
-                ):
-                    pltpu.make_async_remote_copy(
-                        src_ref=tokens_hbm.at[pl.ds(src_t_id, remote_sz)],
-                        dst_ref=a2a_s_x2_hbm.at[e_sem_id_k, pl.ds(start, remote_sz)],
-                        send_sem=send_x2_sems.at[e_sem_id_k],
-                        recv_sem=recv_x2_sems.at[e_sem_id_k],
-                        device_id=get_mesh_device_id(recv_id),
-                        device_id_type=pl.DeviceIdType.MESH,
-                    ).start()
+                    def _local_copy(_):
+                        pltpu.make_async_copy(
+                            src_ref=tokens_hbm.at[pl.ds(src_t_id, 1)],
+                            dst_ref=a2a_s_x2_hbm.at[e_sem_id_k, pl.ds(start, 1)],
+                            sem=recv_x2_sems.at[e_sem_id_k],
+                        ).start()
+
+                    def _remote_copy(_):
+                        a2a_s_sends_x2_smem[e_sem_id_k] = a2a_s_sends_x2_smem[
+                            e_sem_id_k
+                        ] + jnp.int32(1)
+                        pltpu.make_async_remote_copy(
+                            src_ref=tokens_hbm.at[pl.ds(src_t_id, 1)],
+                            dst_ref=a2a_s_x2_hbm.at[e_sem_id_k, pl.ds(start, 1)],
+                            send_sem=send_x2_sems.at[e_sem_id_k],
+                            recv_sem=recv_x2_sems.at[e_sem_id_k],
+                            device_id=get_mesh_device_id(recv_id),
+                            device_id_type=pl.DeviceIdType.MESH,
+                        ).start()
+
+                    lax.cond(recv_id == my_id, _local_copy, _remote_copy, operand=None)
 
             return None
 
@@ -2063,6 +2062,8 @@ def _fused_ep_moe_kernel(
                                 res = acc
                             else:
                                 res += acc
+                            if bfc_id + 1 < cdiv(bf, bfc):
+                                res = res.astype(t_dtype).astype(jnp.float32)
 
                     res_slice = res_vmem.at[
                         pl.ds(btc_id * btc, btc),
@@ -2835,7 +2836,7 @@ def _fused_ep_moe_kernel(
         # Prepare t2e_routing
         t2e_routing = b_topk_ids_x2_vmem[bt_sem_id]
 
-        if use_jax_allreduce_metadata and metadata_starts_hbm is not None:
+        if use_jax_allreduce_metadata and metadata_d2e_counts_hbm is not None:
             expert_sizes = jnp.zeros((1, padded_num_experts), dtype=jnp.int32)
         else:
             expert_iota = jax.lax.broadcasted_iota(jnp.int32, (1, 1, padded_num_experts), 2)
@@ -2864,10 +2865,8 @@ def _fused_ep_moe_kernel(
         if expert_buffer_count >= local_num_experts:
             # === BATCH SCATTER PATH ===
             # Issue all scatter DMAs in one token-loop pass (bt iterations
-            # instead of bt * local_num_experts), then issue initial weight
-            # prefetch so it overlaps with in-flight ICI scatter before waiting.
-            start_a2a_scatter_batch(bt_sem_id=bt_sem_id, bt_start=bt_start)
-
+            # instead of bt * local_num_experts), then run a tight compute loop
+            # where each expert waits only its own recv semaphore.
             if local_num_experts > 0:
                 first_e_id = my_id * local_num_experts
                 first_sz = expert_sizes_x2_smem[bt_sem_id, 0, first_e_id]
@@ -2876,6 +2875,8 @@ def _fused_ep_moe_kernel(
                 def _first_load():
                     start_fetch_bw1(0, bw1_sem_id=0, bf_id=0, bd1_id=0)
                     start_fetch_bw3(0, bw3_sem_id=0, bf_id=0, bd3_id=0)
+
+            start_a2a_scatter_batch(bt_sem_id=bt_sem_id, bt_start=bt_start)
 
             init_carry = jnp.int32(0)
 
@@ -2963,10 +2964,6 @@ def _fused_ep_moe_kernel(
 
         else:
             # === EXISTING PIPELINED PATH ===
-            start_a2a_scatter(
-                bt_sem_id=bt_sem_id, e_sem_id=e_sem_id, local_e_id=0, bt_start=bt_start
-            )
-
             if local_num_experts > 0:
                 first_e_id = my_id * local_num_experts
                 first_sz = expert_sizes_x2_smem[bt_sem_id, 0, first_e_id]
@@ -2975,6 +2972,10 @@ def _fused_ep_moe_kernel(
                 def _first_load():
                     start_fetch_bw1(0, bw1_sem_id=0, bf_id=0, bd1_id=0)
                     start_fetch_bw3(0, bw3_sem_id=0, bf_id=0, bd3_id=0)
+
+            start_a2a_scatter(
+                bt_sem_id=bt_sem_id, e_sem_id=e_sem_id, local_e_id=0, bt_start=bt_start
+            )
 
             init_carry = (e_sem_id, jnp.int32(0))
 
@@ -3285,13 +3286,11 @@ def compute_local_expert_sizes(topk_ids: jax.Array, num_experts: int) -> jax.Arr
     """Count routed tokens per expert for one local token tile.
 
     Must be called inside shard_map, where topk_ids is the device-local slice.
-    Invalid/padded expert ids are accumulated into a sentinel bucket and dropped.
+    Invalid/padded expert ids are ignored.
     """
-    flat_ids = topk_ids.flatten()
-    valid = (flat_ids >= 0) & (flat_ids < num_experts)
-    safe_ids = jnp.where(valid, flat_ids, num_experts)
-    counts = jnp.bincount(safe_ids, length=num_experts + 1)[:num_experts]
-    return counts[None, :].astype(jnp.int32)
+    expert_iota = lax.broadcasted_iota(jnp.int32, (1, 1, num_experts), 2)
+    mask = (topk_ids[:, :, None] == expert_iota).astype(jnp.int32)
+    return jnp.sum(mask, axis=(0, 1), keepdims=True).reshape(1, num_experts)
 
 
 def jax_allreduce_metadata_by_bt(
@@ -3710,8 +3709,8 @@ def fused_ep_moe(
                     None if w1_shared_scale is None else hbm_block_spec,  # w1_shared_scale_hbm
                     None if w3_shared_scale is None else hbm_block_spec,  # w3_shared_scale_hbm
                     None if w2_shared_scale is None else hbm_block_spec,  # w2_shared_scale_hbm
-                    None if not needs_jax_allreduce else hbm_block_spec,  # metadata_starts_hbm
-                    None if not needs_jax_allreduce else hbm_block_spec,  # metadata_sizes_hbm
+                    None,  # metadata_starts_hbm
+                    None,  # metadata_sizes_hbm
                     None if not needs_jax_allreduce else hbm_block_spec,  # metadata_d2e_counts_hbm
                 ],
                 out_specs=pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
@@ -3829,23 +3828,23 @@ def fused_ep_moe(
     ):
         tokens = tokens.reshape(-1, t_packing, hidden_size // t_packing)
         if needs_jax_allreduce:
-            metadata_starts, metadata_sizes, metadata_d2e_counts = jax_allreduce_metadata_by_bt(
-                topk_ids[:, :top_k],
+            topk_ids_by_bt = topk_ids.reshape(local_num_tokens // bt, bt, top_k)
+            local_sizes = jax.vmap(compute_local_expert_sizes, in_axes=(0, None))(
+                topk_ids_by_bt,
                 padded_num_experts,
-                bt,
-                num_devices,
-                dp_axis_name,
-                tp_axis_name,
             )
-            metadata_starts_arg = pltpu.with_memory_space_constraint(metadata_starts, pltpu.HBM)
-            metadata_sizes_arg = pltpu.with_memory_space_constraint(metadata_sizes, pltpu.HBM)
+            all_sizes = lax.all_gather(
+                local_sizes,
+                axis_name=(dp_axis_name, tp_axis_name),
+                axis=1,
+                tiled=True,
+            ).astype(jnp.int32)
+            metadata_d2e_counts = all_sizes[:, :, None, :]
             metadata_d2e_counts_arg = pltpu.with_memory_space_constraint(
                 metadata_d2e_counts,
                 pltpu.HBM,
             )
         else:
-            metadata_starts_arg = None
-            metadata_sizes_arg = None
             metadata_d2e_counts_arg = None
 
         if padded_top_k > top_k:
@@ -3919,8 +3918,8 @@ def fused_ep_moe(
                 if w2_shared_scale is None
                 else pltpu.with_memory_space_constraint(w2_shared_scale, pltpu.HBM)
             ),
-            metadata_starts_arg,
-            metadata_sizes_arg,
+            None,
+            None,
             metadata_d2e_counts_arg,
         )
         return local_output
