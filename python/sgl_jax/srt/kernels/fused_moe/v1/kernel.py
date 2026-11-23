@@ -1284,12 +1284,11 @@ def _fused_ep_moe_kernel(
     def wait_a2a_gather_send(*, bt_sem_id, e_sem_id, local_e_id):
         if disable_a2a:
             return
-        my_e_id = my_id * local_num_experts + local_e_id
+        is_valid = jnp.logical_and(local_e_id >= 0, local_e_id < local_num_experts)
+        my_e_id = my_id * local_num_experts + lax.select(is_valid, local_e_id, 0)
         sz = expert_sizes_x2_smem[bt_sem_id, 0, my_e_id]
         local_sz = d2e_count_x2_smem[bt_sem_id, my_id, 0, my_e_id]
-        remote_sz = sz - local_sz
-        is_valid = jnp.logical_and(local_e_id >= 0, local_e_id < local_num_experts)
-        remote_sz = lax.select(is_valid, remote_sz, 0)
+        remote_sz = lax.select(is_valid, sz - local_sz, 0)
 
         @pl.when(remote_sz != 0)
         def _():

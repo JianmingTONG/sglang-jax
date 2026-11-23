@@ -14,6 +14,7 @@ from jax.experimental.topologies import get_topology_desc
 from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 
+from sgl_jax.srt.configs.kernel_control import KernelControlPolicy
 from sgl_jax.srt.kernels.fused_moe.v1.kernel import (
     FusedMoEBlockConfig,
     compute_local_expert_sizes,
@@ -513,6 +514,22 @@ class FusedMoEV1ParityTest(jtu.JaxTestCase):
             compiled = lowered.compile()
 
         self.assertIsNotNone(compiled)
+
+    def test_kernel_control_rejects_boolean_range_match(self):
+        for key in ("min_has_initial_state", "max_output_final_state"):
+            with self.assertRaisesRegex(ValueError, "unknown range match"):
+                KernelControlPolicy.from_config(
+                    {
+                        "kda": {
+                            "rules": [
+                                {
+                                    "when": {key: 1},
+                                    "set": {"chunk_size": 64},
+                                }
+                            ]
+                        }
+                    }
+                )
 
 
 if __name__ == "__main__":

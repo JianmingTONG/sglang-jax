@@ -410,6 +410,7 @@ _DEFAULTS = {
     for family, control_type in _CONTROL_TYPES.items()
 }
 _CONTEXT_FIELDS = frozenset(field.name for field in fields(KernelControlContext))
+_NON_RANGE_CONTEXT_FIELDS = frozenset({"device_kind", "has_initial_state", "output_final_state"})
 
 
 def _as_mapping(value: Any, label: str) -> dict[str, Any]:
@@ -440,7 +441,7 @@ def _validate_match(match: Mapping[str, Any], label: str) -> None:
         base = key
         if key.startswith("min_") or key.startswith("max_"):
             base = key[4:]
-            if base not in _CONTEXT_FIELDS - {"device_kind"}:
+            if base not in _CONTEXT_FIELDS - _NON_RANGE_CONTEXT_FIELDS:
                 raise ValueError(f"{label} has unknown range match {key!r}")
             if type(value) is not int or value <= 0:
                 raise ValueError(f"{label}.{key} must be a positive integer")
