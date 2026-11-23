@@ -497,3 +497,44 @@ def test__reduce_scatter_tokens_and_select_token_rows():
         )
         selected = _select_token_rows(x, indices, mesh)
         np.testing.assert_array_equal(np.asarray(selected), x_np[[0, 3, 7, 11, 15]])
+
+
+@pytest.mark.parametrize(
+    ("abstract_mode", "quantization_config", "expected_calls"),
+    [
+        (False, None, 1),
+        (False, object(), 0),
+        (True, None, 0),
+    ],
+)
+def test_load_weights_skips_token_parallel_when_quantization_configured(
+    abstract_mode, quantization_config, expected_calls
+):
+    """Verify load_weights prevents token-parallel prefill when quantized or abstract."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from sgl_jax.srt.models.qwen3 import Qwen3ForCausalLM
+
+    dummy_model = SimpleNamespace(
+        mesh=None,
+        dtype=jnp.bfloat16,
+        _create_qwen3_weight_mappings=MagicMock(return_value={}),
+        init_token_parallel_weights=MagicMock(return_value=True),
+    )
+    model_config = SimpleNamespace(
+        _abstract_mode=abstract_mode,
+        quantization_config=quantization_config,
+    )
+
+    with patch("sgl_jax.srt.models.qwen3.WeightLoader") as mock_loader_cls:
+        Qwen3ForCausalLM.load_weights(dummy_model, model_config)
+
+    mock_loader_cls.assert_called_once_with(
+        model=dummy_model,
+        model_config=model_config,
+        mesh=None,
+        dtype=jnp.bfloat16,
+    )
+    mock_loader_cls.return_value.load.assert_called_once_with({})
+    assert dummy_model.init_token_parallel_weights.call_count == expected_calls

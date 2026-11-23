@@ -941,7 +941,10 @@ class Qwen3ForCausalLM(nnx.Module):
 
         loader.load(weight_mappings)
         logger.info("Qwen3 weights loaded successfully!")
-        if not getattr(model_config, "_abstract_mode", False):
+        if (
+            not getattr(model_config, "_abstract_mode", False)
+            and getattr(model_config, "quantization_config", None) is None
+        ):
             self.init_token_parallel_weights()
 
     def init_token_parallel_weights(self) -> bool:
